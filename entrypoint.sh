@@ -13,10 +13,17 @@ mkdir -p /run/sshd
 # --- authorized_keys (materialized from PUBLIC_KEY every boot) ---
 mkdir -p "${DEV_HOME}/.ssh"
 if [ -n "${PUBLIC_KEY:-}" ]; then
-  printf '%s\n' "${PUBLIC_KEY}" > "${DEV_HOME}/.ssh/authorized_keys"
+  # %b (not %s) so a literal "\n" between keys works too — whether compose's
+  # dotenv parser expands the escape or passes it through, multiple keys land
+  # on separate lines either way.
+  printf '%b\n' "${PUBLIC_KEY}" > "${DEV_HOME}/.ssh/authorized_keys"
+elif [ -s "${DEV_HOME}/.ssh/authorized_keys" ]; then
+  # Never destroy the only credential. A redeploy with the env file missing
+  # would otherwise lock you out of a running devbox permanently.
+  log "WARNING: PUBLIC_KEY is empty — keeping the existing authorized_keys."
 else
-  log "WARNING: PUBLIC_KEY is empty — no key will be able to log in."
-  : > "${DEV_HOME}/.ssh/authorized_keys"
+  log "WARNING: PUBLIC_KEY is empty and no authorized_keys exists — nobody can log in."
+  touch "${DEV_HOME}/.ssh/authorized_keys"
 fi
 chmod 700 "${DEV_HOME}/.ssh"
 chmod 600 "${DEV_HOME}/.ssh/authorized_keys"
