@@ -1,0 +1,4 @@
+# Local secrets — TS_AUTHKEY is a non-expiring tailnet auth key, never commit it.
+.env
+.env.*
+!.env.example
