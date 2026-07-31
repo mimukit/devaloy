@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Re-run the devaloy toolchain bootstrap.
+#
+# Boot-time bootstrap is gated behind a marker file so redeploys are
+# predictable and never re-resolve versions under a live session. This is the
+# deliberate way to pick up changed pins or newer tools.
+set -euo pipefail
+
+if [ "$(id -un)" = "root" ]; then
+  echo "devaloy-update: run this as the dev user, not root." >&2
+  exit 1
+fi
+
+MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
+
+rm -f "${MARKER}"
+/usr/local/bin/bootstrap-toolchain.sh
+mkdir -p "$(dirname "${MARKER}")"
+touch "${MARKER}"
+
+echo "devaloy: toolchain updated."

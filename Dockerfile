@@ -22,8 +22,13 @@ RUN userdel -r ubuntu 2>/dev/null; groupdel ubuntu 2>/dev/null; \
 
 COPY sshd_config /etc/ssh/sshd_config
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod 755 /entrypoint.sh
+COPY bootstrap-toolchain.sh devaloy-update /usr/local/bin/
+RUN chmod 755 /entrypoint.sh \
+        /usr/local/bin/bootstrap-toolchain.sh \
+        /usr/local/bin/devaloy-update
 
-VOLUME /home/dev
+# No VOLUME instruction: compose declares the named volume for /home/dev, and
+# Docker seeds an empty named volume from the image either way. Declaring it
+# here would only force an anonymous volume on a plain `docker run`.
 
 ENTRYPOINT ["/entrypoint.sh"]
