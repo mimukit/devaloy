@@ -1,7 +1,6 @@
 FROM ubuntu:24.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        openssh-server \
         sudo \
         git \
         tmux \
@@ -10,6 +9,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         vim \
         htop \
+        iproute2 \
+        iptables \
+        openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+# tailscaled lives *inside* this image on purpose. Tailscale SSH terminates the
+# connection in whichever container runs tailscaled and spawns the shell there —
+# so a sidecar sharing only the network namespace would drop you into the
+# sidecar's filesystem, not this one. See tailscale/tailscale#5215.
+RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
+        -o /usr/share/keyrings/tailscale-archive-keyring.gpg \
+    && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
+        -o /etc/apt/sources.list.d/tailscale.list \
+    && apt-get update && apt-get install -y --no-install-recommends tailscale \
     && rm -rf /var/lib/apt/lists/*
 
 # ubuntu:24.04 ships a default "ubuntu" user/group at 1000:1000 — drop it so
@@ -20,15 +33,17 @@ RUN userdel -r ubuntu 2>/dev/null; groupdel ubuntu 2>/dev/null; \
     && echo 'dev ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/dev \
     && chmod 440 /etc/sudoers.d/dev
 
-COPY sshd_config /etc/ssh/sshd_config
+# No sshd, no authorized_keys, no host keys: Tailscale SSH is the only way in,
+# and it authenticates from tailnet identity plus the tailnet policy file.
 COPY entrypoint.sh /entrypoint.sh
-COPY bootstrap-toolchain.sh devaloy-update /usr/local/bin/
+COPY bootstrap-toolchain.sh devaloy-update link-shims /usr/local/bin/
 RUN chmod 755 /entrypoint.sh \
         /usr/local/bin/bootstrap-toolchain.sh \
-        /usr/local/bin/devaloy-update
+        /usr/local/bin/devaloy-update \
+        /usr/local/bin/link-shims
 
-# No VOLUME instruction: compose declares the named volume for /home/dev, and
-# Docker seeds an empty named volume from the image either way. Declaring it
-# here would only force an anonymous volume on a plain `docker run`.
+# No VOLUME instruction: compose declares the named volumes, and Docker seeds an
+# empty named volume from the image either way. Declaring it here would only
+# force an anonymous volume on a plain `docker run`.
 
 ENTRYPOINT ["/entrypoint.sh"]

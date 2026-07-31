@@ -3,83 +3,27 @@ set -euo pipefail
 
 DEV_USER="dev"
 DEV_HOME="/home/${DEV_USER}"
+TS_STATE_DIR="${TS_STATE_DIR:-/var/lib/tailscale}"
+TS_SOCKET="/var/run/tailscale/tailscaled.sock"
 # Version pins live in bootstrap-toolchain.sh; these are only forwarded, so an
 # empty value here falls through to that script's default.
 
 log() { echo "[entrypoint] $*"; }
 
-mkdir -p /run/sshd
-
-# --- authorized_keys (materialized from PUBLIC_KEY every boot) ---
-mkdir -p "${DEV_HOME}/.ssh"
-if [ -n "${PUBLIC_KEY:-}" ]; then
-  # %b (not %s) so a literal "\n" between keys works too — whether compose's
-  # dotenv parser expands the escape or passes it through, multiple keys land
-  # on separate lines either way.
-  printf '%b\n' "${PUBLIC_KEY}" > "${DEV_HOME}/.ssh/authorized_keys"
-elif [ -s "${DEV_HOME}/.ssh/authorized_keys" ]; then
-  # Never destroy the only credential. A redeploy with the env file missing
-  # would otherwise lock you out of a running devbox permanently.
-  log "WARNING: PUBLIC_KEY is empty — keeping the existing authorized_keys."
-else
-  log "WARNING: PUBLIC_KEY is empty and no authorized_keys exists — nobody can log in."
-  touch "${DEV_HOME}/.ssh/authorized_keys"
-fi
-chmod 700 "${DEV_HOME}/.ssh"
-chmod 600 "${DEV_HOME}/.ssh/authorized_keys"
-chown -R "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.ssh"
-
-# --- host keys (generated once into the persistent volume, absent-only) ---
-HOST_KEY_DIR="${DEV_HOME}/.ssh/host_keys"
-mkdir -p "${HOST_KEY_DIR}"
-for kind in rsa ecdsa ed25519; do
-  key_file="${HOST_KEY_DIR}/ssh_host_${kind}_key"
-  if [ ! -f "${key_file}" ]; then
-    log "Generating missing ${kind} host key"
-    ssh-keygen -q -t "${kind}" -f "${key_file}" -N ""
-  fi
-done
-chown -R root:root "${HOST_KEY_DIR}"
-chmod 700 "${HOST_KEY_DIR}"
-chmod 600 "${HOST_KEY_DIR}"/ssh_host_*_key
-chmod 644 "${HOST_KEY_DIR}"/ssh_host_*_key.pub
-
-# --- mise bootstrap + pinned toolchain (once per volume, runs as dev) ---
-# Deliberately NOT fatal: if this fails, sshd must still start, or a network
-# blip on first boot leaves an unreachable box in a restart loop with no way
-# in to diagnose it. The marker is only written on success, so a later boot
-# (or `devaloy-update`) retries cleanly.
-MISE_MARKER="${DEV_HOME}/.local/share/mise/.devaloy-bootstrapped"
-if [ ! -f "${MISE_MARKER}" ]; then
-  log "Bootstrapping mise + toolchain"
-  if su - "${DEV_USER}" -c "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
-      MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
-      /usr/local/bin/bootstrap-toolchain.sh"; then
-    mkdir -p "$(dirname "${MISE_MARKER}")"
-    touch "${MISE_MARKER}"
-    log "Toolchain bootstrap complete"
-  else
-    log "WARNING: toolchain bootstrap failed — starting sshd anyway so the box stays reachable."
-    log "WARNING: once you are in, re-run it with: devaloy-update"
-  fi
-else
-  log "mise toolchain already bootstrapped, skipping (run devaloy-update to refresh)"
-fi
-
 # --- shell env: toolchain PATH + OOM reset, for EVERY shell ---
-# Ubuntu's stock .bashrc bails out early on non-interactive shells, so anything
-# appended to the end is invisible to `ssh devbox 'pnpm build'`, rsync, scp and
-# git-over-ssh. This snippet is sourced from the TOP of .bashrc instead, above
-# that guard. mise shims resolve versions at exec time, so they need no
-# interactive `mise activate`.
+# Written before tailscaled comes up, so the very first session that lands
+# already has it. Ubuntu's stock .bashrc bails out early on non-interactive
+# shells, so this is sourced from the TOP of .bashrc, above that guard. mise
+# shims resolve versions at exec time, so no interactive `mise activate` is
+# needed. link-shims covers the shells that skip .bashrc entirely.
 ENV_SNIPPET="${DEV_HOME}/.devaloy_env"
 cat > "${ENV_SNIPPET}" <<'EOF'
 export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 
 # The container starts at a negative oom_score_adj (see compose.yml) to keep
-# sshd off the OOM killer's list. Raise every session back to 0 so a runaway
-# build inherits 0 and is killed before the process that keeps you connected.
-# Raising is unprivileged; only lowering needs CAP_SYS_RESOURCE.
+# tailscaled off the OOM killer's list. Raise every session back to 0 so a
+# runaway build inherits 0 and is killed before the process that keeps you
+# connected. Raising is unprivileged; only lowering needs CAP_SYS_RESOURCE.
 echo 0 > /proc/self/oom_score_adj 2>/dev/null || true
 EOF
 chown "${DEV_USER}:${DEV_USER}" "${ENV_SNIPPET}"
@@ -102,7 +46,7 @@ fi
 PROFILE_SNIPPET="${DEV_HOME}/.devaloy_profile"
 if [ ! -f "${PROFILE_SNIPPET}" ]; then
   cat > "${PROFILE_SNIPPET}" <<'EOF'
-if [ -n "${SSH_TTY:-}" ]; then
+if [ -t 0 ]; then
   echo "devaloy devbox — run: herdr"
 fi
 EOF
@@ -114,9 +58,84 @@ if ! grep -qF '.devaloy_profile' "${DEV_HOME}/.bashrc" 2>/dev/null; then
   chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.bashrc"
 fi
 
-# OOM safety: compose sets this container's oom_score_adj negative, which sshd
-# inherits, so the kernel avoids killing the process that keeps the box
-# reachable. The env snippet above raises each session back to 0 so a runaway
-# build is the preferred victim instead.
-log "Starting sshd on port 2222"
-exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config
+# --- tailscaled + Tailscale SSH (started FIRST, before the slow bootstrap) ---
+# Ordering matters: the toolchain install takes minutes on a cold volume, and
+# there is no sshd fallback any more. Bringing the tailnet up first means the
+# box is reachable *during* that window rather than after it.
+mkdir -p "${TS_STATE_DIR}" "$(dirname "${TS_SOCKET}")"
+
+log "Starting tailscaled"
+tailscaled \
+  --state="${TS_STATE_DIR}/tailscaled.state" \
+  --socket="${TS_SOCKET}" \
+  --tun=tailscale0 &
+TAILSCALED_PID=$!
+
+for _ in $(seq 1 30); do
+  [ -S "${TS_SOCKET}" ] && break
+  sleep 1
+done
+if [ ! -S "${TS_SOCKET}" ]; then
+  log "WARNING: tailscaled socket never appeared — check NET_ADMIN and /dev/net/tun."
+fi
+
+# --accept-dns defaults to false: letting Tailscale rewrite /etc/resolv.conf in
+# a container clobbers Docker's own resolver. Set TS_ACCEPT_DNS=true if you want
+# MagicDNS resolution *from* the devbox.
+# --timeout is load-bearing, not defensive: with no authkey and no saved state,
+# `tailscale up` prints a login URL and blocks FOREVER. That would wedge the
+# entrypoint before the toolchain bootstrap ever runs. Fail instead, and let the
+# warning path below tell you how to finish the login by hand.
+up_args=(--ssh --timeout=90s --hostname="${TS_HOSTNAME:-devbox}")
+if [ "${TS_ACCEPT_DNS:-false}" = "true" ]; then
+  up_args+=(--accept-dns=true)
+else
+  up_args+=(--accept-dns=false)
+fi
+# On a redeploy the node identity is already in the state volume, so the authkey
+# is optional — only pass it when one is set.
+if [ -n "${TS_AUTHKEY:-}" ]; then
+  up_args+=(--authkey="${TS_AUTHKEY}")
+fi
+
+if tailscale --socket="${TS_SOCKET}" up "${up_args[@]}"; then
+  log "Tailscale SSH is up as ${TS_HOSTNAME:-devbox} ($(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1))"
+else
+  # Deliberately non-fatal. Restart-looping would not fix a bad authkey or a
+  # missing ACL rule, and it would destroy the one diagnostic path left.
+  log "WARNING: tailscale up failed — this box is NOT reachable over the tailnet."
+  if [ -z "${TS_AUTHKEY:-}" ]; then
+    log "WARNING: TS_AUTHKEY is empty. Look further up this log for a"
+    log "WARNING: 'To authenticate, visit: ...' URL and open it, or set the key."
+  fi
+  log "WARNING: recover from the Docker host with:"
+  log "WARNING:   docker compose exec devbox tailscale up --ssh"
+fi
+
+# --- mise bootstrap + pinned toolchain (once per volume, runs as dev) ---
+# Deliberately NOT fatal: a network blip on first boot must not take the box
+# down. The marker is only written on success, so a later boot (or
+# `devaloy-update`) retries cleanly.
+MISE_MARKER="${DEV_HOME}/.local/share/mise/.devaloy-bootstrapped"
+if [ ! -f "${MISE_MARKER}" ]; then
+  log "Bootstrapping mise + toolchain"
+  if su - "${DEV_USER}" -c "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
+      MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
+      /usr/local/bin/bootstrap-toolchain.sh"; then
+    mkdir -p "$(dirname "${MISE_MARKER}")"
+    touch "${MISE_MARKER}"
+    log "Toolchain bootstrap complete"
+  else
+    log "WARNING: toolchain bootstrap failed — the box is still reachable."
+    log "WARNING: once you are in, re-run it with: devaloy-update"
+  fi
+else
+  log "mise toolchain already bootstrapped, skipping (run devaloy-update to refresh)"
+fi
+
+# Make the toolchain resolvable from sessions that never source .bashrc.
+DEV_HOME="${DEV_HOME}" /usr/local/bin/link-shims || \
+  log "WARNING: link-shims failed — non-interactive commands may not find the toolchain."
+
+log "devaloy is up. Connect with: ssh dev@${TS_HOSTNAME:-devbox}"
+wait "${TAILSCALED_PID}"

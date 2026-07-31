@@ -1,47 +1,42 @@
 services:
-  tailscale:
-    image: tailscale/tailscale:latest
-    container_name: devaloy-tailscale
-    hostname: devbox
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_HOSTNAME=devbox
-      - TS_USERSPACE=false
-    volumes:
-      - tailscale-state:/var/lib/tailscale
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - SYS_MODULE
-    # Keep tailscaled off the OOM killer's list — losing it severs every route
-    # you'd use to recover the box.
-    oom_score_adj: -500
-    restart: unless-stopped
-
   devbox:
     build: .
     container_name: devaloy-devbox
-    network_mode: service:tailscale
-    depends_on:
-      - tailscale
+    hostname: devbox
     init: true
-    # sshd inherits this, so the kernel avoids killing the process that keeps
-    # the box reachable. Interactive login shells raise themselves back to 0
-    # (see entrypoint.sh), so a runaway build is the preferred victim. Docker
-    # applies this itself — no CAP_SYS_RESOURCE needed on a container running
-    # untrusted dev code.
+    # Nothing is published. There is no `ports:` key on purpose — the only way
+    # in is Tailscale SSH on the tailnet address, inside this container's own
+    # network namespace.
+    cap_add:
+      # tailscaled needs this to create and configure the tailscale0 interface.
+      - NET_ADMIN
+      # SYS_MODULE is deliberately NOT granted. It is only needed to *load* the
+      # tun kernel module, and it is close to a container escape on a box that
+      # runs arbitrary dev code and AI agents. Ensure the host has tun loaded
+      # instead: `sudo modprobe tun` (see README).
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    # Keeps tailscaled off the OOM killer's list — losing it severs the only
+    # route you'd use to recover the box. Interactive shells raise themselves
+    # back to 0 (see entrypoint.sh), so a runaway build is the preferred victim.
+    # Docker applies this itself; no CAP_SYS_RESOURCE needed.
     oom_score_adj: -500
     environment:
-      - PUBLIC_KEY=${PUBLIC_KEY}
+      - TS_AUTHKEY=${TS_AUTHKEY:-}
+      - TS_HOSTNAME=${TS_HOSTNAME:-devbox}
+      # Tailscale rewriting /etc/resolv.conf inside a container clobbers
+      # Docker's resolver. Only turn this on if you need MagicDNS *from* the
+      # devbox.
+      - TS_ACCEPT_DNS=${TS_ACCEPT_DNS:-false}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
       - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
     volumes:
       - devbox-home:/home/dev
+      # Node identity lives here. Lose it and the box rejoins as a new machine.
+      - tailscale-state:/var/lib/tailscale
     restart: unless-stopped
 
 volumes:
-  tailscale-state:
   devbox-home:
+  tailscale-state:

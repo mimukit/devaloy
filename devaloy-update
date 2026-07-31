@@ -18,4 +18,9 @@ rm -f "${MARKER}"
 mkdir -p "$(dirname "${MARKER}")"
 touch "${MARKER}"
 
+# Refresh the /usr/local/bin mirror so anything newly installed (including
+# `npm i -g` tools like claude and codex) resolves for non-interactive sessions
+# too — scp, rsync, git-over-ssh and `ssh devbox '<cmd>'`.
+sudo DEV_HOME="${HOME}" /usr/local/bin/link-shims
+
 echo "devaloy: toolchain updated."

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Mirror the dev user's mise shims into /usr/local/bin. Needs root.
+#
+# Why this exists: Tailscale SSH runs non-interactive commands
+# (`ssh devbox 'pnpm build'`, scp, rsync, git-over-ssh) through a shell that
+# will not reliably source ~/.bashrc. Bash only auto-sources .bashrc in a
+# non-interactive shell when stdin is a *socket* — an OpenSSH implementation
+# detail we no longer depend on now that sshd is gone. /usr/local/bin is on
+# every shell's default PATH, so mirroring the shims there makes the toolchain
+# resolve no matter how the session was spawned.
+#
+# The shims still resolve tool versions at exec time from the *invoking* user's
+# mise config, so these links are only meaningful for the dev user.
+set -euo pipefail
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "link-shims: needs root — run it with sudo." >&2
+  exit 1
+fi
+
+DEV_HOME="${DEV_HOME:-/home/dev}"
+SHIM_DIR="${DEV_HOME}/.local/share/mise/shims"
+
+if [ ! -d "${SHIM_DIR}" ]; then
+  echo "link-shims: no shims at ${SHIM_DIR} — nothing to do."
+  exit 0
+fi
+
+count=0
+for shim in "${SHIM_DIR}"/*; do
+  [ -x "${shim}" ] || continue
+  target="/usr/local/bin/$(basename "${shim}")"
+  # Never clobber a real file — that would be one of our own scripts, or
+  # something apt installed.
+  if [ -e "${target}" ] && [ ! -L "${target}" ]; then
+    echo "link-shims: skipping ${target} — a real file is already there." >&2
+    continue
+  fi
+  ln -sfn "${shim}" "${target}"
+  count=$((count + 1))
+done
+
+echo "link-shims: linked ${count} tool(s) into /usr/local/bin."
