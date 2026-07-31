@@ -3,8 +3,8 @@ set -euo pipefail
 
 DEV_USER="dev"
 DEV_HOME="/home/${DEV_USER}"
-MISE_NODE_VERSION="lts"
-MISE_HERDR_VERSION="${MISE_HERDR_VERSION:-latest}"
+# Version pins live in bootstrap-toolchain.sh; these are only forwarded, so an
+# empty value here falls through to that script's default.
 
 log() { echo "[entrypoint] $*"; }
 
@@ -44,45 +44,64 @@ chmod 700 "${HOST_KEY_DIR}"
 chmod 600 "${HOST_KEY_DIR}"/ssh_host_*_key
 chmod 644 "${HOST_KEY_DIR}"/ssh_host_*_key.pub
 
-# --- skeleton dotfiles (only if the home volume is empty) ---
-if [ ! -f "${DEV_HOME}/.bashrc" ]; then
-  log "Seeding skeleton dotfiles into empty home volume"
-  cp -a /etc/skel/. "${DEV_HOME}/"
-  chown -R "${DEV_USER}:${DEV_USER}" "${DEV_HOME}"
-fi
-
-# --- mise bootstrap + pinned toolchain (idempotent, runs as dev) ---
+# --- mise bootstrap + pinned toolchain (once per volume, runs as dev) ---
+# Deliberately NOT fatal: if this fails, sshd must still start, or a network
+# blip on first boot leaves an unreachable box in a restart loop with no way
+# in to diagnose it. The marker is only written on success, so a later boot
+# (or `devaloy-update`) retries cleanly.
 MISE_MARKER="${DEV_HOME}/.local/share/mise/.devaloy-bootstrapped"
 if [ ! -f "${MISE_MARKER}" ]; then
   log "Bootstrapping mise + toolchain"
-  su - "${DEV_USER}" -c '
-    set -euo pipefail
-    curl -fsSL https://mise.run | sh
-    export PATH="$HOME/.local/bin:$PATH"
-    mise use -g node@'"${MISE_NODE_VERSION}"'
-    mise use -g pnpm@latest
-    mise use -g gh@latest
-    mise use -g npm:turbo@latest
-    mise use -g herdr@'"${MISE_HERDR_VERSION}"'
-    mise install
-  '
-  mkdir -p "$(dirname "${MISE_MARKER}")"
-  touch "${MISE_MARKER}"
+  if su - "${DEV_USER}" -c "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
+      MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
+      /usr/local/bin/bootstrap-toolchain.sh"; then
+    mkdir -p "$(dirname "${MISE_MARKER}")"
+    touch "${MISE_MARKER}"
+    log "Toolchain bootstrap complete"
+  else
+    log "WARNING: toolchain bootstrap failed — starting sshd anyway so the box stays reachable."
+    log "WARNING: once you are in, re-run it with: devaloy-update"
+  fi
 else
-  log "mise toolchain already bootstrapped, skipping"
+  log "mise toolchain already bootstrapped, skipping (run devaloy-update to refresh)"
 fi
 
-# --- shell profile: mise activation + login hint ---
+# --- shell env: toolchain PATH + OOM reset, for EVERY shell ---
+# Ubuntu's stock .bashrc bails out early on non-interactive shells, so anything
+# appended to the end is invisible to `ssh devbox 'pnpm build'`, rsync, scp and
+# git-over-ssh. This snippet is sourced from the TOP of .bashrc instead, above
+# that guard. mise shims resolve versions at exec time, so they need no
+# interactive `mise activate`.
+ENV_SNIPPET="${DEV_HOME}/.devaloy_env"
+cat > "${ENV_SNIPPET}" <<'EOF'
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+
+# The container starts at a negative oom_score_adj (see compose.yml) to keep
+# sshd off the OOM killer's list. Raise every session back to 0 so a runaway
+# build inherits 0 and is killed before the process that keeps you connected.
+# Raising is unprivileged; only lowering needs CAP_SYS_RESOURCE.
+echo 0 > /proc/self/oom_score_adj 2>/dev/null || true
+EOF
+chown "${DEV_USER}:${DEV_USER}" "${ENV_SNIPPET}"
+
+if ! grep -qF '.devaloy_env' "${DEV_HOME}/.bashrc" 2>/dev/null; then
+  touch "${DEV_HOME}/.bashrc"
+  {
+    # shellcheck disable=SC2016  # $HOME must stay literal — the dev user's
+    # shell expands it at login, not this script.
+    printf '%s\n' '[ -f "$HOME/.devaloy_env" ] && . "$HOME/.devaloy_env"'
+    cat "${DEV_HOME}/.bashrc"
+  } > "${DEV_HOME}/.bashrc.new"
+  mv "${DEV_HOME}/.bashrc.new" "${DEV_HOME}/.bashrc"
+  chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.bashrc"
+fi
+
+# --- login hint (interactive sessions only) ---
+# Deliberately NOT auto-attaching herdr: that breaks scp/sftp/rsync and
+# git-over-ssh. Appended after .bashrc's interactivity guard on purpose.
 PROFILE_SNIPPET="${DEV_HOME}/.devaloy_profile"
 if [ ! -f "${PROFILE_SNIPPET}" ]; then
   cat > "${PROFILE_SNIPPET}" <<'EOF'
-export PATH="$HOME/.local/bin:$PATH"
-eval "$(mise activate bash)"
-
-# Reset oom_score_adj for interactive sessions so a heavy build (not sshd
-# itself) is the kernel's preferred OOM-kill target. See entrypoint.sh.
-echo 0 > /proc/self/oom_score_adj 2>/dev/null || true
-
 if [ -n "${SSH_TTY:-}" ]; then
   echo "devaloy devbox — run: herdr"
 fi
@@ -90,13 +109,14 @@ EOF
   chown "${DEV_USER}:${DEV_USER}" "${PROFILE_SNIPPET}"
 fi
 if ! grep -qF '.devaloy_profile' "${DEV_HOME}/.bashrc" 2>/dev/null; then
+  # shellcheck disable=SC2016  # as above, $HOME stays literal.
   echo '[ -f "$HOME/.devaloy_profile" ] && . "$HOME/.devaloy_profile"' >> "${DEV_HOME}/.bashrc"
   chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.bashrc"
 fi
 
-# OOM safety: OpenSSH sets its own oom_score_adj to -1000 at startup when
-# running as root with CAP_SYS_RESOURCE (see compose.yml), protecting the
-# master process from the kernel OOM killer. The profile snippet above resets
-# interactive login shells back to 0, so a runaway build is what gets killed.
+# OOM safety: compose sets this container's oom_score_adj negative, which sshd
+# inherits, so the kernel avoids killing the process that keeps the box
+# reachable. The env snippet above raises each session back to 0 so a runaway
+# build is the preferred victim instead.
 log "Starting sshd on port 2222"
 exec /usr/sbin/sshd -D -e -f /etc/ssh/sshd_config
