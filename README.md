@@ -27,8 +27,14 @@ redeploys.
    `tag:devbox`): https://login.tailscale.com/admin/settings/keys
 2. Copy `.env.example` to `.env` and fill in:
    - `TS_AUTHKEY` — the key from step 1.
-   - `PUBLIC_KEY` — your SSH public key(s), one per line (e.g. laptop +
-     phone), for the devices you'll connect from.
+   - `PUBLIC_KEY` — the SSH public key(s) for the devices you'll connect from
+     (e.g. laptop + phone). For more than one key, quote the value and use
+     `\n` between keys, since a bare newline in a `.env` file won't survive
+     parsing:
+
+     ```sh
+     PUBLIC_KEY="ssh-ed25519 AAAA...laptop\nssh-ed25519 AAAA...phone"
+     ```
 3. Start the stack:
 
    ```sh
@@ -56,6 +62,20 @@ herdr
 
 Detach and reconnect from a different device — the session picks up where
 you left off.
+
+## Updating the toolchain
+
+The toolchain installs once per volume, so redeploys are predictable and never
+swap a tool out from under a live session. To pick up newer versions or a
+changed pin, run this on the devbox as `dev`:
+
+```sh
+devaloy-update
+```
+
+Pins live in `bootstrap-toolchain.sh`. Node is pinned to an LTS major; `gh`,
+`pnpm` and `turbo` track latest. To pin herdr too, set `MISE_HERDR_VERSION` in
+your `.env` and re-run `devaloy-update`.
 
 ## (Optional) hardening the host
 
