@@ -15,6 +15,9 @@ services:
     cap_add:
       - NET_ADMIN
       - SYS_MODULE
+    # Keep tailscaled off the OOM killer's list — losing it severs every route
+    # you'd use to recover the box.
+    oom_score_adj: -500
     restart: unless-stopped
 
   devbox:
@@ -24,14 +27,17 @@ services:
     depends_on:
       - tailscale
     init: true
-    # Lets the entrypoint set a negative oom_score_adj on sshd (see
-    # entrypoint.sh) so the kernel prefers killing a runaway build over the
-    # SSH session. Narrow resource-limit capability, not a host-escape one —
-    # unlike SYS_MODULE, it stays off the tailscale sidecar.
-    cap_add:
-      - SYS_RESOURCE
+    # sshd inherits this, so the kernel avoids killing the process that keeps
+    # the box reachable. Interactive login shells raise themselves back to 0
+    # (see entrypoint.sh), so a runaway build is the preferred victim. Docker
+    # applies this itself — no CAP_SYS_RESOURCE needed on a container running
+    # untrusted dev code.
+    oom_score_adj: -500
     environment:
       - PUBLIC_KEY=${PUBLIC_KEY}
+      # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
+      - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
+      - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
     volumes:
       - devbox-home:/home/dev
     restart: unless-stopped
