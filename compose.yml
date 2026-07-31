@@ -1,0 +1,41 @@
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: devaloy-tailscale
+    hostname: devbox
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_HOSTNAME=devbox
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    restart: unless-stopped
+
+  devbox:
+    build: .
+    container_name: devaloy-devbox
+    network_mode: service:tailscale
+    depends_on:
+      - tailscale
+    init: true
+    # Lets the entrypoint set a negative oom_score_adj on sshd (see
+    # entrypoint.sh) so the kernel prefers killing a runaway build over the
+    # SSH session. Narrow resource-limit capability, not a host-escape one —
+    # unlike SYS_MODULE, it stays off the tailscale sidecar.
+    cap_add:
+      - SYS_RESOURCE
+    environment:
+      - PUBLIC_KEY=${PUBLIC_KEY}
+    volumes:
+      - devbox-home:/home/dev
+    restart: unless-stopped
+
+volumes:
+  tailscale-state:
+  devbox-home:
