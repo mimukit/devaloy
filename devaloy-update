@@ -12,6 +12,12 @@ if [ "$(id -un)" = "root" ]; then
   exit 1
 fi
 
+# --force skips the revision gate, so this re-runs the skills install too. That
+# is deliberate and it is the publish loop: push a skill to mimukit/skills, run
+# this, and it is on the box. It has to be `skills add`, which the bootstrap
+# runs — `skills update` only refreshes what is already installed, so it would
+# never notice a skill you authored yesterday. `skmi` is the same command by
+# hand, for when you want the skills without re-resolving the whole toolchain.
 /usr/local/bin/bootstrap-toolchain.sh --force
 
 # Refresh the /usr/local/bin mirror so anything newly installed (including

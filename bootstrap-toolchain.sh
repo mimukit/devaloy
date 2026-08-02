@@ -18,7 +18,13 @@ set -euo pipefail
 # Bumping does re-resolve the @latest tools, so it can move herdr or an agent
 # CLI under a live session. That is the cost of a deliberate toolset change;
 # leave this alone for edits that do not add or remove a tool.
-TOOLSET_REVISION=3
+#
+# The agent skills installed at the end of this script are covered by the same
+# marker. Note what that does and does not gate: it stops an ordinary redeploy
+# re-resolving skills mid-session, but it is NOT how a newly authored skill
+# reaches the box. That is `devaloy-update` (or `skmi`), which runs --force and
+# skips the gate entirely — so publishing a skill needs no edit here.
+TOOLSET_REVISION=4
 
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
 
@@ -69,7 +75,40 @@ mise use -g "herdr@${MISE_HERDR_VERSION}"
 # revision marker already stops a redeploy swapping them mid-session.
 mise use -g claude@latest
 mise use -g codex@latest
+# The skills.sh CLI, which installs the agent skills below. It is a tool like
+# any other here, so it lands in the home volume and survives a redeploy.
+mise use -g npm:skills@latest
 mise install
+
+# --- agent skills -----------------------------------------------------------
+# Skills are NOT shipped in config/ like the rest of the agent setup. They live
+# in their own repo and are installed from it by the skills.sh CLI, which is
+# what keeps this box and a laptop on the same skills instead of forking a
+# vendored copy the day after it landed.
+#
+# Everything in the repo, deliberately — `--skill '*'`, no curated list. Skill
+# authoring is iterative, and a kit you are still shaping is exactly the one you
+# want to reach from a phone. Curating would mean editing this file on every
+# experiment, which is enough friction to stop it happening.
+#
+# `-a` is repeated per agent and the Claude target is `claude-code`, not
+# `claude`. `--all` would be shorthand for `-a '*'`, but that also writes to
+# ~/.cursor, ~/.gemini and other agents this box does not have.
+#
+# Allowed to be fatal, like every step above it. `set -e` aborts here, the
+# marker below is never written, and the next boot retries — which is what you
+# want from a network call to GitHub. Catching the failure instead would write
+# the marker and leave a box that has every tool, no skills, and no intention of
+# trying again. entrypoint.sh already treats a failed bootstrap as non-fatal for
+# the box itself, so a skills outage costs you a retry, never your tailnet.
+#
+# mise's shims are what put `skills` on PATH, and this script has only ever
+# exported ~/.local/bin. Without this line the command below is a silent
+# "command not found" on every cold boot.
+export PATH="${HOME}/.local/share/mise/shims:${PATH}"
+
+echo "installing agent skills from mimukit/skills"
+skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y
 
 # Written last, and only on success: a bootstrap that died halfway through must
 # leave the volume behind the revision so the next boot retries it.

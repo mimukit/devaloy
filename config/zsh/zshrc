@@ -153,6 +153,18 @@ alias zsrc='. "$HOME/.zshrc"'
 # The toolchain installs once per volume; this is the deliberate refresh.
 alias update='devaloy-update'
 
+# Agent skills, managed by the skills.sh CLI rather than copied out of this
+# repo. `skmi` installs every skill in the repo — the set is deliberately
+# uncurated, so a kit you are still shaping is reachable from the phone the
+# moment it is pushed. `skup` only refreshes what is already installed, so a
+# newly authored skill needs `skmi`, not `skup`.
+#
+# No `opencode` target here, unlike the laptop's copy of these aliases: it
+# isn't in this box's toolchain, and naming an agent that isn't installed
+# just creates a directory nothing reads.
+alias skmi="skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y"
+alias skup='skills update --global -y'
+
 # --- plugins -------------------------------------------------------------
 # Distro packages, installed by the Dockerfile. No plugin manager, no clone on
 # first boot — sourcing two files off disk costs a few milliseconds.
