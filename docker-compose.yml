@@ -1,12 +1,32 @@
 services:
   devaloy:
-    build: .
+    build:
+      context: .
+      args:
+        # Builds in the optional `orca serve` runtime for the Orca desktop and
+        # mobile apps. OFF by default: it takes the image from 683 MB to 1.6 GB,
+        # and most boxes want the SSH story alone.
+        #
+        # This is a BUILD arg, not an environment variable — it decides what
+        # goes into the image, so `docker compose up -d` alone will NOT pick up
+        # a change to it. You need `--build`. There is deliberately no runtime
+        # toggle; see the README.
+        WITH_ORCA: ${WITH_ORCA:-false}
     container_name: devaloy
     hostname: devaloy
     init: true
-    # Nothing is published. There is no `ports:` key on purpose — the only way
-    # in is Tailscale SSH on the tailnet address, inside this container's own
-    # network namespace.
+    # Nothing is published. There is no `ports:` key on purpose, so nothing here
+    # is reachable from the internet or from the Docker host's own network
+    # interfaces. Tailscale SSH on the tailnet address — inside this container's
+    # own network namespace — is the only *remote* way in.
+    #
+    # One nuance, if you build WITH_ORCA=true: `orca serve` binds 0.0.0.0 and
+    # offers no bind-address flag, so port 6768 is also reachable on this
+    # container's docker bridge IP from the Docker host itself. That is accepted
+    # rather than firewalled — anyone on the host already holds the Docker
+    # socket and can `docker exec` in as root, so the port grants them nothing
+    # they did not already have. It does mean you should not attach other
+    # containers to this container's network.
     cap_add:
       # tailscaled needs this to create and configure the tailscale0 interface.
       - NET_ADMIN
