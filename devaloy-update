@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Re-run the devaloy toolchain bootstrap.
 #
-# Boot-time bootstrap is gated behind a marker file so redeploys are
-# predictable and never re-resolve versions under a live session. This is the
-# deliberate way to pick up changed pins or newer tools.
+# Boot-time bootstrap is gated on the toolset revision recorded in the home
+# volume, so redeploys are predictable and never re-resolve versions under a
+# live session. --force is what makes this the deliberate way to pick up changed
+# pins or newer releases of the tools that track latest.
 set -euo pipefail
 
 if [ "$(id -un)" = "root" ]; then
@@ -11,16 +12,13 @@ if [ "$(id -un)" = "root" ]; then
   exit 1
 fi
 
-MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
-
-rm -f "${MARKER}"
-/usr/local/bin/bootstrap-toolchain.sh
-mkdir -p "$(dirname "${MARKER}")"
-touch "${MARKER}"
+/usr/local/bin/bootstrap-toolchain.sh --force
 
 # Refresh the /usr/local/bin mirror so anything newly installed (including
-# `npm i -g` tools like claude and codex) resolves for non-interactive sessions
-# too — scp, rsync, git-over-ssh and `ssh devbox '<cmd>'`.
+# `npm i -g` tools) resolves for non-interactive sessions too — scp, rsync,
+# git-over-ssh and `ssh devbox '<cmd>'`. This also picks up Claude Code and
+# Codex, which mise installs into the home volume like any other tool — so
+# upgrading them here persists across a redeploy.
 sudo DEV_HOME="${HOME}" /usr/local/bin/link-shims
 
 echo "devaloy: toolchain updated."

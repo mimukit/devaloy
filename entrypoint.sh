@@ -146,25 +146,24 @@ else
   log "WARNING:   docker compose exec devbox tailscale up --ssh"
 fi
 
-# --- mise bootstrap + pinned toolchain (once per volume, runs as dev) ---
+# --- mise bootstrap + pinned toolchain (runs as dev) ---
+# The skip-if-already-installed decision lives in bootstrap-toolchain.sh, not
+# here: it is gated on that script's TOOLSET_REVISION, and only the script knows
+# what revision it ships. Keeping the check next to the tool list is what stops
+# a newly added tool from being skipped forever on a volume that was
+# provisioned before it existed.
+#
 # Deliberately NOT fatal: a network blip on first boot must not take the box
-# down. The marker is only written on success, so a later boot (or
+# down. The revision marker is only written on success, so a later boot (or
 # `devaloy-update`) retries cleanly.
-MISE_MARKER="${DEV_HOME}/.local/share/mise/.devaloy-bootstrapped"
-if [ ! -f "${MISE_MARKER}" ]; then
-  log "Bootstrapping mise + toolchain"
-  if su - "${DEV_USER}" -c "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
-      MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
-      /usr/local/bin/bootstrap-toolchain.sh"; then
-    mkdir -p "$(dirname "${MISE_MARKER}")"
-    touch "${MISE_MARKER}"
-    log "Toolchain bootstrap complete"
-  else
-    log "WARNING: toolchain bootstrap failed — the box is still reachable."
-    log "WARNING: once you are in, re-run it with: devaloy-update"
-  fi
+log "Checking the mise toolchain"
+if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
+    MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
+    /usr/local/bin/bootstrap-toolchain.sh"; then
+  log "Toolchain ready"
 else
-  log "mise toolchain already bootstrapped, skipping (run devaloy-update to refresh)"
+  log "WARNING: toolchain bootstrap failed — the box is still reachable."
+  log "WARNING: once you are in, re-run it with: devaloy-update"
 fi
 
 # Make the toolchain resolvable from sessions that never source .bashrc.

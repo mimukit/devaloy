@@ -57,6 +57,12 @@ RUN chmod 755 /entrypoint.sh \
         /usr/local/bin/devaloy-update \
         /usr/local/bin/link-shims
 
+# Claude Code and Codex are not installed here. mise's registry covers both and
+# fetches the same upstream artifacts their own installers do, so they live in
+# bootstrap-toolchain.sh with the rest of the toolchain — one package manager,
+# and an upgrade that persists in the home volume instead of dying on the next
+# rebuild.
+
 # Managed dotfiles (zsh, Claude Code, Codex). entrypoint.sh copies these into
 # /home/dev on every boot — see the "config sync" section of the README for
 # what that overwrites and what it leaves alone.
