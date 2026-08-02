@@ -39,6 +39,7 @@ From the image, available the moment you can log in:
 | Editors / viewers | `vim`, `bat`, `htop`, `btop` |
 | Languages | `python3` (with `pip`, `venv`, and `python` aliased to it) |
 | Build | `build-essential`, `git`, `curl`, `jq` |
+| Agent sandbox | `bubblewrap` (`bwrap`), what Codex confines its shell with |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
@@ -79,6 +80,15 @@ sudo modprobe tun
 `SYS_MODULE` is deliberately not granted to the container — it would let a
 process inside load kernel modules, which is close to a container escape on a
 box that runs arbitrary dev code and AI agents.
+
+Seccomp, on the other hand, *is* turned off (`security_opt: seccomp=unconfined`
+in the compose file). Codex confines its shell with `bubblewrap`, which has to
+create an unprivileged user namespace, and Docker's default seccomp profile
+denies that — adding `CAP_SYS_ADMIN` isn't enough, it blocks `pivot_root` too.
+Leaving the filter on means the agent sandbox silently never engages, which is
+the worse of the two risks on a box whose whole job is running agents. With it
+off, the host kernel is the only thing between a container process and the
+host, so run this on a VPS you're willing to treat as disposable.
 
 ### 2. Tailnet policy file
 

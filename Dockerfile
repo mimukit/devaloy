@@ -20,6 +20,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iproute2 \
         iptables \
         openssh-client \
+        # Codex's Linux sandbox. It looks for `bwrap` on PATH and warns on every
+        # start when it can't find one, falling back to the copy bundled in its
+        # binary. The distro package is what upstream asks for.
+        bubblewrap \
     && rm -rf /var/lib/apt/lists/* \
     # Ubuntu ships bat as `batcat` to avoid a name clash with bacula-console.
     # Link it in /usr/bin, not /usr/local/bin — link-shims owns the latter and

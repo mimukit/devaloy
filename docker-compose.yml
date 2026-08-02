@@ -16,6 +16,16 @@ services:
       # instead: `sudo modprobe tun` (see README).
     devices:
       - /dev/net/tun:/dev/net/tun
+    security_opt:
+      # Codex confines its shell with bubblewrap, which needs to create an
+      # unprivileged user namespace. Docker's default seccomp profile denies
+      # that (and pivot_root), so without this the agent sandbox silently
+      # cannot engage — CAP_SYS_ADMIN alone does not fix it, the filter has to
+      # come off. The trade: every syscall is now reachable from this
+      # container, so the host kernel is the only thing left between an agent
+      # and an escape. Accepted because the alternative is an unsandboxed
+      # agent on a box that already has passwordless sudo.
+      - seccomp=unconfined
     # Keeps tailscaled off the OOM killer's list — losing it severs the only
     # route you'd use to recover the box. Interactive shells raise themselves
     # back to 0 (see entrypoint.sh), so a runaway build is the preferred victim.
