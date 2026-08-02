@@ -1,0 +1,10 @@
+# The build context is only entrypoint.sh, the three /usr/local/bin scripts and
+# config/. Everything else is dead weight sent to the daemon on every build —
+# and worse, a change to any of it busts the context hash.
+*
+!entrypoint.sh
+!bootstrap-toolchain.sh
+!devaloy-update
+!link-shims
+!config
+!config/**
