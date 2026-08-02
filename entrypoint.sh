@@ -40,6 +40,9 @@ done
 unset _devaloy_dir
 export PATH
 
+# Tokens live in a separate 0600 file so this one stays safe to cat.
+[ -f "$HOME/.devaloy_secrets" ] && . "$HOME/.devaloy_secrets"
+
 # The container starts at a negative oom_score_adj (see compose.yml) to keep
 # tailscaled off the OOM killer's list. Raise every session back to 0 so a
 # runaway build inherits 0 and is killed before the process that keeps you
@@ -72,6 +75,22 @@ fi
 rm -f "${DEV_HOME}/.devaloy_profile"
 if [ -f "${DEV_HOME}/.bashrc" ] && grep -qF '.devaloy_profile' "${DEV_HOME}/.bashrc"; then
   sed -i '/\.devaloy_profile/d' "${DEV_HOME}/.bashrc"
+fi
+
+# --- GITHUB_TOKEN ---
+# Written to a file rather than relied on from the container environment:
+# tailscaled spawns login shells itself, and what it forwards from PID 1's
+# environment is its business, not a contract. Rewritten from scratch on every
+# boot, so clearing the variable in .env and redeploying really does revoke it.
+SECRETS_SNIPPET="${DEV_HOME}/.devaloy_secrets"
+rm -f "${SECRETS_SNIPPET}"
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  install -m 600 -o "${DEV_USER}" -g "${DEV_USER}" /dev/null "${SECRETS_SNIPPET}"
+  # Single-quote the value and escape any embedded quote, so a token with shell
+  # metacharacters cannot execute anything when this file is sourced.
+  printf "export GITHUB_TOKEN='%s'\n" \
+    "$(printf '%s' "${GITHUB_TOKEN}" | sed "s/'/'\\\\''/g")" >> "${SECRETS_SNIPPET}"
+  log "GITHUB_TOKEN wired into the dev shell environment"
 fi
 
 # --- managed dotfiles (zsh, Claude Code, Codex) ---
@@ -169,6 +188,21 @@ fi
 # Make the toolchain resolvable from sessions that never source .bashrc.
 DEV_HOME="${DEV_HOME}" /usr/local/bin/link-shims || \
   log "WARNING: link-shims failed — non-interactive commands may not find the toolchain."
+
+# --- git over HTTPS via GITHUB_TOKEN ---
+# gh picks the token up from the environment on its own; this only teaches git
+# to ask gh for credentials, so `git push` works without a second login. Run
+# after link-shims because that is what puts gh on root's PATH. The token is
+# read from the 0600 file rather than passed on the command line, where it
+# would be readable in /proc for the life of the call.
+if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
+  # shellcheck disable=SC2016  # $HOME is expanded by the dev user's shell.
+  if as_dev '. "$HOME/.devaloy_secrets" && gh auth setup-git' 2>/dev/null; then
+    log "git configured to authenticate to GitHub through gh"
+  else
+    log "WARNING: gh auth setup-git failed — 'git push' over HTTPS may prompt."
+  fi
+fi
 
 log "devaloy is up. Connect with: ssh dev@${TS_HOSTNAME:-devbox}"
 wait "${TAILSCALED_PID}"
