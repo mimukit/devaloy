@@ -42,8 +42,10 @@ From the image, available the moment you can log in:
 | Agent sandbox | `bubblewrap` (`bwrap`), what Codex confines its shell with |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
-`gh`, `turbo`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
-(`claude`) and [Codex](https://github.com/openai/codex) (`codex`).
+`gh`, `turbo`, `lazygit`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
+(`claude`) and [Codex](https://github.com/openai/codex) (`codex`) — and
+[`skills`](https://www.skills.sh), which then installs the agent skills both
+CLIs share. See [Agent skills](#agent-skills).
 
 The agent CLIs come from `mise` rather than their own installers because
 `mise`'s registry fetches the same upstream artifacts — Claude Code's binary
@@ -189,6 +191,9 @@ Pins live in `bootstrap-toolchain.sh`. Node is pinned to an LTS major; `gh`,
 `pnpm` and `turbo` track latest. To pin herdr too, set `MISE_HERDR_VERSION` in
 your `.env` and re-run `devaloy-update`.
 
+It also reinstalls the agent skills, so it doubles as the publish loop — see
+[Agent skills](#agent-skills). Use `skmi` when you want only that.
+
 `devaloy-update` also refreshes `/usr/local/bin`, which is what makes the
 toolchain visible to non-interactive sessions (`ssh devbox '<cmd>'`, `scp`,
 `rsync`, git-over-ssh). Run it after any `npm i -g`.
@@ -201,9 +206,25 @@ you set up by hand on a box you might rebuild tomorrow:
 ```
 config/
   zsh/zshrc            -> ~/.zshrc
-  claude/              -> ~/.claude/     (settings.json, CLAUDE.md, hooks/, skills/)
-  codex/               -> ~/.codex/      (config.toml, AGENTS.md)
+  claude/              -> ~/.claude/     (settings.json, CLAUDE.md, hooks/)
+  codex/               -> ~/.codex/      (config.toml, AGENTS.md, hooks.json, rules/)
+  bin/                 -> ~/.local/bin/  (agent-hook, rm-guard — shared by both)
 ```
+
+Both agents run the same `agent-hook` dispatcher on every Bash call, which
+routes deletes through `rm-guard`: temp files and git-tracked files pass, `rm
+-rf` of a directory prompts, and `/home/dev` is refused outright. The toast and
+worktree-cleanup features it carries on a Mac no-op here, by design.
+
+Two things are deliberately **not** shipped from `config/`, because something
+else already owns them and a copy here would fork on the next upgrade:
+
+- **Skills** — installed from `mimukit/skills` by the skills.sh CLI. See
+  [Agent skills](#agent-skills).
+- **herdr agent-state hooks** — installed by `herdr integration install`, which
+  `bootstrap-toolchain.sh` runs for both agents so a herdr pane shows
+  working/idle. The `SessionStart` entries that call them are ours; the scripts
+  are herdr's. `herdr integration status` shows what is installed.
 
 **The repo wins.** Every file shipped under `config/` is copied over its
 counterpart on each boot, so editing one here and redeploying actually changes
@@ -218,6 +239,51 @@ Your escape hatch for zsh is `~/.zshrc.local`, sourced last and never touched.
 Claude Code and Codex have no equivalent include mechanism, so a setting you
 want to keep has to go in `config/` — that is the trade for having the repo be
 the source of truth.
+
+## Agent skills
+
+Skills are the one part of the agent setup this repo does **not** ship. They
+live in their own repo — [`mimukit/skills`](https://github.com/mimukit/skills) —
+and are installed from it by the [skills.sh](https://www.skills.sh) CLI, which
+`bootstrap-toolchain.sh` runs on first boot:
+
+```sh
+skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y
+```
+
+**Every skill in the repo, no curated list.** A kit you are still shaping is
+exactly the one you want to reach from a phone, and curating would mean editing
+this repo on every experiment. They install to `~/.agents/skills` with symlinks
+into `~/.claude/skills` and `~/.codex/skills` — all inside the home volume, so
+they survive a redeploy.
+
+Publishing loop, once a skill is pushed to `mimukit/skills`:
+
+```sh
+skmi              # install/refresh every skill — what you want after publishing
+skup              # update only what is already installed
+devaloy-update    # the toolchain too; runs the same skmi command
+```
+
+`skmi`, not `skup`, is what picks up a **newly authored** skill: `skills update`
+only refreshes skills already in the lockfile, so it will never notice one that
+was not installed before. Nothing in this repo needs editing either way — the
+`TOOLSET_REVISION` gate only governs the unattended boot path, and both commands
+skip it.
+
+Pulling from another repo works the same way and survives redeploys, but not a
+volume reset unless you add it to `bootstrap-toolchain.sh`:
+
+```sh
+skills add <owner>/<repo> --global -a claude-code -a codex -y
+skills use <owner>/<repo>@<skill>    # try one without installing it
+skills remove <skill>                # until the next skmi reinstalls it
+```
+
+Three installed skills **cannot work on this box** and are documented as such in
+`CLAUDE.md`/`AGENTS.md` rather than filtered out: `verifykit` needs a real
+browser, and `orcakit`/`orca-cli` need the Orca desktop app. An exclusion list
+would defeat the point of `--skill '*'`.
 
 ## Recovering a box you can't reach
 
