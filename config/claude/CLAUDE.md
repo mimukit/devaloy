@@ -56,9 +56,20 @@ Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from
 this box's config. `skmi` installs or refreshes them all; `skup` only updates
 what is already installed, so a newly published skill needs `skmi`.
 
-Three are installed but **cannot work here**, and invoking them wastes a turn:
-`verifykit` (drives a real browser — there is none), `orcakit` and `orca-cli`
-(both need the Orca desktop app on a Mac).
+Some are installed but **cannot work here**, and invoking them wastes a turn:
+`verifykit` (drives a real browser — there is none) and `orcakit` (needs the
+Orca desktop app on a Mac).
+
+`orca-cli` depends on how this box was built. It drives an Orca runtime, and
+this box may or may not have one — check before assuming either way:
+
+```sh
+command -v orca-ide && pgrep -f "orca-ide.*serve" >/dev/null && echo "runtime up"
+```
+
+If that prints nothing, the box was built without `WITH_ORCA=true` and
+`orca-cli` is inert here — say so rather than trying to start a runtime, which
+needs an image rebuild you cannot do from inside the container.
 
 ## The toolchain
 

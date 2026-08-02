@@ -210,5 +210,68 @@ if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
   fi
 fi
 
+# --- Orca headless runtime (only present when built with WITH_ORCA=true) ---
+# Lets the Orca desktop and mobile apps talk to this box, which Tailscale SSH
+# alone cannot do — they speak to a runtime, not a terminal.
+#
+# Silence is correct when the binary is absent: WITH_ORCA=false is the DEFAULT
+# build, so a missing /usr/bin/orca-ide is the normal case and not a fault. Do
+# not "improve" this into a warning — every stock box would nag about a package
+# it was never asked to install.
+#
+# Runs after link-shims on purpose: Orca shells out to `codex` and `claude`, and
+# `su -l -s /bin/sh` does NOT get the mise shims on PATH — only /usr/local/bin,
+# which is exactly what link-shims mirrors them into. Start this any earlier and
+# agents launched from an Orca client die with `spawn codex ENOENT`.
+ORCA_BIN="/usr/bin/orca-ide"
+ORCA_PORT=6768
+
+if [ -x "${ORCA_BIN}" ]; then
+  ORCA_IP="$(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1 || true)"
+  if [ -n "${ORCA_IP}" ]; then
+    (
+      # Explicit, NOT inherited — and the value is deliberate. The container
+      # starts at -500 to keep tailscaled off the OOM killer's list, and
+      # oom_score_adj is inherited by children, so leaving this alone would make
+      # Orca exactly as protected as the daemon that is your only way back in.
+      # Interactive shells raise themselves to 0 (see .devaloy_env above), so
+      # the ordering we want is: runaway build (0) dies first, then Orca (-250),
+      # and tailscaled (-500) last. Raising above an inherited value is
+      # unprivileged, so this needs no CAP_SYS_RESOURCE.
+      echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
+
+      # Unbounded restart loop: there is no runtime kill switch by design, and
+      # the sleep is what stops a crash-loop spinning hot. To actually stop it,
+      # `docker compose stop` or rebuild with WITH_ORCA=false — see the README.
+      #
+      # xvfb-run because Electron wants an X display even headless; the sandbox
+      # is KEPT (never --no-sandbox) and works because compose already sets
+      # seccomp=unconfined for Codex's bubblewrap, which is the same user
+      # namespace permission Chromium's sandbox needs.
+      while true; do
+        as_dev "LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a '${ORCA_BIN}' serve \
+          --port '${ORCA_PORT}' --pairing-address '${ORCA_IP}'" || true
+        log "WARNING: orca serve exited — restarting in 10s"
+        sleep 10
+      done
+    ) &
+    # Both the desktop and the phone pair off this one server's own output —
+    # there is no second command to run. A second `orca serve` in this container
+    # hits Electron's single-instance lock and exits, and there is no `orca
+    # pair` subcommand. --mobile-pairing is a flag on THIS launch that swaps the
+    # code for a mobile-scoped one; adding it here costs the desktop's default
+    # link, which is why it is not here.
+    log "Orca server on ${ORCA_IP}:${ORCA_PORT} — pair both the desktop and the"
+    log "phone from this server's own log: the 'Pairing URL' line for the"
+    log "desktop, and the orca:// link or 'Web client URL' line for the phone."
+  else
+    # Same call as tailscale up's own failure path: an advertised address that
+    # nothing can route to is worse than no server at all, because the client
+    # fails at pairing time rather than here where the log explains why.
+    log "WARNING: no tailnet IPv4 — not starting orca serve."
+    log "WARNING: fix the tailscale failure above, then restart the container."
+  fi
+fi
+
 log "devaloy is up. Connect with: ssh dev@${TS_HOSTNAME:-devaloy}"
 wait "${TAILSCALED_PID}"

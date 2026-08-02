@@ -40,6 +40,7 @@ From the image, available the moment you can log in:
 | Languages | `python3` (with `pip`, `venv`, and `python` aliased to it) |
 | Build | `build-essential`, `git`, `curl`, `jq` |
 | Agent sandbox | `bubblewrap` (`bwrap`), what Codex confines its shell with |
+| Optional | the Orca runtime (`orca-ide`), only when built with `WITH_ORCA=true` — see [(Optional) the Orca apps](#optional-the-orca-apps) |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `lazygit`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
@@ -177,6 +178,83 @@ herdr
 Detach and reconnect from a different device — the session picks up where you
 left off.
 
+## (Optional) the Orca apps
+
+Tailscale SSH gets you a terminal, which is everything a laptop or a phone with
+an SSH client needs. The [Orca](https://www.onorca.dev/) desktop and mobile apps
+are different — they talk to a *runtime*, not a terminal — so reaching them
+means running one on the box. That is what `WITH_ORCA` builds in:
+
+```sh
+# in .env
+WITH_ORCA=true
+```
+
+```sh
+docker compose up -d --build
+```
+
+**`--build` is not optional.** `WITH_ORCA` is a build argument, so a plain
+`docker compose up -d` will happily start the old image and leave you wondering
+why nothing changed. This is the single easiest thing to get wrong here.
+
+It is off by default because of what it costs: measured on `arm64`, the image
+goes from **683 MB to 1.6 GB**. A box you only ever SSH into should not pay
+900 MB for a runtime it never speaks to.
+
+### Pairing
+
+The server starts after the tailnet comes up and prints its pairing URL to the
+container log — a non-obvious place to look, so that is the first place to look:
+
+```sh
+docker compose logs devaloy | grep -i pairing
+```
+
+Open that URL in the Orca desktop app.
+
+For the phone, use the same log output — the server prints both an
+`orca://pair?code=…` link and a `Web client URL:` line, and the Tailscale app
+on the phone is what makes the address reachable.
+
+Note that `--mobile-pairing` is a flag on **the** server, not a second command
+you can run alongside it: Electron holds a single-instance lock per profile, so
+a second `orca serve` in this container exits with `[single-instance] Another
+Orca instance is already running`. There is no separate `orca pair` subcommand.
+If the phone turns out to need a mobile-scoped code specifically, getting one
+means changing the supervised launch in `entrypoint.sh` and rebuilding.
+
+Paired devices are recorded under `~/.config` in the home volume, so they
+survive `docker compose down && up` without re-pairing.
+
+Nothing is published to reach any of this: `orca serve` binds port 6768 inside
+the container's own network namespace, which the tailnet address already
+reaches — the same reason Tailscale SSH works with no `ports:` key.
+
+### What to know before you turn it on
+
+- **Upgrading is a rebuild, not `devaloy-update`.** Orca is pinned by
+  `ARG ORCA_VERSION` in the `Dockerfile` and installed as a system package.
+  Bump it and rebuild. This is a genuine break from how every other tool on the
+  box upgrades, and it will surprise you in three months.
+- **There is no runtime kill switch.** Stopping a misbehaving Orca means
+  `docker compose stop`, or `WITH_ORCA=false` and a rebuild. The entrypoint
+  supervises it in an unbounded restart loop with a backoff, so killing the
+  process just restarts it. This is deliberate — one toggle, one concept — but
+  it does mean recovery costs a rebuild.
+- **The updater chatters.** Orca's docs say a headless server never
+  self-updates, but it logs `[autoUpdater] Checking for update` anyway. It
+  cannot apply anything — `/opt` is root-owned and the server runs as `dev` —
+  but the behaviour when an update *exists* is unobserved, and a check that
+  downloads would land ~160 MB in the home volume.
+- **Port 6768 is also reachable from the Docker host**, because `orca serve`
+  binds `0.0.0.0` and has no bind-address flag. Not internet-exposed, and no
+  worse than the Docker socket that host already has — but don't attach other
+  containers to devaloy's network. See the comment in `docker-compose.yml`.
+- **One box at a time.** Orca warns against two servers serving the same setup.
+  `WITH_ORCA=false` being the default is most of the guard here; nothing stops a
+  second devaloy from advertising itself if you deliberately turn it on twice.
+
 ## Updating the toolchain
 
 The toolchain installs once per volume, so redeploys are predictable and never
@@ -280,10 +358,12 @@ skills use <owner>/<repo>@<skill>    # try one without installing it
 skills remove <skill>                # until the next skmi reinstalls it
 ```
 
-Three installed skills **cannot work on this box** and are documented as such in
+Some installed skills **cannot work on this box** and are documented as such in
 `CLAUDE.md`/`AGENTS.md` rather than filtered out: `verifykit` needs a real
-browser, and `orcakit`/`orca-cli` need the Orca desktop app. An exclusion list
-would defeat the point of `--skill '*'`.
+browser, and `orcakit` needs the Orca desktop app. `orca-cli` depends on the
+build — it drives an Orca runtime, so it is inert on a stock box and works when
+you build `WITH_ORCA=true`. An exclusion list would defeat the point of
+`--skill '*'`.
 
 ## Recovering a box you can't reach
 
