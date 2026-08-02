@@ -6,6 +6,16 @@
 # one file — a setting you want to keep has to live here.
 #
 # Credentials (~/.codex/auth.json) and session history are never touched.
+#
+# TOML rule worth knowing before you edit: every bare key below a `[table]`
+# header belongs to that table. Top-level settings go in this block, above the
+# first header — putting `model` further down would silently define
+# `sandbox_workspace_write.model` and change nothing.
+
+# The model and how hard it thinks, matched to the laptop so a session started
+# from a phone behaves like one started at the desk.
+model = "gpt-5.6-sol"
+model_reasoning_effort = "medium"
 
 # Ask before anything outside the workspace or the network. This box has
 # passwordless sudo and a GITHUB_TOKEN in its environment, so a wider default
@@ -22,7 +32,20 @@ sandbox_mode = "workspace-write"
 # needs to fetch something.
 network_access = false
 
+# NOT closed, and recorded rather than hidden: sandbox_mode restricts *writes*,
+# not reads, and Codex has no counterpart to Claude's `permissions.deny`. So
+# Codex on this box can read ~/.devaloy_secrets and the GITHUB_TOKEN in it. The
+# token is scoped at GitHub, the box is reachable only from the tailnet, and the
+# same token already sits in the environment of every shell Codex can spawn — so
+# denying the file would be theatre. Revoke at GitHub if it ever matters.
+
 [features]
 # Load-bearing for hooks.json. Without it, that file is inert and the rm-guard
 # delete check never runs — silently, with no error to notice.
 hooks = true
+
+[tui]
+# The only status readout available in a terminal-only session; there is no
+# desktop UI here to show run state, context or rate limits.
+status_line = ["model-with-reasoning", "project-name", "git-branch", "run-state", "context-used", "five-hour-limit", "weekly-limit", "used-tokens", "task-progress"]
+status_line_use_colors = true

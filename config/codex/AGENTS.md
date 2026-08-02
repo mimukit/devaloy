@@ -20,6 +20,35 @@ on this box is work that can be lost.
 Never commit on your own. Leave changes uncommitted for the owner to review,
 unless the prompt explicitly asks you to commit.
 
+The exception is `afkkit`, whose whole purpose is to run an issue to a pull
+request unattended — committing and pushing is the job, not a violation of it.
+
+## Deleting
+
+A shared guard (`~/.local/bin/rm-guard`) checks every delete you run, so do not
+pre-emptively refuse a safe one — just run the `rm`. Temp files and git-tracked
+files pass; untracked files, `rm -rf` of a directory, globs and `git clean`
+prompt the owner; `/`, `/home`, `/home/dev` and system roots are blocked. If a
+delete is denied, surface it rather than retrying it another way.
+
+Note what recoverable means here: no backup job, no snapshot, and git-tracked
+only helps if the work has been **pushed**.
+
+## Background processes
+
+Stop anything you started before ending a turn — dev servers, test watchers, a
+stray `pnpm dev`. Nothing cleans up after you here, and a background job
+outlives your SSH session while still holding its port.
+
+## Skills
+
+Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from
+this box's config. `skmi` installs or refreshes them all; `skup` only updates
+what is already installed, so a newly published skill needs `skmi`.
+
+Three are installed but **cannot work here**: `verifykit` (needs a real
+browser), `orcakit` and `orca-cli` (need the Orca desktop app on a Mac).
+
 ## The toolchain
 
 Node, pnpm, gh, turbo and herdr come from `mise` and resolve through shims in
