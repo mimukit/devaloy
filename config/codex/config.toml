@@ -21,3 +21,8 @@ sandbox_mode = "workspace-write"
 # and this container sits on it. Turn it on per-session when a task genuinely
 # needs to fetch something.
 network_access = false
+
+[features]
+# Load-bearing for hooks.json. Without it, that file is inert and the rm-guard
+# delete check never runs — silently, with no error to notice.
+hooks = true

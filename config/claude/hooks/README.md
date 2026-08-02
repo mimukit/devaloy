@@ -27,3 +27,24 @@ any of those will fail silently on every tool call.
 
 Mark scripts executable **in git** (`git update-index --chmod=+x`), because the
 copy into `~/.claude/` preserves the mode it finds in the repo.
+
+## What actually runs on the box
+
+No hook script ships from this directory today, but two hooks are wired in
+`../settings.json` — both point at scripts installed elsewhere:
+
+**`PreToolUse` → `~/.local/bin/agent-hook`.** The shared delete guard, in
+[`../../bin/`](../../bin) rather than here because Codex runs the same
+dispatcher from `../../codex/hooks.json`.
+
+**`SessionStart` → `~/.claude/hooks/herdr-agent-state.sh`.** Reports session
+state so a herdr pane shows working/idle. **Installed by herdr itself**, not by
+this repo — `bootstrap-toolchain.sh` runs `herdr integration install claude`
+(and `codex`). Vendoring it here was the obvious move and the wrong one: herdr
+versions these scripts per agent, so a copy in git freezes one version and needs
+re-copying after every herdr upgrade. Letting herdr own the file means a herdr
+upgrade fixes the integration on the next `devaloy-update`.
+
+Check it with `herdr integration status`, which prints the installed version and
+path per agent. The wiring stays ours because this repo overwrites
+`settings.json` on every boot and would otherwise drop whatever herdr added.

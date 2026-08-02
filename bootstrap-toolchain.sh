@@ -110,6 +110,31 @@ export PATH="${HOME}/.local/share/mise/shims:${PATH}"
 echo "installing agent skills from mimukit/skills"
 skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y
 
+# --- herdr agent-state integrations -----------------------------------------
+# What makes a herdr pane show working/idle instead of nothing. herdr installs
+# and versions these scripts itself (`herdr integration status` reports the
+# version per agent), so they are NOT vendored into config/ — a copy in this
+# repo would freeze one version and need re-copying after every herdr upgrade.
+# Running it here means a herdr upgrade re-installs the matching integration on
+# the next devaloy-update, with nothing to maintain.
+#
+# The scripts land in ~/.claude/hooks/ and ~/.codex/ inside the home volume; the
+# SessionStart entries that *call* them are ours, in config/claude/settings.json
+# and config/codex/hooks.json, because this repo overwrites both files on every
+# boot and would otherwise drop whatever herdr wired up.
+#
+# Non-fatal, unlike the skills install: a missing pane indicator is cosmetic,
+# and it is not worth costing the volume its revision marker.
+for _target in claude codex; do
+  if herdr integration install "${_target}" >/dev/null 2>&1; then
+    echo "herdr integration installed for ${_target}"
+  else
+    echo "WARNING: herdr integration install ${_target} failed — panes will not" >&2
+    echo "WARNING: show agent state. Re-run it by hand; nothing else is affected." >&2
+  fi
+done
+unset _target
+
 # Written last, and only on success: a bootstrap that died halfway through must
 # leave the volume behind the revision so the next boot retries it.
 mkdir -p "$(dirname "${MARKER}")"
