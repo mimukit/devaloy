@@ -13,6 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         bat \
         jq \
         zsh \
+        # Sourced from /usr/share by config/zsh/zshrc. Distro packages rather
+        # than a plugin manager: the point is that a cold boot clones nothing.
+        zsh-autosuggestions \
+        zsh-syntax-highlighting \
         python3 \
         python3-pip \
         python3-venv \
@@ -29,6 +33,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Link it in /usr/bin, not /usr/local/bin — link-shims owns the latter and
     # will overwrite a symlink it finds there.
     && ln -s /usr/bin/batcat /usr/bin/bat
+
+# zsh-completions has no package in noble — only autosuggestions and
+# syntax-highlighting do — so it comes from a pinned release tarball. Baked in
+# here rather than cloned at first boot, which is the same bargain the other
+# two get. It is a directory of completion functions, not something to source:
+# zshrc puts src/ on fpath ahead of compinit.
+ARG ZSH_COMPLETIONS_VERSION=0.36.0
+RUN curl -fsSL "https://github.com/zsh-users/zsh-completions/archive/refs/tags/${ZSH_COMPLETIONS_VERSION}.tar.gz" \
+        -o /tmp/zsh-completions.tar.gz \
+    && mkdir -p /usr/share/zsh-completions \
+    && tar -xzf /tmp/zsh-completions.tar.gz -C /usr/share/zsh-completions \
+        --strip-components=1 \
+    && rm /tmp/zsh-completions.tar.gz
 
 # tailscaled lives *inside* this image on purpose. Tailscale SSH terminates the
 # connection in whichever container runs tailscaled and spawns the shell there —
