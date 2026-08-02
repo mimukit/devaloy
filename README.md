@@ -26,6 +26,44 @@ survive container restarts and redeploys.
   session across devices — start it once, reattach from anywhere.
 - `mise` installs and pins the rest of the toolchain (node, pnpm, gh, turbo,
   herdr) into the persistent home volume.
+- `zsh` is the login shell, configured from [`config/zsh/zshrc`](config/zsh/zshrc)
+  in this repo rather than from something you set up by hand on the box.
+
+## What's on the box
+
+From the image, available the moment you can log in:
+
+| | |
+|---|---|
+| Shell | `zsh` (login shell), `bash`, `tmux` |
+| Editors / viewers | `vim`, `bat`, `htop`, `btop` |
+| Languages | `python3` (with `pip`, `venv`, and `python` aliased to it) |
+| Build | `build-essential`, `git`, `curl`, `jq` |
+
+From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
+`gh`, `turbo`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
+(`claude`) and [Codex](https://github.com/openai/codex) (`codex`).
+
+The agent CLIs come from `mise` rather than their own installers because
+`mise`'s registry fetches the same upstream artifacts — Claude Code's binary
+checksummed against its release manifest, Codex's musl build from its GitHub
+release — with nothing for this repo to hand-roll. They land in the home volume
+like every other tool, so a `devaloy-update` upgrade survives a redeploy. Pin
+either by pinning it in `bootstrap-toolchain.sh`.
+
+The trade is that a **cold volume takes a few minutes longer to boot**, since
+both are large downloads. The tailnet comes up before the toolchain install, so
+you can log in and watch it happen rather than waiting for it.
+
+Anything you `apt install` on the box yourself is gone at the next
+`docker compose up --build`. If a tool is worth having, put it in the
+`Dockerfile` — or in `bootstrap-toolchain.sh` if `mise` has it.
+
+**Adding a tool to `bootstrap-toolchain.sh` means bumping `TOOLSET_REVISION` in
+the same file.** The boot bootstrap skips itself when the home volume already
+records the current revision, so without the bump a box that is already
+provisioned will never install the new tool — it will keep skipping, and only
+`devaloy-update` will pull it in by hand.
 
 ## One-time setup
 
@@ -77,13 +115,27 @@ Then copy `.env.example` to `.env` and set `TS_AUTHKEY`:
 cp .env.example .env
 ```
 
-### 4. Start the stack
+### 4. (Optional) GitHub token
+
+Set `GITHUB_TOKEN` in `.env` to a personal access token and both `gh` and
+`git push` over HTTPS are authenticated from first boot — no browser, no device
+code, nothing to do on a phone. Classic tokens want `repo`, `read:org` and
+`workflow`; fine-grained tokens want contents and pull-request access.
+
+The entrypoint writes the token to `~/.devaloy_secrets` (mode 600) inside the
+home volume, so **the volume now holds a live credential** — that is the cost of
+skipping the interactive login. Clearing the variable and redeploying deletes
+the file. Leave it empty to use `gh auth login` by hand instead; note that `gh`
+refuses that flow while `GITHUB_TOKEN` is set, which is expected rather than a
+fault.
+
+### 5. Start the stack
 
 ```sh
 docker compose up -d --build
 ```
 
-### 5. Disable key expiry
+### 6. Disable key expiry
 
 Once the node appears in the
 [admin console](https://login.tailscale.com/admin/machines), **disable key
@@ -130,6 +182,32 @@ your `.env` and re-run `devaloy-update`.
 `devaloy-update` also refreshes `/usr/local/bin`, which is what makes the
 toolchain visible to non-interactive sessions (`ssh devbox '<cmd>'`, `scp`,
 `rsync`, git-over-ssh). Run it after any `npm i -g`.
+
+## Config as code
+
+Shell and agent config live in [`config/`](config) in this repo, not in dotfiles
+you set up by hand on a box you might rebuild tomorrow:
+
+```
+config/
+  zsh/zshrc            -> ~/.zshrc
+  claude/              -> ~/.claude/     (settings.json, CLAUDE.md, hooks/, skills/)
+  codex/               -> ~/.codex/      (config.toml, AGENTS.md)
+```
+
+**The repo wins.** Every file shipped under `config/` is copied over its
+counterpart on each boot, so editing one here and redeploying actually changes
+the box — and editing one *on* the box does not survive.
+
+The copy is a merge, not a replace, so anything the repo does not ship is left
+alone: credentials (`~/.claude/.credentials.json`, `~/.codex/auth.json`),
+session history, and any hook or skill you added on the box by hand under a name
+this repo doesn't use.
+
+Your escape hatch for zsh is `~/.zshrc.local`, sourced last and never touched.
+Claude Code and Codex have no equivalent include mechanism, so a setting you
+want to keep has to go in `config/` — that is the trade for having the repo be
+the source of truth.
 
 ## Recovering a box you can't reach
 
