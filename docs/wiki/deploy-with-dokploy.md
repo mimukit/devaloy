@@ -53,8 +53,20 @@ Have the auth key on your clipboard for step 3.
 ## 2. Create the Compose service
 
 In Dokploy: **Projects** → open (or create) a project and environment →
-**Create Service** → **Compose**. Then, on the service's **General** tab, fill
-in the **Provider** panel:
+**Create Service** → **Compose**. That opens the **Create Compose** dialog:
+
+![Dokploy's Create Compose dialog with devaloy filled in](assets/create-compose-modal.png)
+
+| Field | Value | Why |
+|---|---|---|
+| Name | `devaloy` | The display name in the project list. |
+| Select a Server | *Dokploy* (Default) | The host the container lands on. Leave it on the default to use the panel's own server, or pick a remote one you added under **Remote Servers** — §1's `tun` prerequisite applies to *whichever* you choose. |
+| App Name | `infra-devaloy` | Prefilled as `<project>-<name>`. Dokploy appends a random suffix on create, so the real value ends up like `infra-devaloy-o5upac`. This is the `-p` project name for `docker compose`, and therefore the volume prefix — see §7. |
+| Compose Type | **Docker Compose** | Keep it here rather than **Stack**. Swarm ignores `devices:` and `cap_add:`, so `tailscaled` would come up with no `tun` and no `NET_ADMIN`, and `build:` is unsupported there too. |
+| Description | *(optional)* | |
+
+Hit **Create**. Then, on the new service's **General** tab, fill in the
+**Provider** panel:
 
 ![Dokploy Provider settings for the devaloy compose service](assets/dokploy-devaloy-config.png)
 
@@ -74,10 +86,35 @@ Note the server chip in the top-right (`brainaloy-ovh` in the screenshot) — th
 is the host the container actually lands on, and the one §1's `tun` prerequisite
 applies to.
 
-If your Dokploy version exposes a **Compose Type** selector, keep it on
-**Docker Compose** rather than **Stack**. Swarm ignores `devices:` and
-`cap_add:`, so `tailscaled` would come up with no `tun` and no `NET_ADMIN`, and
-`build:` is unsupported there too.
+### Enable Isolated Deployment
+
+Scroll to the bottom of the service's **Advanced** tab, past **Volumes** and
+**Import**, and turn on **Enable Isolated Deployment**:
+
+![The Enable Isolated Deployment toggle at the bottom of the Advanced tab](assets/enable-isolate-deployment.png)
+
+It puts the stack on its own Docker network named after the app name
+(`infra-devaloy-o5upac` here) instead of letting it share one. Flip the toggle
+and hit **Save** — the setting only takes effect on the next deploy.
+
+`docker-compose.yml` declares no `networks:` key, so without isolation the
+stack lands on a default bridge alongside whatever else that project runs.
+devaloy publishes no ports and reaches out over the tailnet, so this is
+defense in depth rather than a fix for a live problem: it keeps a compromised
+agent on this box from talking sideways to a database or app container in the
+same project.
+
+Two things it does *not* do:
+
+- It does not rename the container. `container_name: devaloy` is fixed, so the
+  §6 break-glass `docker exec -it devaloy …` commands are unaffected — but it
+  also means you cannot run two devaloy stacks on one host; the second will
+  collide on that name regardless of isolation.
+- It does not change the volume names. Those come from the app name via `-p`,
+  which is already unique (§7).
+
+Use **Preview Compose** in the bottom-right to see the compose file Dokploy
+will actually run, prefixes and all, before deploying.
 
 ## 3. Environment variables
 
