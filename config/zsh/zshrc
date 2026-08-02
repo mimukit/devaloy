@@ -7,12 +7,21 @@
 #
 # Deliberately framework-free: no oh-my-zsh, no plugin manager, nothing to
 # clone on first boot. A devbox you reach over a phone tether should not spend
-# its first thirty seconds fetching a prompt theme.
+# its first thirty seconds fetching a prompt theme. The three zsh plugins below
+# are baked into the image and sourced from disk — that is the line: shipped
+# with the box, yes; fetched while you wait at a prompt, no.
 #
 # PATH and the OOM reset live in ~/.devaloy_env, sourced from ~/.zshenv so
 # non-interactive sessions (ssh devbox '<cmd>', scp, rsync) get them too.
 
 [ -f "$HOME/.devaloy_env" ] && . "$HOME/.devaloy_env"
+
+# --- environment ---------------------------------------------------------
+# vim, not nvim: the image ships vim and nothing here is worth an editor
+# bootstrap. Override in ~/.zshrc.local if you install something else.
+export EDITOR=vim
+export VISUAL="$EDITOR"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 # --- history -------------------------------------------------------------
 # Shared across every device you connect from, which is the whole point: run a
@@ -20,8 +29,12 @@
 HISTFILE="$HOME/.zsh_history"
 HISTSIZE=50000
 SAVEHIST=50000
+setopt APPEND_HISTORY         # never truncate on exit, even from a stale shell
 setopt SHARE_HISTORY          # write and re-read between concurrent sessions
 setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_SAVE_NO_DUPS      # ...and don't let a dup reach the file either
+setopt HIST_FIND_NO_DUPS      # Up-arrow walks distinct commands, not repeats
+setopt HIST_EXPIRE_DUPS_FIRST # when 50k fills up, drop dups before originals
 setopt HIST_IGNORE_SPACE      # a leading space keeps a command out of history
 setopt HIST_REDUCE_BLANKS
 setopt EXTENDED_HISTORY       # record timestamps and durations
@@ -33,6 +46,13 @@ setopt PUSHD_IGNORE_DUPS
 setopt INTERACTIVE_COMMENTS   # allow `# note` in an interactive line
 
 # --- completion ----------------------------------------------------------
+# zsh-completions is a pile of extra completion functions, not a plugin to
+# source — it only has to be on fpath before compinit runs. Baked into the
+# image by the Dockerfile; the guard keeps this file working on a box that
+# predates it.
+[ -d /usr/share/zsh-completions/src ] \
+    && fpath=(/usr/share/zsh-completions/src $fpath)
+
 autoload -Uz compinit
 # -C skips the security audit of the completion dumpfile. On a single-user box
 # that audit only costs startup latency, which you feel over a slow link.
@@ -73,19 +93,82 @@ alias la='ls -A'
 alias l='ls -CF'
 alias ..='cd ..'
 alias ...='cd ../..'
+alias c='clear'
+# Inside tmux, clear alone leaves the scrollback intact — this drops both.
+alias cc='clear; tmux clear-history 2>/dev/null; clear'
+alias e='exit'
+alias x='exit'
+alias v='vim'
+
 alias g='git'
 alias gs='git status --short --branch'
+alias gst='git status'
 alias gd='git diff'
 alias gl='git log --oneline --graph --decorate -20'
+alias gg='lazygit'
+alias gitclean='git remote prune origin'
 alias tree='find . -not -path "*/.git/*" -not -path "*/node_modules/*" | sed -e "s|[^/]*/|  |g"'
+
+# Worktrees earn their own aliases here: one per agent session is the whole
+# point of a box you leave running.
+alias gw='git worktree'
+alias gwa='git worktree add'
+alias gwls='git worktree list'
+alias gwr='git worktree remove'
+
+# The agent CLIs, installed by bootstrap-toolchain.sh.
+alias clc='claude --model "claude-opus-5[1m]"'
+alias clcy='claude --allow-dangerously-skip-permissions'
+alias cx='codex'
+alias h='herdr'
+
+# node — the toolchain is pnpm, so these are `pnpm run` rather than a runner
+# like `nr` that isn't installed.
+alias nd='pnpm run dev'
+alias nb='pnpm run build'
+alias ns='pnpm run start'
+alias pab='pnpm approve-builds'
+alias ncu='npx npm-check-updates'
+
+# What the tailnet actually sees you as — worth a one-word check on a box whose
+# only route in is Tailscale.
+alias ip='curl -s "https://ipinfo.io/json" | jq'
+alias ipw='curl -s ipwho.is | jq'
 
 # Ubuntu ships bat's binary as `batcat`; the Dockerfile adds a `bat` symlink.
 command -v bat >/dev/null && alias catp='bat --paging=never'
 
+# Only if you've mounted a docker socket or installed a client — neither ships
+# in the image, so these would otherwise be four aliases to a missing binary.
+if command -v docker >/dev/null; then
+    alias dc='docker compose'
+    alias dcud='docker compose up -d'
+    alias dps='docker ps'
+    alias dpsa='docker ps -a'
+fi
+
 # --- devbox conveniences -------------------------------------------------
 alias reload='exec zsh'
+alias zsrc='. "$HOME/.zshrc"'
 # The toolchain installs once per volume; this is the deliberate refresh.
 alias update='devaloy-update'
+
+# --- plugins -------------------------------------------------------------
+# Distro packages, installed by the Dockerfile. No plugin manager, no clone on
+# first boot — sourcing two files off disk costs a few milliseconds.
+#
+# Order matters and is not negotiable: syntax-highlighting wraps every ZLE
+# widget that exists when it loads, so it goes last. That does mean widgets you
+# define in ~/.zshrc.local below won't be highlighted; re-source the plugin
+# there if you add any.
+if [ -f /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]; then
+    . /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+    # Up-arrow is already history search, so the suggestion needs its own key.
+    bindkey '^y' autosuggest-accept
+fi
+
+[ -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ] \
+    && . /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 # --- your overrides ------------------------------------------------------
 # Sourced last so it wins over everything above. Never overwritten.
