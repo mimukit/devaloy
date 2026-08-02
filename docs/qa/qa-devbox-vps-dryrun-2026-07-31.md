@@ -130,7 +130,7 @@ orb -m devaloy-vps docker version --format '{{.Server.Version}}'
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -171,7 +171,7 @@ you still cannot log in. Do it *before* first boot so TC-6 is a clean test.
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -226,7 +226,7 @@ docker compose config | grep TS_AUTHKEY
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -264,7 +264,7 @@ docker compose ps
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -292,7 +292,7 @@ docker compose exec devbox tailscale status
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -333,7 +333,7 @@ cat /etc/os-release | head -2 && ls /home/dev
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -362,7 +362,7 @@ command -v node pnpm gh turbo herdr
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -415,7 +415,7 @@ ssh dev@devbox 'sudo DEV_HOME=/home/dev link-shims'
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -469,7 +469,7 @@ claude -p "list the files in this directory and say what this project is"
 **Actual:** _(tester fills in)_
 
 - [ ] Pass
-- [ ] Fail
+- [x] Fail
 
 ---
 
@@ -533,7 +533,7 @@ codex exec "summarize what this repository does"
 **Actual:** _(tester fills in)_
 
 - [ ] Pass
-- [ ] Fail
+- [x] Fail
 
 ---
 
@@ -573,7 +573,7 @@ whoami && node -v
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -614,7 +614,7 @@ herdr
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -654,7 +654,7 @@ git commit --allow-empty -m "test(repo): devbox connectivity check" && git log -
 **Actual:** _(tester fills in)_
 
 - [ ] Pass
-- [ ] Fail
+- [x] Fail
 
 ---
 
@@ -702,7 +702,7 @@ cat ~/marker.txt && node -v && command -v claude codex
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -750,7 +750,7 @@ ssh dev@devbox
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -790,7 +790,7 @@ docker compose exec devbox tailscale up --ssh
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -826,7 +826,7 @@ node -v && herdr --version
 
 **Actual:** _(tester fills in)_
 
-- [ ] Pass
+- [x] Pass
 - [ ] Fail
 
 ---
@@ -873,18 +873,18 @@ sudo ufw status verbose
 **Actual:** _(tester fills in)_
 
 - [ ] Pass
-- [ ] Fail
+- [x] Fail
 
 ---
 
 ## Regression checks
 
-- [ ] `git`, `tmux`, `vim`, `htop` and `build-essential` (try `gcc --version`) are present from the base image.
-- [ ] `docker compose exec devbox cat /proc/1/oom_score_adj` prints `-500`, and `cat /proc/self/oom_score_adj` in an SSH session prints `0`.
-- [ ] There is no `sshd` process in the container: `docker compose exec devbox pgrep sshd` finds nothing.
-- [ ] There is no `/home/dev/.ssh/authorized_keys` and no `host_keys` directory — leftovers would mean a stale volume from the old design.
-- [ ] `ssh dev@devbox 'echo $PATH'` includes `/usr/local/bin`.
-- [ ] After a full `down && up`, the admin console still shows exactly one `devbox`.
+- [x] `git`, `tmux`, `vim`, `htop` and `build-essential` (try `gcc --version`) are present from the base image.
+- [x] `docker compose exec devbox cat /proc/1/oom_score_adj` prints `-500`, and `cat /proc/self/oom_score_adj` in an SSH session prints `0`.
+- [x] There is no `sshd` process in the container: `docker compose exec devbox pgrep sshd` finds nothing.
+- [x] There is no `/home/dev/.ssh/authorized_keys` and no `host_keys` directory — leftovers would mean a stale volume from the old design.
+- [x] `ssh dev@devbox 'echo $PATH'` includes `/usr/local/bin`.
+- [x] After a full `down && up`, the admin console still shows exactly one `devbox`.
 
 ## Automated verification (by AI agent)
 
