@@ -18,7 +18,7 @@ set -euo pipefail
 # Bumping does re-resolve the @latest tools, so it can move herdr or an agent
 # CLI under a live session. That is the cost of a deliberate toolset change;
 # leave this alone for edits that do not add or remove a tool.
-TOOLSET_REVISION=2
+TOOLSET_REVISION=3
 
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
 
@@ -56,6 +56,10 @@ mise use -g "node@${MISE_NODE_VERSION}"
 mise use -g pnpm@latest
 mise use -g gh@latest
 mise use -g npm:turbo@latest
+# lazygit has no noble package, so it comes from here instead of the Dockerfile.
+# A full-screen git UI is the difference between reviewing a diff over a phone
+# tether and giving up on it.
+mise use -g lazygit@latest
 mise use -g "herdr@${MISE_HERDR_VERSION}"
 # The AI agents. mise's registry entries fetch the same upstream artifacts their
 # own installers do — Claude Code's binary checksummed against the release
