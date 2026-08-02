@@ -9,10 +9,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         vim \
         htop \
+        btop \
+        bat \
+        jq \
+        zsh \
+        python3 \
+        python3-pip \
+        python3-venv \
+        python-is-python3 \
         iproute2 \
         iptables \
         openssh-client \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # Ubuntu ships bat as `batcat` to avoid a name clash with bacula-console.
+    # Link it in /usr/bin, not /usr/local/bin — link-shims owns the latter and
+    # will overwrite a symlink it finds there.
+    && ln -s /usr/bin/batcat /usr/bin/bat
 
 # tailscaled lives *inside* this image on purpose. Tailscale SSH terminates the
 # connection in whichever container runs tailscaled and spawns the shell there —
@@ -27,9 +39,12 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
 
 # ubuntu:24.04 ships a default "ubuntu" user/group at 1000:1000 — drop it so
 # our dev user can claim that uid/gid predictably.
+# The login shell is read from /etc/passwd, which lives in this image rather
+# than the home volume — so zsh is the shell Tailscale SSH spawns from the
+# first boot onward, with no chsh needed on the box.
 RUN userdel -r ubuntu 2>/dev/null; groupdel ubuntu 2>/dev/null; \
     groupadd --gid 1000 dev \
-    && useradd --uid 1000 --gid dev --create-home --shell /bin/bash dev \
+    && useradd --uid 1000 --gid dev --create-home --shell /usr/bin/zsh dev \
     && echo 'dev ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/dev \
     && chmod 440 /etc/sudoers.d/dev
 

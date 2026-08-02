@@ -13,12 +13,25 @@ log() { echo "[entrypoint] $*"; }
 # --- shell env: toolchain PATH + OOM reset, for EVERY shell ---
 # Written before tailscaled comes up, so the very first session that lands
 # already has it. Ubuntu's stock .bashrc bails out early on non-interactive
-# shells, so this is sourced from the TOP of .bashrc, above that guard. mise
-# shims resolve versions at exec time, so no interactive `mise activate` is
-# needed. link-shims covers the shells that skip .bashrc entirely.
+# shells, so this is sourced from the TOP of .bashrc, above that guard; for zsh
+# it hangs off .zshenv, which zsh sources for *every* invocation including
+# `ssh devbox '<cmd>'`. mise shims resolve versions at exec time, so no
+# interactive `mise activate` is needed. link-shims covers whatever is left.
 ENV_SNIPPET="${DEV_HOME}/.devaloy_env"
 cat > "${ENV_SNIPPET}" <<'EOF'
-export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
+# Idempotent: this file is reachable from .zshenv, .zshrc and .bashrc, and a
+# blind prepend would stack duplicate entries onto PATH on every nested shell.
+# Listed back-to-front because each iteration prepends: the last one processed
+# ends up first, and ~/.local/bin has to win — it is where a hand-run vendor
+# installer puts things, and that copy should shadow the packaged one.
+for _devaloy_dir in "$HOME/.local/share/mise/shims" "$HOME/.local/bin"; do
+  case ":$PATH:" in
+    *":$_devaloy_dir:"*) ;;
+    *) PATH="$_devaloy_dir:$PATH" ;;
+  esac
+done
+unset _devaloy_dir
+export PATH
 
 # The container starts at a negative oom_score_adj (see compose.yml) to keep
 # tailscaled off the OOM killer's list. Raise every session back to 0 so a
@@ -40,22 +53,18 @@ if ! grep -qF '.devaloy_env' "${DEV_HOME}/.bashrc" 2>/dev/null; then
   chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.bashrc"
 fi
 
-# --- login hint (interactive sessions only) ---
-# Deliberately NOT auto-attaching herdr: that breaks scp/sftp/rsync and
-# git-over-ssh. Appended after .bashrc's interactivity guard on purpose.
-PROFILE_SNIPPET="${DEV_HOME}/.devaloy_profile"
-if [ ! -f "${PROFILE_SNIPPET}" ]; then
-  cat > "${PROFILE_SNIPPET}" <<'EOF'
-if [ -t 0 ]; then
-  echo "devaloy devbox — run: herdr"
-fi
-EOF
-  chown "${DEV_USER}:${DEV_USER}" "${PROFILE_SNIPPET}"
-fi
-if ! grep -qF '.devaloy_profile' "${DEV_HOME}/.bashrc" 2>/dev/null; then
+if ! grep -qF '.devaloy_env' "${DEV_HOME}/.zshenv" 2>/dev/null; then
   # shellcheck disable=SC2016  # as above, $HOME stays literal.
-  echo '[ -f "$HOME/.devaloy_profile" ] && . "$HOME/.devaloy_profile"' >> "${DEV_HOME}/.bashrc"
-  chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.bashrc"
+  echo '[ -f "$HOME/.devaloy_env" ] && . "$HOME/.devaloy_env"' >> "${DEV_HOME}/.zshenv"
+  chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.zshenv"
+fi
+
+# --- retire the old login banner ---
+# It printed on every interactive session and earned nothing. Removed from the
+# image, and swept out of home volumes created before that change.
+rm -f "${DEV_HOME}/.devaloy_profile"
+if [ -f "${DEV_HOME}/.bashrc" ] && grep -qF '.devaloy_profile' "${DEV_HOME}/.bashrc"; then
+  sed -i '/\.devaloy_profile/d' "${DEV_HOME}/.bashrc"
 fi
 
 # --- tailscaled + Tailscale SSH (started FIRST, before the slow bootstrap) ---
