@@ -262,8 +262,13 @@ if [ -x "${ORCA_BIN}" ]; then
       # is KEPT (never --no-sandbox) and works because compose already sets
       # seccomp=unconfined for Codex's bubblewrap, which is the same user
       # namespace permission Chromium's sandbox needs.
+      # SHELL is set explicitly because as_dev runs `su -l -s /bin/sh`, and su
+      # exports whatever it was given with -s. Orca spawns its terminals from
+      # $SHELL rather than /etc/passwd, so without this every terminal opened
+      # from the desktop or mobile app lands in sh instead of the dev user's
+      # actual login shell. The -s /bin/sh itself has to stay — see as_dev.
       while true; do
-        as_dev "LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a '${ORCA_BIN}' serve \
+        as_dev "SHELL=/usr/bin/zsh LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a '${ORCA_BIN}' serve \
           --port '${ORCA_PORT}' --pairing-address '${ORCA_IP}'" || true
         log "WARNING: orca serve exited — restarting in 10s"
         sleep 10
