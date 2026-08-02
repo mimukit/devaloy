@@ -211,13 +211,18 @@ container log — a non-obvious place to look, so that is the first place to loo
 docker compose logs devaloy | grep -i pairing
 ```
 
-Open that URL in the Orca desktop app. For the phone, the QR is a separate
-invocation:
+Open that URL in the Orca desktop app.
 
-```sh
-docker compose exec -u dev devaloy \
-  xvfb-run -a orca-ide serve --pairing-address "$(docker compose exec devaloy tailscale ip -4 | head -1)" --mobile-pairing
-```
+For the phone, use the same log output — the server prints both an
+`orca://pair?code=…` link and a `Web client URL:` line, and the Tailscale app
+on the phone is what makes the address reachable.
+
+Note that `--mobile-pairing` is a flag on **the** server, not a second command
+you can run alongside it: Electron holds a single-instance lock per profile, so
+a second `orca serve` in this container exits with `[single-instance] Another
+Orca instance is already running`. There is no separate `orca pair` subcommand.
+If the phone turns out to need a mobile-scoped code specifically, getting one
+means changing the supervised launch in `entrypoint.sh` and rebuilding.
 
 Paired devices are recorded under `~/.config` in the home volume, so they
 survive `docker compose down && up` without re-pairing.

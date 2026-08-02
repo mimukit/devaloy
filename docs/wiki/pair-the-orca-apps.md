@@ -71,17 +71,36 @@ Your desktop can now sleep without stopping anything running on devaloy.
 
 ## 4. Pair the phone
 
-The mobile pairing code is a separate invocation rather than a flag on the
-running server — it prints a mobile-scoped QR and link:
+Connect the Tailscale app on the phone first — without it the tailnet address
+in the pairing link is unroutable and the app will simply fail to connect.
+
+Then use the same log output as the desktop. The running server prints two
+things you can hand to the phone:
 
 ```sh
-docker compose exec -u dev devaloy \
-  xvfb-run -a orca-ide serve \
-    --pairing-address "$(docker compose exec devaloy tailscale ip -4 | head -1)" \
-    --mobile-pairing
+docker compose logs devaloy | grep -E "Pairing URL|Web client URL"
 ```
 
-Scan it with the Orca mobile app, with the Tailscale app connected on the phone.
+- the `orca://pair?code=…` link, which deep-links into the mobile app
+- the `Web client URL:` line, which opens the browser client with the pairing
+  data already embedded
+
+### Why there is no separate QR command
+
+`orca serve --mobile-pairing` prints a mobile-scoped code **instead of** the
+default one — it is a flag on *the* server, not a second command you can run
+next to it. Try to run a second `orca serve` in this container and Electron's
+single-instance lock rejects it:
+
+```
+[single-instance] Another Orca instance is already running for this userData
+profile; exiting this launch after requesting the existing window.
+```
+
+There is no `orca pair` subcommand either. So if the phone turns out to require
+a mobile-scoped code rather than the runtime-scoped one above, the only way to
+produce it is to add `--mobile-pairing` to the supervised launch in
+`entrypoint.sh` and rebuild — at the cost of the desktop's default link.
 
 ## 5. Confirm it survives a redeploy
 
