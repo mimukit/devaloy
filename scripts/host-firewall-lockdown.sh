@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hardens the HOST's own sshd/mgmt surface on a cloud VPS. Defense-in-depth —
-# not what protects the devbox itself (the tailscale sidecar already
+# not what protects devaloy itself (the tailscale sidecar already
 # publishes nothing to the host). Skippable on a trusted/home Docker host.
 set -euo pipefail
 

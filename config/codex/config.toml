@@ -1,4 +1,4 @@
-# Codex global config for the devaloy devbox.
+# Codex global config for devaloy.
 #
 # MANAGED FILE. entrypoint.sh copies this over ~/.codex/config.toml on every
 # boot, so edit it here in the repo, not on the box. Codex has no include

@@ -1,6 +1,6 @@
 ## Where you are
 
-You are running on **devaloy**, a headless remote devbox. It is an
+You are running on **devaloy**, a headless remote dev box. It is an
 `ubuntu:24.04` container reached only over Tailscale SSH — no public IP, no
 published ports, no browser. Nobody is watching a GUI here, so anything that
 wants to open a browser window, print a QR code, or wait on a localhost
@@ -68,7 +68,7 @@ Node, pnpm, gh, turbo and herdr come from `mise` and resolve through shims in
 install a second copy with `apt` or a raw `curl | sh`.
 
 After any `npm i -g`, run `devaloy-update` so the new binary is visible to
-non-interactive sessions (`ssh devbox '<cmd>'`, `scp`, `rsync`, git-over-ssh).
+non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh).
 
 ## GitHub
 

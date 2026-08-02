@@ -1,13 +1,13 @@
-# Plan — agent config parity: bring the laptop's Claude Code and Codex setup to the devbox
+# Plan — agent config parity: bring the laptop's Claude Code and Codex setup to devaloy
 
 ## Context
 
-The devbox ships Claude Code and Codex from `mise`, but they arrive close to
+devaloy ships Claude Code and Codex from `mise`, but they arrive close to
 stock. The laptop's setup — 21 kit skills, a shared hook dispatcher with an `rm`
 guard, herdr session reporting, a tuned permission allowlist and model pins —
 does not exist on the box. The practical effect is that the two environments are
 not interchangeable: a session you'd run from the laptop with `/afkkit` or
-`/implementkit` can't be run from the phone, which is the reason the devbox
+`/implementkit` can't be run from the phone, which is the reason devaloy
 exists.
 
 Config-as-code already works here. `entrypoint.sh` merge-copies `config/claude/`
@@ -20,8 +20,8 @@ Skills are the exception to config-as-code. They are **not** copied into this
 repo — they are installed from their upstream repos by the
 [skills.sh](https://www.skills.sh) CLI, which the box already has via
 `npm:skills`. Vendoring 21 skill directories here would fork them from
-`mimukit/skills` the day after it landed; the CLI is the thing that keeps a
-devbox and a laptop on the same skills.
+`mimukit/skills` the day after it landed; the CLI is the thing that keeps
+devaloy and a laptop on the same skills.
 
 The box installs the **whole** `mimukit/skills` repo rather than a curated
 subset. Skill authoring is iterative — a new kit gets written, tried, and
@@ -102,7 +102,7 @@ the `npm:skills` CLI which is already resolvable on the box.
    that it survives redeploys but not a volume reset unless it goes into
    `bootstrap-toolchain.sh`; and `skills remove` for one that misbehaves.
 8. **Ship the `skmi` / `skup` aliases.** Already added to
-   `config/zsh/zshrc` under *devbox conveniences*, mirroring the laptop's, so
+   `config/zsh/zshrc` under *devaloy conveniences*, mirroring the laptop's, so
    the muscle memory carries over. They give a manual path that doesn't route
    through `devaloy-update`, which matters mid-session when you've just pushed a
    skill and don't want to re-resolve the whole toolchain to try it.

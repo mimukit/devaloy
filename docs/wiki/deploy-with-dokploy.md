@@ -1,6 +1,6 @@
 # Deploying devaloy with Dokploy
 
-This walks through running the devbox as a [Dokploy](https://dokploy.com/)
+This walks through running devaloy as a [Dokploy](https://dokploy.com/)
 **Compose** service, deployed straight from this GitHub repo. It assumes you
 already have a Dokploy server running.
 
@@ -12,7 +12,7 @@ toolchain still holds — what Dokploy adds is a UI for the env vars, a deploy
 button, a push webhook, and volume backups.
 
 What Dokploy does *not* add: a domain, a Traefik route, or a published port.
-This devbox has no HTTP surface and nothing to expose. You will leave the
+devaloy has no HTTP surface and nothing to expose. You will leave the
 **Domains** tab empty, and that is correct rather than an unfinished step.
 
 ## 1. Prepare the Dokploy host
@@ -28,7 +28,7 @@ The container needs `/dev/net/tun` on the host. Check and load it:
 ls -l /dev/net/tun || sudo modprobe tun
 ```
 
-Make it survive a reboot, or the next time the VPS restarts the devbox will
+Make it survive a reboot, or the next time the VPS restarts devaloy will
 come back up with no tailnet and no way in:
 
 ```sh
@@ -56,7 +56,7 @@ In Dokploy: **Projects** → open (or create) a project and environment →
 **Create Service** → **Compose**. Then, on the service's **General** tab, fill
 in the **Provider** panel:
 
-![Dokploy Provider settings for the devaloy compose service](assets/dokploy-devbox-config.png)
+![Dokploy Provider settings for the devaloy compose service](assets/dokploy-devaloy-config.png)
 
 | Field | Value | Why |
 |---|---|---|
@@ -126,7 +126,7 @@ means getting back to the Docker host.
 Then, from any device on your tailnet:
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 herdr
 ```
 
@@ -178,8 +178,8 @@ whole point of config-as-code here.
 General tab (or SSH to the host) and run:
 
 ```sh
-docker exec -it devaloy-devbox tailscale status
-docker exec -it devaloy-devbox tailscale up --ssh
+docker exec -it devaloy tailscale status
+docker exec -it devaloy tailscale up --ssh
 ```
 
 There is no sshd fallback by design.
@@ -193,13 +193,13 @@ typed. That slug is the volume prefix:
 
 | Volume | Holds | Losing it means |
 |---|---|---|
-| `<appName>_devbox-home` | `/home/dev` — repos, toolchain, agent credentials, GitHub token | Re-clone and re-provision |
+| `<appName>_home` | `/home/dev` — repos, toolchain, agent credentials, GitHub token | Re-clone and re-provision |
 | `<appName>_tailscale-state` | The node's identity | The box rejoins as a *new* machine and needs a fresh auth key |
 
 Confirm the real names before you write any script against them:
 
 ```sh
-docker volume ls | grep devbox-home
+docker volume ls | grep _home
 ```
 
 Both are Docker named volumes, so the **Volume Backups** tab works on them. It
@@ -209,7 +209,7 @@ difference between a redeploy and a re-enrollment.
 **Deleting the service in Dokploy can delete these volumes.** Read the
 confirmation dialog. The README's backup contract still applies regardless:
 git-push discipline is the only real backup, and nothing valuable should live
-only on the devbox.
+only on devaloy.
 
 ## 8. Do not run the host firewall script
 
@@ -219,8 +219,8 @@ traffic only on `tailscale0`. On a plain VPS that is sensible defense-in-depth.
 and Traefik on 80/443 all become unreachable from the public internet, taking
 every other site on that server with them.
 
-Only run it if the Dokploy host exists solely for this devbox *and* you want to
-reach the panel over the tailnet only. Otherwise skip it: the devbox publishes
+Only run it if the Dokploy host exists solely for devaloy *and* you want to
+reach the panel over the tailnet only. Otherwise skip it: devaloy publishes
 no ports and needs no host firewall rule to stay private.
 
 ## Troubleshooting
@@ -229,7 +229,7 @@ no ports and needs no host firewall rule to stay private.
 |---|---|---|
 | `no such file or directory: docker-compose.yml` | Compose Path wrong, or pointed at a filename this repo doesn't have | Set Compose Path to `./docker-compose.yml` |
 | Node never appears in the admin console | `TS_AUTHKEY` empty or expired | Check the Environment tab actually saved; the compose file defaults it to empty and `tailscaled` starts unauthenticated |
-| `Warning: TS_AUTHKEY variable is not set` in build logs | Dokploy's `.env` landed beside the wrong file ([#2777](https://github.com/Dokploy/dokploy/issues/2777)) | Confirm the Environment tab is saved and redeploy; verify with `docker exec devaloy-devbox printenv TS_AUTHKEY` |
+| `Warning: TS_AUTHKEY variable is not set` in build logs | Dokploy's `.env` landed beside the wrong file ([#2777](https://github.com/Dokploy/dokploy/issues/2777)) | Confirm the Environment tab is saved and redeploy; verify with `docker exec devaloy printenv TS_AUTHKEY` |
 | `failed to create TUN device` | Host missing `tun` | `sudo modprobe tun`, then persist via `/etc/modules-load.d/tun.conf` |
 | Tailnet up, but SSH is refused | Policy file has no matching `ssh` rule, or the auth key was tagged | Untagged key + the `autogroup:self` rule (README step 2) |
 | Node reachable, `dev` login rejected | `users` list in the policy rule omits `dev` | Add `"users": ["dev"]` |

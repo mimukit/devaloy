@@ -1,8 +1,8 @@
 services:
-  devbox:
+  devaloy:
     build: .
-    container_name: devaloy-devbox
-    hostname: devbox
+    container_name: devaloy
+    hostname: devaloy
     init: true
     # Nothing is published. There is no `ports:` key on purpose — the only way
     # in is Tailscale SSH on the tailnet address, inside this container's own
@@ -33,10 +33,10 @@ services:
     oom_score_adj: -500
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
-      - TS_HOSTNAME=${TS_HOSTNAME:-devbox}
+      - TS_HOSTNAME=${TS_HOSTNAME:-devaloy}
       # Tailscale rewriting /etc/resolv.conf inside a container clobbers
       # Docker's resolver. Only turn this on if you need MagicDNS *from* the
-      # devbox.
+      # box.
       - TS_ACCEPT_DNS=${TS_ACCEPT_DNS:-false}
       # Authenticates gh and git-over-HTTPS with no interactive login. The
       # entrypoint copies it into a 0600 file in the home volume, so clearing
@@ -46,11 +46,11 @@ services:
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
       - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
     volumes:
-      - devbox-home:/home/dev
+      - home:/home/dev
       # Node identity lives here. Lose it and the box rejoins as a new machine.
       - tailscale-state:/var/lib/tailscale
     restart: unless-stopped
 
 volumes:
-  devbox-home:
+  home:
   tailscale-state:

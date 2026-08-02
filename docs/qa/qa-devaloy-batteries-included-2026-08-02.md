@@ -1,14 +1,14 @@
-# QA Plan: devaloy devbox — batteries included
+# QA Plan: devaloy — batteries included
 
 _Generated 2026-08-02 · covers the uncommitted "batteries included" revision:
 zsh as login shell, `config/` as the source of truth for shell and agent
 dotfiles, `GITHUB_TOKEN` auth, Claude Code and Codex from `mise`, and the
 retirement of the login banner._
 
-_Design of record: [`docs/plans/plan-remote-devbox-2026-07-25.md`](../plans/plan-remote-devbox-2026-07-25.md),
+_Design of record: [`docs/plans/plan-remote-devaloy-2026-07-25.md`](../plans/plan-remote-devaloy-2026-07-25.md),
 Revision 2026-08-02._
 
-_Prior run record: [`qa-devbox-vps-dryrun-2026-07-31.md`](./qa-devbox-vps-dryrun-2026-07-31.md).
+_Prior run record: [`qa-devaloy-vps-dryrun-2026-07-31.md`](./qa-devaloy-vps-dryrun-2026-07-31.md).
 That pass stands — this plan does not repeat it._
 
 ## Revised after the first run — 2026-08-02
@@ -29,7 +29,7 @@ the two tools that take the count from 12 to 14. TC-1 below is corrected.
 
 ## Summary
 
-- The devbox now arrives fully equipped: `zsh` with a repo-managed config,
+- devaloy now arrives fully equipped: `zsh` with a repo-managed config,
   Claude Code and Codex already installed, and `gh` plus `git push` already
   authenticated — nothing to install or log into by hand on a headless box.
 - "Working" means: you log in over Tailscale SSH and every tool the previous
@@ -133,7 +133,7 @@ docker compose up -d --build
 4. Read the boot log:
 
 ```sh
-docker compose logs devbox | grep '\[entrypoint\]'
+docker compose logs devaloy | grep '\[entrypoint\]'
 ```
 
 **Expected**
@@ -176,7 +176,7 @@ exists.
 1. **On the Mac**:
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 ```
 
 2. Confirm the shell you actually landed in:
@@ -291,7 +291,7 @@ claude
    on a local callback port, reconnect with that port forwarded and retry:
 
 ```sh
-ssh -L 54545:localhost:54545 dev@devbox
+ssh -L 54545:localhost:54545 dev@devaloy
 ```
 
 4. Once authenticated, disconnect entirely and reconnect, then give it a task:
@@ -335,7 +335,7 @@ command -v codex && codex --version
    a headless box. Reconnect **from the Mac** with that port forwarded:
 
 ```sh
-ssh -L 1455:localhost:1455 dev@devbox
+ssh -L 1455:localhost:1455 dev@devaloy
 ```
 
 3. In that forwarded session, log in — open the printed URL in the Mac's browser:
@@ -457,7 +457,7 @@ gh repo create devaloy-qa-probe --private --clone && cd devaloy-qa-probe
 3. Commit and **push over HTTPS** — the part that needs the credential helper, not just `gh`:
 
 ```sh
-git commit --allow-empty -m "test(repo): devbox push check" && git push -u origin HEAD
+git commit --allow-empty -m "test(repo): devaloy push check" && git push -u origin HEAD
 ```
 
 4. Confirm the remote actually has it:
@@ -531,23 +531,23 @@ for *every* invocation, so `.devaloy_env` now covers this natively, with
 1. **On the Mac**, run commands remotely with no TTY:
 
 ```sh
-ssh dev@devbox 'echo $0; echo $PATH; command -v node claude codex gh'
+ssh dev@devaloy 'echo $0; echo $PATH; command -v node claude codex gh'
 ```
 
 2. Confirm the agent CLIs run non-interactively:
 
 ```sh
-ssh dev@devbox 'claude --version && codex --version'
+ssh dev@devaloy 'claude --version && codex --version'
 ```
 
 3. Confirm file transfer still works:
 
 ```sh
-echo hello > /tmp/devaloy-probe.txt && scp /tmp/devaloy-probe.txt dev@devbox:~/
+echo hello > /tmp/devaloy-probe.txt && scp /tmp/devaloy-probe.txt dev@devaloy:~/
 ```
 
 ```sh
-rsync /tmp/devaloy-probe.txt dev@devbox:~/probe2.txt
+rsync /tmp/devaloy-probe.txt dev@devaloy:~/probe2.txt
 ```
 
 **Expected**
@@ -563,7 +563,7 @@ rsync /tmp/devaloy-probe.txt dev@devbox:~/probe2.txt
   fixes means `.zshenv` did not take and only `link-shims` is carrying it:
 
 ```sh
-ssh dev@devbox 'sudo DEV_HOME=/home/dev link-shims'
+ssh dev@devaloy 'sudo DEV_HOME=/home/dev link-shims'
 ```
 
 **Actual:** _(tester fills in)_
@@ -581,7 +581,7 @@ credentials, so test it deliberately rather than discovering it later.
 
 **Steps**
 
-1. On the devbox, vandalise a managed file and create things the repo does *not* ship:
+1. On devaloy, vandalise a managed file and create things the repo does *not* ship:
 
 ```sh
 echo '# I edited this on the box' >> ~/.zshrc && echo 'export MY_OWN_VAR=kept' > ~/.zshrc.local
@@ -643,7 +643,7 @@ question with a real answer that has to work.
 1. *(on the VPS)* Confirm the file exists and is not world-readable:
 
 ```sh
-docker compose exec devbox stat -c '%n %a %U:%G' /home/dev/.devaloy_secrets
+docker compose exec devaloy stat -c '%n %a %U:%G' /home/dev/.devaloy_secrets
 ```
 
 2. Blank the variable in `.env` — leave the key, remove the value:
@@ -661,11 +661,11 @@ docker compose up -d --build
 4. Confirm it is gone from both the file and the environment:
 
 ```sh
-docker compose exec devbox ls -la /home/dev/.devaloy_secrets
+docker compose exec devaloy ls -la /home/dev/.devaloy_secrets
 ```
 
 ```sh
-ssh dev@devbox 'echo "[${GITHUB_TOKEN:-unset}]" && gh auth status'
+ssh dev@devaloy 'echo "[${GITHUB_TOKEN:-unset}]" && gh auth status'
 ```
 
 5. Restore the token in `.env` and redeploy, so later cases still work.
@@ -702,20 +702,20 @@ when you are willing to redo TC-4 and TC-5's logins.
    tailscale state, which holds the node identity:
 
 ```sh
-docker compose down && docker volume rm devaloy_devbox-home
+docker compose down && docker volume rm devaloy_home
 ```
 
 2. Start it and immediately begin watching:
 
 ```sh
-docker compose up -d --build && docker compose logs -f devbox
+docker compose up -d --build && docker compose logs -f devaloy
 ```
 
 3. **As soon as you see `Tailscale SSH is up`**, switch to the Mac and try to
    log in — while the toolchain is still installing:
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 ```
 
 4. In that session, watch the install land:
@@ -736,7 +736,7 @@ sleep 120 && command -v node claude codex
 - All tools resolve by step 4.
 - **Record the total time.** Expect a few minutes; anything beyond ~10 is worth
   noting against the README's "a few minutes longer" claim.
-- The node keeps its **same** tailnet IP — no `devbox-1` in the admin console,
+- The node keeps its **same** tailnet IP — no `devaloy-1` in the admin console,
   because the tailscale-state volume survived.
 
 **Actual:** _(tester fills in)_
@@ -781,7 +781,7 @@ docker compose up -d --build
 5. **From the Mac**, confirm the upgrade was not reverted:
 
 ```sh
-ssh dev@devbox 'claude --version && codex --version'
+ssh dev@devaloy 'claude --version && codex --version'
 ```
 
 **Expected**
@@ -845,7 +845,7 @@ sudo ufw status verbose
   correct; note which fired.
 - `ufw status verbose` shows incoming denied by default, an allow rule on
   `tailscale0`, and no 80/443.
-- **Crucially:** you can still reach the devbox from the Mac afterwards.
+- **Crucially:** you can still reach devaloy from the Mac afterwards.
 - **When it fails, capture the exact output** — that is what unblocks a fix.
 
 **Actual:** _(tester fills in)_
@@ -861,13 +861,13 @@ Things the previous pass proved, that this revision could plausibly have broken:
 
 - [x] `herdr` still starts and reattaches across a Mac↔phone handoff (old TC-12),
       now from a zsh login shell rather than bash.
-- [x] `ssh root@devbox` is still denied by the tailnet policy file (old TC-15).
+- [x] `ssh root@devaloy` is still denied by the tailnet policy file (old TC-15).
 - [x] `bash` still works as a shell if you ask for it: `bash -lc 'node -v'`.
-- [x] `docker compose exec devbox pgrep sshd` still finds nothing.
+- [x] `docker compose exec devaloy pgrep sshd` still finds nothing.
 - [x] No `/home/dev/.ssh/authorized_keys` appeared.
 - [x] `docker compose ps` still shows **no port mappings at all**.
 - [x] `cat /proc/self/oom_score_adj` in an SSH session still prints `0` while
-      `docker compose exec devbox cat /proc/1/oom_score_adj` prints `-500`.
+      `docker compose exec devaloy cat /proc/1/oom_score_adj` prints `-500`.
 - [x] `~/.devaloy_secrets` never shows up in `docker compose logs`.
 
 ## Automated verification (by AI agent)
@@ -889,11 +889,11 @@ Build, then a cold-volume boot with a token deliberately containing a single
 quote, to prove the shell-escaping in `entrypoint.sh`:
 
 ```sh
-docker build -t devaloy-devbox:qa2 .
+docker build -t devaloy:qa2 .
 ```
 
 ```sh
-docker run -d --name devaloy-qa2 -v qa2-home:/home/dev --cap-add NET_ADMIN --device /dev/net/tun:/dev/net/tun -e GITHUB_TOKEN="dummy-tok-with-a-quote'x" --oom-score-adj -500 devaloy-devbox:qa2
+docker run -d --name devaloy-qa2 -v qa2-home:/home/dev --cap-add NET_ADMIN --device /dev/net/tun:/dev/net/tun -e GITHUB_TOKEN="dummy-tok-with-a-quote'x" --oom-score-adj -500 devaloy:qa2
 ```
 
 Probes:
@@ -931,7 +931,7 @@ docker restart devaloy-qa2
 Upgrade path, by aging a clone of the volume back to the pre-change layout:
 
 ```sh
-docker run --rm -v qa2-legacy:/home/dev --entrypoint sh devaloy-devbox:qa2 -c 'rm -f /home/dev/.zshrc /home/dev/.zshenv; echo "banner" > /home/dev/.devaloy_profile; echo "[ -f \"\$HOME/.devaloy_profile\" ] && . \"\$HOME/.devaloy_profile\"" >> /home/dev/.bashrc'
+docker run --rm -v qa2-legacy:/home/dev --entrypoint sh devaloy:qa2 -c 'rm -f /home/dev/.zshrc /home/dev/.zshenv; echo "banner" > /home/dev/.devaloy_profile; echo "[ -f \"\$HOME/.devaloy_profile\" ] && . \"\$HOME/.devaloy_profile\"" >> /home/dev/.bashrc'
 ```
 
 Results:

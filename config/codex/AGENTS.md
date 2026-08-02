@@ -1,6 +1,6 @@
 ## Where you are
 
-You are running on **devaloy**, a headless remote devbox — an `ubuntu:24.04`
+You are running on **devaloy**, a headless remote dev box — an `ubuntu:24.04`
 container reached only over Tailscale SSH. No public IP, no published ports, no
 browser, nobody watching a screen. Anything that wants to open a browser, print
 a QR code, or wait on a localhost callback will hang rather than fail.

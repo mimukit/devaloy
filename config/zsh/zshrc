@@ -1,4 +1,4 @@
-# devaloy devbox — interactive zsh config.
+# devaloy — interactive zsh config.
 #
 # MANAGED FILE. entrypoint.sh copies this over ~/.zshrc on every boot, so any
 # edit you make on the box is lost at the next redeploy. Put your own settings
@@ -6,13 +6,13 @@
 # nothing in this repo ever touches it.
 #
 # Deliberately framework-free: no oh-my-zsh, no plugin manager, nothing to
-# clone on first boot. A devbox you reach over a phone tether should not spend
+# clone on first boot. A dev box you reach over a phone tether should not spend
 # its first thirty seconds fetching a prompt theme. The three zsh plugins below
 # are baked into the image and sourced from disk — that is the line: shipped
 # with the box, yes; fetched while you wait at a prompt, no.
 #
 # PATH and the OOM reset live in ~/.devaloy_env, sourced from ~/.zshenv so
-# non-interactive sessions (ssh devbox '<cmd>', scp, rsync) get them too.
+# non-interactive sessions (ssh devaloy '<cmd>', scp, rsync) get them too.
 
 [ -f "$HOME/.devaloy_env" ] && . "$HOME/.devaloy_env"
 
@@ -147,7 +147,7 @@ if command -v docker >/dev/null; then
     alias dpsa='docker ps -a'
 fi
 
-# --- devbox conveniences -------------------------------------------------
+# --- devaloy conveniences -------------------------------------------------
 alias reload='exec zsh'
 alias zsrc='. "$HOME/.zshrc"'
 # The toolchain installs once per volume; this is the deliberate refresh.

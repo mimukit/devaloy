@@ -1,19 +1,19 @@
-# QA Plan: devaloy devbox — full VPS dry run
+# QA Plan: devaloy — full VPS dry run
 
 _Generated 2026-07-31 · rewritten same day for the merged Tailscale SSH design
 (single container, no sshd, no SSH keys) · covers Dockerfile, entrypoint.sh,
 compose.yml, bootstrap-toolchain.sh, devaloy-update, link-shims,
 scripts/host-firewall-lockdown.sh_
 
-_Design of record: [`docs/plans/plan-remote-devbox-2026-07-25.md`](../plans/plan-remote-devbox-2026-07-25.md),
+_Design of record: [`docs/plans/plan-remote-devaloy-2026-07-25.md`](../plans/plan-remote-devaloy-2026-07-25.md),
 Revision 2026-07-31._
 
 ## Summary
 
-- A single-container devbox reachable **only** through Tailscale SSH — no sshd,
+- A single-container dev box reachable **only** through Tailscale SSH — no sshd,
   no `authorized_keys`, no published ports — exercised end to end against a
   throwaway Ubuntu VM standing in for a real VPS.
-- "Working" means: the node joins your tailnet, `ssh dev@devbox` succeeds from a
+- "Working" means: the node joins your tailnet, `ssh dev@devaloy` succeeds from a
   Mac and a phone with **no key material anywhere**, the box carries a working
   toolchain plus Claude Code and Codex, and it survives a redeploy with the
   session and node identity intact.
@@ -25,7 +25,7 @@ Revision 2026-07-31._
 - OrbStack running (`orb version` ≥ 2.2.1).
 - A Tailscale account with the Mac already on the tailnet.
 - MagicDNS enabled, or you're prepared to use the raw `100.x.y.z` address
-  everywhere `devbox` appears below.
+  everywhere `devaloy` appears below.
 - Admin access to your [tailnet policy file](https://login.tailscale.com/admin/acls)
   — TC-2 edits it, and nothing after TC-2 works without that edit.
 
@@ -39,7 +39,7 @@ design. If you find yourself generating a keypair, something has gone wrong.
 
 **Two lockout risks to know before you start**
 
-- **Key expiry.** The devbox registers as a *user-owned* node, and user-owned
+- **Key expiry.** devaloy registers as a *user-owned* node, and user-owned
   node keys expire (~180 days by default). An expired node is unreachable.
   TC-5 disables expiry; do not skip it.
 - **No sshd fallback.** If Tailscale SSH won't let you in, there is no second
@@ -68,7 +68,7 @@ Priority legend: 🔴 Critical · 🟡 Normal · 🟢 Low
 | TC-10 | Install and authenticate Codex | 🟡 Normal |
 | TC-11 | Connect from the phone with Terminus | 🔴 Critical |
 | TC-12 | herdr session survives a device handoff | 🔴 Critical |
-| TC-13 | Real work: clone, build, commit from the devbox | 🟡 Normal |
+| TC-13 | Real work: clone, build, commit from devaloy | 🟡 Normal |
 | TC-14 | Redeploy preserves home, node identity and session | 🔴 Critical |
 | TC-15 | Access control actually denies what it should | 🔴 Critical |
 | TC-16 | Break-glass recovery from the Docker host | 🟡 Normal |
@@ -244,7 +244,7 @@ docker compose up -d --build
 2. Watch the log — the tailnet comes up first, then the toolchain installs over several minutes:
 
 ```sh
-docker compose logs -f devbox
+docker compose logs -f devaloy
 ```
 
 3. Press Ctrl-C once you see `devaloy is up`, then check the container:
@@ -255,11 +255,11 @@ docker compose ps
 
 **Expected**
 
-- The log order is: `Starting tailscaled` → `Tailscale SSH is up as devbox (100.x.y.z)` → `Bootstrapping mise + toolchain` → `Toolchain bootstrap complete` → `devaloy is up`.
+- The log order is: `Starting tailscaled` → `Tailscale SSH is up as devaloy (100.x.y.z)` → `Bootstrapping mise + toolchain` → `Toolchain bootstrap complete` → `devaloy is up`.
 - The tailnet line comes **before** the bootstrap — the box is reachable during the slow install, not after it.
 - **No** `WARNING: tailscale up failed`. If you see it, the box is unreachable; go to TC-16.
 - **No** `WARNING: toolchain bootstrap failed`. If you see it the box is still reachable by design — note it, carry on, and use `devaloy-update` (TC-17) to recover.
-- Exactly one container, `devaloy-devbox`, `running` (not restarting).
+- Exactly one container, `devaloy`, `running` (not restarting).
 - `docker compose ps` shows **no port mappings at all**.
 
 **Actual:** _(tester fills in)_
@@ -274,18 +274,18 @@ docker compose ps
 **Steps**
 
 1. Open https://login.tailscale.com/admin/machines
-2. Find the newly-registered `devbox`.
+2. Find the newly-registered `devaloy`.
 3. **Disable key expiry on it** (machine menu → Disable key expiry). This is not optional — see Preconditions.
 4. *(on the VPS)* Cross-check what the container believes:
 
 ```sh
-docker compose exec devbox tailscale status
+docker compose exec devaloy tailscale status
 ```
 
 **Expected**
 
-- A machine named exactly `devbox` appears and is connected.
-- Its name is **not** `devbox-1` — a suffix means a name collision with an existing machine and every hostname below resolves to the wrong host.
+- A machine named exactly `devaloy` appears and is connected.
+- Its name is **not** `devaloy-1` — a suffix means a name collision with an existing machine and every hostname below resolves to the wrong host.
 - It is listed as owned by **you**, not as a tagged node. A tagged node means the key was tagged and TC-2's rule will never match.
 - Key expiry now reads **Disabled**.
 - `tailscale status` shows the node as `Running` and lists `dev@` as an SSH-enabled service (or otherwise indicates SSH is advertised).
@@ -307,7 +307,7 @@ assumes port 22 and authenticates from tailnet identity.
 1. **On the Mac** (not the VPS):
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 ```
 
 2. Confirm who and where you are:
@@ -316,7 +316,7 @@ ssh dev@devbox
 whoami && hostname && sudo -n true && echo "passwordless sudo OK"
 ```
 
-3. Confirm this really is the devbox container and not something else:
+3. Confirm this really is the devaloy container and not something else:
 
 ```sh
 cat /etc/os-release | head -2 && ls /home/dev
@@ -326,7 +326,7 @@ cat /etc/os-release | head -2 && ls /home/dev
 
 - The connection succeeds with **no key prompt, no password prompt, and no host-key fingerprint prompt**.
 - It greets you with `devaloy devbox — run: herdr`.
-- `whoami` is `dev`; `hostname` is `devbox`; passwordless sudo works.
+- `whoami` is `dev`; `hostname` is `devaloy`; passwordless sudo works.
 - `/etc/os-release` says Ubuntu 24.04 — **not** Alpine. Alpine would mean you
   landed in a Tailscale sidecar, which is the exact failure this design exists
   to avoid.
@@ -342,7 +342,7 @@ cat /etc/os-release | head -2 && ls /home/dev
 
 **Steps**
 
-1. From the SSH session on the devbox:
+1. From the SSH session on devaloy:
 
 ```sh
 node -v && pnpm -v && gh --version && turbo --version && herdr --version
@@ -380,25 +380,25 @@ exec`; **unverified under Tailscale SSH specifically.**
 1. **On the Mac**, run a command remotely with no TTY:
 
 ```sh
-ssh dev@devbox 'node -v && pnpm -v && echo $PATH'
+ssh dev@devaloy 'node -v && pnpm -v && echo $PATH'
 ```
 
 2. Confirm SCP works (Tailscale implements SFTP natively, so modern clients should be fine):
 
 ```sh
-echo hello > /tmp/devaloy-probe.txt && scp /tmp/devaloy-probe.txt dev@devbox:~/
+echo hello > /tmp/devaloy-probe.txt && scp /tmp/devaloy-probe.txt dev@devaloy:~/
 ```
 
 3. Confirm rsync works:
 
 ```sh
-rsync /tmp/devaloy-probe.txt dev@devbox:~/probe2.txt
+rsync /tmp/devaloy-probe.txt dev@devaloy:~/probe2.txt
 ```
 
 4. Confirm sftp connects:
 
 ```sh
-sftp dev@devbox
+sftp dev@devaloy
 ```
 
 **Expected**
@@ -410,7 +410,7 @@ sftp dev@devbox
 - **If step 1 fails** but TC-7 passed, `link-shims` did not cover this path. Recovery, then re-test:
 
 ```sh
-ssh dev@devbox 'sudo DEV_HOME=/home/dev link-shims'
+ssh dev@devaloy 'sudo DEV_HOME=/home/dev link-shims'
 ```
 
 **Actual:** _(tester fills in)_
@@ -427,7 +427,7 @@ first on `PATH`.
 
 **Steps**
 
-1. On the devbox:
+1. On devaloy:
 
 ```sh
 curl -fsSL https://claude.ai/install.sh | bash
@@ -450,7 +450,7 @@ claude
    forwarded and retry:
 
 ```sh
-ssh -L 54545:localhost:54545 dev@devbox
+ssh -L 54545:localhost:54545 dev@devaloy
 ```
 
 5. Once authenticated, give it a trivial task:
@@ -481,7 +481,7 @@ for non-interactive sessions to see it.
 
 **Steps**
 
-1. On the devbox:
+1. On devaloy:
 
 ```sh
 npm i -g @openai/codex
@@ -496,7 +496,7 @@ command -v codex && codex --version
 3. Codex's browser login uses a callback on `localhost:1455`, which does not exist on a headless box. Reconnect **from the Mac** with that port forwarded:
 
 ```sh
-ssh -L 1455:localhost:1455 dev@devbox
+ssh -L 1455:localhost:1455 dev@devaloy
 ```
 
 4. In that forwarded session, log in — open the printed URL in the Mac's browser:
@@ -527,7 +527,7 @@ codex exec "summarize what this repository does"
 
 - `command -v codex` resolves with no manual `mise reshim`.
 - The forwarded-port login completes.
-- After step 6, `ssh dev@devbox 'codex --version'` works from the Mac.
+- After step 6, `ssh dev@devaloy 'codex --version'` works from the Mac.
 - Step 7 returns a sensible answer.
 
 **Actual:** _(tester fills in)_
@@ -546,9 +546,9 @@ authentication method. OpenSSH does this. Whether Terminus does is untested.
 **Steps**
 
 1. On the phone, open the Tailscale app and confirm it is connected.
-2. Confirm `devbox` shows as online in the app's machine list.
+2. Confirm `devaloy` shows as online in the app's machine list.
 3. In Terminus, create a new host:
-   - **Hostname** `devbox` (if it fails to resolve, use the `100.x.y.z` from TC-5 — MagicDNS is unreliable on mobile)
+   - **Hostname** `devaloy` (if it fails to resolve, use the `100.x.y.z` from TC-5 — MagicDNS is unreliable on mobile)
    - **Port** `22` (not 2222 — that is gone)
    - **Username** `dev`
    - **Key / auth** — leave empty. Do not attach a key.
@@ -619,11 +619,11 @@ herdr
 
 ---
 
-### TC-13 — Real work: clone, build, commit from the devbox · 🟡 Normal
+### TC-13 — Real work: clone, build, commit from devaloy · 🟡 Normal
 
 **Steps**
 
-1. On the devbox, authenticate `gh`:
+1. On devaloy, authenticate `gh`:
 
 ```sh
 gh auth login
@@ -638,7 +638,7 @@ gh repo clone mimukit/devaloy ~/work-devaloy && cd ~/work-devaloy
 3. Make a trivial commit:
 
 ```sh
-git commit --allow-empty -m "test(repo): devbox connectivity check" && git log -1
+git commit --allow-empty -m "test(repo): devaloy connectivity check" && git log -1
 ```
 
 4. Do **not** push. Delete the clone afterwards.
@@ -677,13 +677,13 @@ docker compose down && docker compose up -d --build
 3. Read the log:
 
 ```sh
-docker compose logs devbox | tail -20
+docker compose logs devaloy | tail -20
 ```
 
 4. **From the Mac**, reconnect:
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 ```
 
 5. Check what survived:
@@ -695,7 +695,7 @@ cat ~/marker.txt && node -v && command -v claude codex
 **Expected**
 
 - The log shows `mise toolchain already bootstrapped, skipping` — the redeploy takes seconds, not minutes.
-- The node keeps the **same** tailnet IP and does **not** re-register. Check the admin console for a stray `devbox-1`.
+- The node keeps the **same** tailnet IP and does **not** re-register. Check the admin console for a stray `devaloy-1`.
 - No host-key warning on reconnect.
 - `marker.txt` intact; node still v24.x; `claude` and `codex` still installed and still authenticated.
 - Your herdr session is still there (`herdr` reattaches to it) even though tailscaled restarting drops the SSH connection itself.
@@ -717,7 +717,7 @@ This is the case that proves it.
 1. **From the Mac**, try to log in as a user the ACL does not permit:
 
 ```sh
-ssh root@devbox
+ssh root@devaloy
 ```
 
 2. *(on the VPS)* Confirm nothing is listening on the host's own interfaces:
@@ -735,7 +735,7 @@ nc -vz -w 5 192.168.x.x 22
 4. Temporarily remove the `ssh` rule from the policy file, save, and retry from the Mac:
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 ```
 
 5. Restore the rule.
@@ -744,7 +744,7 @@ ssh dev@devbox
 
 - Step 1 is **denied** — `users: ["dev"]` does not include root.
 - Step 2 shows no container port mappings, and nothing of ours listening on the host's 22/2222 (the host's own sshd on 22 is fine and expected).
-- Step 3 does **not** reach the devbox. Any devbox shell here is a blocker.
+- Step 3 does **not** reach devaloy. Any devaloy shell here is a blocker.
 - Step 4 is **denied** — proving the policy file, not the network, is what grants access.
 - After step 5, access works again.
 
@@ -764,19 +764,19 @@ There is no sshd fallback. Prove the recovery path works *before* you need it.
 1. *(on the VPS)* Simulate a broken tailnet by logging the node out:
 
 ```sh
-docker compose exec devbox tailscale logout
+docker compose exec devaloy tailscale logout
 ```
 
 2. **From the Mac**, confirm you are now locked out:
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 ```
 
 3. *(on the VPS)* Recover:
 
 ```sh
-docker compose exec devbox tailscale up --ssh
+docker compose exec devaloy tailscale up --ssh
 ```
 
 4. Follow the printed URL to re-authenticate, then retry from the Mac.
@@ -799,7 +799,7 @@ docker compose exec devbox tailscale up --ssh
 
 **Steps**
 
-1. On the devbox, as `dev`:
+1. On devaloy, as `dev`:
 
 ```sh
 devaloy-update
@@ -867,8 +867,8 @@ sudo ufw status verbose
 - Step 1 refuses with `Tailscale is not up on this host — refusing to lock down (anti-lockout guard).` and changes nothing.
 - Step 3 completes, or refuses with the non-tailnet-source guard — both are correct; note which fired.
 - `ufw status verbose` shows incoming denied by default, an allow rule on `tailscale0`, and no 80/443.
-- **Crucially:** you can still reach the devbox from the Mac afterwards. The container's tailnet is independent of the host firewall.
-- Note that the host now has its own `devbox`-adjacent Tailscale node — don't confuse it with the container's.
+- **Crucially:** you can still reach devaloy from the Mac afterwards. The container's tailnet is independent of the host firewall.
+- Note that the host now has its own `devaloy`-adjacent Tailscale node — don't confuse it with the container's.
 
 **Actual:** _(tester fills in)_
 
@@ -880,11 +880,11 @@ sudo ufw status verbose
 ## Regression checks
 
 - [x] `git`, `tmux`, `vim`, `htop` and `build-essential` (try `gcc --version`) are present from the base image.
-- [x] `docker compose exec devbox cat /proc/1/oom_score_adj` prints `-500`, and `cat /proc/self/oom_score_adj` in an SSH session prints `0`.
-- [x] There is no `sshd` process in the container: `docker compose exec devbox pgrep sshd` finds nothing.
+- [x] `docker compose exec devaloy cat /proc/1/oom_score_adj` prints `-500`, and `cat /proc/self/oom_score_adj` in an SSH session prints `0`.
+- [x] There is no `sshd` process in the container: `docker compose exec devaloy pgrep sshd` finds nothing.
 - [x] There is no `/home/dev/.ssh/authorized_keys` and no `host_keys` directory — leftovers would mean a stale volume from the old design.
-- [x] `ssh dev@devbox 'echo $PATH'` includes `/usr/local/bin`.
-- [x] After a full `down && up`, the admin console still shows exactly one `devbox`.
+- [x] `ssh dev@devaloy 'echo $PATH'` includes `/usr/local/bin`.
+- [x] After a full `down && up`, the admin console still shows exactly one `devaloy`.
 
 ## Automated verification (by AI agent)
 
@@ -903,11 +903,11 @@ TS_AUTHKEY=dummy docker compose config
 Image build and live container run (no auth key, so everything up to the tailnet join):
 
 ```sh
-docker build -t devaloy-devbox:merged .
+docker build -t devaloy:merged .
 ```
 
 ```sh
-docker run -d --name devaloy-noauth --cap-add NET_ADMIN --device /dev/net/tun:/dev/net/tun devaloy-devbox:merged
+docker run -d --name devaloy-noauth --cap-add NET_ADMIN --device /dev/net/tun:/dev/net/tun devaloy:merged
 ```
 
 ```sh

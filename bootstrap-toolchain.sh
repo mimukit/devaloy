@@ -43,7 +43,7 @@ case "${1:-}" in
 esac
 
 # Node is pinned to an LTS *major*, not mise's floating `lts` alias — that
-# alias rolls across majors, which is exactly the unannounced jump a devbox
+# alias rolls across majors, which is exactly the unannounced jump a dev box
 # shouldn't take on a redeploy. Bump this deliberately.
 MISE_NODE_VERSION="${MISE_NODE_VERSION:-24}"
 # herdr tracks latest by design: the boot bootstrap is gated behind the revision

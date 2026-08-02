@@ -1,7 +1,7 @@
 # Claude Code hooks
 
 Drop executable hook scripts here. They land at `~/.claude/hooks/` on the
-devbox and are wired up by referencing them from
+devaloy box and are wired up by referencing them from
 [`../settings.json`](../settings.json) — the directory alone does nothing, a
 hook only runs if a `hooks` block in `settings.json` names it.
 

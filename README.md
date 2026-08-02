@@ -1,6 +1,6 @@
 # devaloy
 
-A portable, self-contained Docker Compose devbox you SSH into and pick up a
+A portable, self-contained Docker Compose dev box you SSH into and pick up a
 coding session from any device — phone or laptop, on any network. It exists so
 development itself can happen remotely, independent of the machine physically in
 front of you.
@@ -159,14 +159,14 @@ expired node is unreachable — recovering it needs access to the Docker host.
 From any device on your tailnet (laptop, or phone with the Tailscale app):
 
 ```sh
-ssh dev@devbox
+ssh dev@devaloy
 ```
 
 No key, no port flag, no password. Tailscale SSH assumes port 22 and there is
 no way to change it — but that port only exists on the tailnet address inside
 the container, so it never collides with the host's own sshd.
 
-If MagicDNS is off, use the node's `100.x.y.z` address instead of `devbox`.
+If MagicDNS is off, use the node's `100.x.y.z` address instead of `devaloy`.
 
 Then start (or reattach) your session:
 
@@ -181,7 +181,7 @@ left off.
 
 The toolchain installs once per volume, so redeploys are predictable and never
 swap a tool out from under a live session. To pick up newer versions or a
-changed pin, run this on the devbox as `dev`:
+changed pin, run this on the box as `dev`:
 
 ```sh
 devaloy-update
@@ -195,7 +195,7 @@ It also reinstalls the agent skills, so it doubles as the publish loop — see
 [Agent skills](#agent-skills). Use `skmi` when you want only that.
 
 `devaloy-update` also refreshes `/usr/local/bin`, which is what makes the
-toolchain visible to non-interactive sessions (`ssh devbox '<cmd>'`, `scp`,
+toolchain visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`,
 `rsync`, git-over-ssh). Run it after any `npm i -g`.
 
 ## Config as code
@@ -290,11 +290,11 @@ would defeat the point of `--skill '*'`.
 There is no sshd fallback by design, so the break-glass path is the Docker host:
 
 ```sh
-docker compose exec devbox tailscale status
+docker compose exec devaloy tailscale status
 ```
 
 ```sh
-docker compose exec devbox tailscale up --ssh
+docker compose exec devaloy tailscale up --ssh
 ```
 
 ## (Optional) hardening the host
@@ -302,7 +302,7 @@ docker compose exec devbox tailscale up --ssh
 On a cloud VPS, `scripts/host-firewall-lockdown.sh` locks down the *host's* own
 firewall (deny incoming by default, allow only on the `tailscale0` interface) as
 defense-in-depth. It refuses to run unless Tailscale is already up, to avoid
-locking you out. This protects the host, not the devbox — the devbox already
+locking you out. This protects the host, not devaloy — devaloy already
 publishes nothing. Skip it on a trusted/home Docker host.
 
 ```sh
@@ -313,14 +313,14 @@ sudo scripts/host-firewall-lockdown.sh
 
 There is no backup job and no snapshot tooling. `/home/dev` persists across
 redeploys, but **git-push discipline is the only backup**: nothing valuable
-should live only on the devbox. If the host or its volumes are lost, recovery is
+should live only on devaloy. If the host or its volumes are lost, recovery is
 re-cloning your repos and re-running `mise install`.
 
 ## Non-goals
 
 - No browser-based IDE — SSH only.
 - No mosh — herdr's reattach covers the reconnect case.
-- No host Docker socket access — the devbox can't control the host's other
+- No host Docker socket access — devaloy can't control the host's other
   containers.
 - No public HTTPS domain, no Traefik, no Let's Encrypt.
 - No SSH key management, no password auth, no fallback sshd.

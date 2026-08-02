@@ -2,7 +2,7 @@
 # Mirror the dev user's mise shims into /usr/local/bin. Needs root.
 #
 # Why this exists: Tailscale SSH runs non-interactive commands
-# (`ssh devbox 'pnpm build'`, scp, rsync, git-over-ssh) through a shell that
+# (`ssh devaloy 'pnpm build'`, scp, rsync, git-over-ssh) through a shell that
 # will not reliably source ~/.bashrc. Bash only auto-sources .bashrc in a
 # non-interactive shell when stdin is a *socket* — an OpenSSH implementation
 # detail we no longer depend on now that sshd is gone. /usr/local/bin is on

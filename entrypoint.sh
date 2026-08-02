@@ -22,7 +22,7 @@ as_dev() { su -l -s /bin/sh "${DEV_USER}" -c "$1"; }
 # already has it. Ubuntu's stock .bashrc bails out early on non-interactive
 # shells, so this is sourced from the TOP of .bashrc, above that guard; for zsh
 # it hangs off .zshenv, which zsh sources for *every* invocation including
-# `ssh devbox '<cmd>'`. mise shims resolve versions at exec time, so no
+# `ssh devaloy '<cmd>'`. mise shims resolve versions at exec time, so no
 # interactive `mise activate` is needed. link-shims covers whatever is left.
 ENV_SNIPPET="${DEV_HOME}/.devaloy_env"
 cat > "${ENV_SNIPPET}" <<'EOF'
@@ -140,12 +140,12 @@ fi
 
 # --accept-dns defaults to false: letting Tailscale rewrite /etc/resolv.conf in
 # a container clobbers Docker's own resolver. Set TS_ACCEPT_DNS=true if you want
-# MagicDNS resolution *from* the devbox.
+# MagicDNS resolution *from* the box.
 # --timeout is load-bearing, not defensive: with no authkey and no saved state,
 # `tailscale up` prints a login URL and blocks FOREVER. That would wedge the
 # entrypoint before the toolchain bootstrap ever runs. Fail instead, and let the
 # warning path below tell you how to finish the login by hand.
-up_args=(--ssh --timeout=90s --hostname="${TS_HOSTNAME:-devbox}")
+up_args=(--ssh --timeout=90s --hostname="${TS_HOSTNAME:-devaloy}")
 if [ "${TS_ACCEPT_DNS:-false}" = "true" ]; then
   up_args+=(--accept-dns=true)
 else
@@ -158,7 +158,7 @@ if [ -n "${TS_AUTHKEY:-}" ]; then
 fi
 
 if tailscale --socket="${TS_SOCKET}" up "${up_args[@]}"; then
-  log "Tailscale SSH is up as ${TS_HOSTNAME:-devbox} ($(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1))"
+  log "Tailscale SSH is up as ${TS_HOSTNAME:-devaloy} ($(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1))"
 else
   # Deliberately non-fatal. Restart-looping would not fix a bad authkey or a
   # missing ACL rule, and it would destroy the one diagnostic path left.
@@ -168,7 +168,7 @@ else
     log "WARNING: 'To authenticate, visit: ...' URL and open it, or set the key."
   fi
   log "WARNING: recover from the Docker host with:"
-  log "WARNING:   docker compose exec devbox tailscale up --ssh"
+  log "WARNING:   docker compose exec devaloy tailscale up --ssh"
 fi
 
 # --- mise bootstrap + pinned toolchain (runs as dev) ---
@@ -210,5 +210,5 @@ if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
   fi
 fi
 
-log "devaloy is up. Connect with: ssh dev@${TS_HOSTNAME:-devbox}"
+log "devaloy is up. Connect with: ssh dev@${TS_HOSTNAME:-devaloy}"
 wait "${TAILSCALED_PID}"
