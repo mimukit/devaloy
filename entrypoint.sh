@@ -255,10 +255,15 @@ if [ -x "${ORCA_BIN}" ]; then
         sleep 10
       done
     ) &
-    log "Orca server on ${ORCA_IP}:${ORCA_PORT} — pair a client with the URL"
-    log "logged above. For the mobile QR instead, run by hand:"
-    log "  docker compose exec -u dev devaloy \\"
-    log "    xvfb-run -a orca-ide serve --pairing-address ${ORCA_IP} --mobile-pairing"
+    # Both the desktop and the phone pair off this one server's own output —
+    # there is no second command to run. A second `orca serve` in this container
+    # hits Electron's single-instance lock and exits, and there is no `orca
+    # pair` subcommand. --mobile-pairing is a flag on THIS launch that swaps the
+    # code for a mobile-scoped one; adding it here costs the desktop's default
+    # link, which is why it is not here.
+    log "Orca server on ${ORCA_IP}:${ORCA_PORT} — pair both the desktop and the"
+    log "phone from this server's own log: the 'Pairing URL' line for the"
+    log "desktop, and the orca:// link or 'Web client URL' line for the phone."
   else
     # Same call as tailscale up's own failure path: an advertised address that
     # nothing can route to is worse than no server at all, because the client
