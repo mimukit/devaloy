@@ -142,13 +142,36 @@ the file. Leave it empty to use `gh auth login` by hand instead; note that `gh`
 refuses that flow while `GITHUB_TOKEN` is set, which is expected rather than a
 fault.
 
-### 5. Start the stack
+### 5. (Optional) Claude Code token
+
+Set `CLAUDE_CODE_OAUTH_TOKEN` in `.env` and Claude Code is authenticated from
+first boot — no `/login`, no browser round-trip from a phone. Generate it on
+your own machine, where a browser exists:
+
+```sh
+claude setup-token
+```
+
+That needs a Pro or Max subscription (or a Team/Enterprise seat); it opens the
+same OAuth flow as `/login` and prints a token it does not store anywhere, so
+copy it straight into `.env`. The entrypoint writes it to `~/.devaloy_secrets`
+alongside the GitHub token, with the same consequence: **the home volume holds a
+live credential**, and clearing the variable plus a redeploy is what revokes it.
+
+Two things to know. The token is static and valid for **one year** with no
+self-refresh — when it lapses, re-run `claude setup-token` and redeploy. And it
+sits *above* `~/.claude/.credentials.json` in Claude Code's auth precedence, so
+running `/login` on the box while this is set does nothing; leave the variable
+empty if you want the interactive login to be the source of truth. (Codex has no
+equivalent — it still wants `codex login` on the box.)
+
+### 6. Start the stack
 
 ```sh
 docker compose up -d --build
 ```
 
-### 6. Disable key expiry
+### 7. Disable key expiry
 
 Once the node appears in the
 [admin console](https://login.tailscale.com/admin/machines), **disable key

@@ -62,6 +62,12 @@ services:
       # entrypoint copies it into a 0600 file in the home volume, so clearing
       # it here and redeploying is what revokes it — see entrypoint.sh.
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      # Authenticates Claude Code with no interactive `/login` on the box.
+      # Generated on your own machine with `claude setup-token` (Pro/Max and up).
+      # Same lifecycle as the GitHub token above: the entrypoint copies it into
+      # the 0600 file in the home volume, and clearing it here plus a redeploy
+      # is what revokes it.
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
       - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}

@@ -123,6 +123,7 @@ Open the service's **Environment** tab and paste:
 ```sh
 TS_AUTHKEY=tskey-auth-...
 GITHUB_TOKEN=ghp_...
+CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat...
 ```
 
 Dokploy writes these to an `.env` file beside the checked-out compose file, and
@@ -130,9 +131,12 @@ Dokploy writes these to an `.env` file beside the checked-out compose file, and
 interpolation — so there is nothing to add to the compose file itself, and no
 `env_file:` needed.
 
-`GITHUB_TOKEN` is optional; see
-[README → GitHub token](../../README.md#4-optional-github-token) for what it
-buys you and what it costs (a live credential lands in the home volume).
+`GITHUB_TOKEN` and `CLAUDE_CODE_OAUTH_TOKEN` are both optional; see
+[README → GitHub token](../../README.md#4-optional-github-token) and
+[README → Claude Code token](../../README.md#5-optional-claude-code-token) for
+what they buy you and what they cost (a live credential lands in the home
+volume). Generate the Claude one on your laptop with `claude setup-token` —
+there is no browser on the box to complete `/login` with.
 `TS_HOSTNAME`, `TS_ACCEPT_DNS`, `MISE_NODE_VERSION` and `MISE_HERDR_VERSION`
 are optional overrides and can go here too.
 

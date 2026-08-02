@@ -77,21 +77,35 @@ if [ -f "${DEV_HOME}/.bashrc" ] && grep -qF '.devaloy_profile' "${DEV_HOME}/.bas
   sed -i '/\.devaloy_profile/d' "${DEV_HOME}/.bashrc"
 fi
 
-# --- GITHUB_TOKEN ---
+# --- tokens ---
 # Written to a file rather than relied on from the container environment:
 # tailscaled spawns login shells itself, and what it forwards from PID 1's
 # environment is its business, not a contract. Rewritten from scratch on every
-# boot, so clearing the variable in .env and redeploying really does revoke it.
+# boot, so clearing a variable in .env and redeploying really does revoke it.
 SECRETS_SNIPPET="${DEV_HOME}/.devaloy_secrets"
 rm -f "${SECRETS_SNIPPET}"
-if [ -n "${GITHUB_TOKEN:-}" ]; then
-  install -m 600 -o "${DEV_USER}" -g "${DEV_USER}" /dev/null "${SECRETS_SNIPPET}"
+
+write_secret() {
+  name="$1"; value="$2"
+  [ -n "${value}" ] || return 0
+  [ -f "${SECRETS_SNIPPET}" ] || \
+    install -m 600 -o "${DEV_USER}" -g "${DEV_USER}" /dev/null "${SECRETS_SNIPPET}"
   # Single-quote the value and escape any embedded quote, so a token with shell
   # metacharacters cannot execute anything when this file is sourced.
-  printf "export GITHUB_TOKEN='%s'\n" \
-    "$(printf '%s' "${GITHUB_TOKEN}" | sed "s/'/'\\\\''/g")" >> "${SECRETS_SNIPPET}"
-  log "GITHUB_TOKEN wired into the dev shell environment"
-fi
+  printf "export %s='%s'\n" "${name}" \
+    "$(printf '%s' "${value}" | sed "s/'/'\\\\''/g")" >> "${SECRETS_SNIPPET}"
+  log "${name} wired into the dev shell environment"
+}
+
+write_secret GITHUB_TOKEN "${GITHUB_TOKEN:-}"
+# Authenticates Claude Code with no `/login` from inside the box. The CLI reads
+# this variable itself, so nothing else has to be configured — but note it sits
+# BELOW ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN in Claude Code's precedence
+# order and ABOVE ~/.claude/.credentials.json, so a hand-run `/login` on the box
+# is silently ignored while this is set. It is a static one-year token that
+# never refreshes itself; when it lapses, re-run `claude setup-token` on your
+# laptop and redeploy.
+write_secret CLAUDE_CODE_OAUTH_TOKEN "${CLAUDE_CODE_OAUTH_TOKEN:-}"
 
 # --- managed dotfiles (zsh, Claude Code, Codex) ---
 # The repo is the source of truth: every file shipped under config/ is copied
