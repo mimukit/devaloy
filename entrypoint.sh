@@ -5,10 +5,17 @@ DEV_USER="dev"
 DEV_HOME="/home/${DEV_USER}"
 TS_STATE_DIR="${TS_STATE_DIR:-/var/lib/tailscale}"
 TS_SOCKET="/var/run/tailscale/tailscaled.sock"
+CONFIG_SRC="/opt/devaloy/config"
 # Version pins live in bootstrap-toolchain.sh; these are only forwarded, so an
 # empty value here falls through to that script's default.
 
 log() { echo "[entrypoint] $*"; }
+
+# Run a command as the dev user under a plain sh. The explicit -s matters now
+# that the dev user's login shell is zsh: without it every helper below would
+# run through a shell whose startup files this script is in the middle of
+# rewriting. -l gives a clean environment and a correct HOME.
+as_dev() { su -l -s /bin/sh "${DEV_USER}" -c "$1"; }
 
 # --- shell env: toolchain PATH + OOM reset, for EVERY shell ---
 # Written before tailscaled comes up, so the very first session that lands
@@ -65,6 +72,24 @@ fi
 rm -f "${DEV_HOME}/.devaloy_profile"
 if [ -f "${DEV_HOME}/.bashrc" ] && grep -qF '.devaloy_profile' "${DEV_HOME}/.bashrc"; then
   sed -i '/\.devaloy_profile/d' "${DEV_HOME}/.bashrc"
+fi
+
+# --- managed dotfiles (zsh, Claude Code, Codex) ---
+# The repo is the source of truth: every file shipped under config/ is copied
+# over its counterpart in /home/dev on each boot, so editing one in the repo
+# and redeploying actually changes the box. The copy MERGES rather than
+# replaces, so files the repo does not ship — ~/.zshrc.local, credentials,
+# session history, skills you added by hand — are left alone.
+seed_config() {
+  src="$1"; dest="$2"
+  [ -d "${src}" ] || return 0
+  as_dev "mkdir -p '${dest}' && cp -R '${src}/.' '${dest}/'"
+}
+if [ -d "${CONFIG_SRC}" ]; then
+  as_dev "cp -f '${CONFIG_SRC}/zsh/zshrc' '${DEV_HOME}/.zshrc'"
+  seed_config "${CONFIG_SRC}/claude" "${DEV_HOME}/.claude"
+  seed_config "${CONFIG_SRC}/codex"  "${DEV_HOME}/.codex"
+  log "Managed dotfiles synced from ${CONFIG_SRC}"
 fi
 
 # --- tailscaled + Tailscale SSH (started FIRST, before the slow bootstrap) ---

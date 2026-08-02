@@ -1,0 +1,92 @@
+# devaloy devbox — interactive zsh config.
+#
+# MANAGED FILE. entrypoint.sh copies this over ~/.zshrc on every boot, so any
+# edit you make on the box is lost at the next redeploy. Put your own settings
+# in ~/.zshrc.local instead — it is sourced at the bottom of this file and
+# nothing in this repo ever touches it.
+#
+# Deliberately framework-free: no oh-my-zsh, no plugin manager, nothing to
+# clone on first boot. A devbox you reach over a phone tether should not spend
+# its first thirty seconds fetching a prompt theme.
+#
+# PATH and the OOM reset live in ~/.devaloy_env, sourced from ~/.zshenv so
+# non-interactive sessions (ssh devbox '<cmd>', scp, rsync) get them too.
+
+[ -f "$HOME/.devaloy_env" ] && . "$HOME/.devaloy_env"
+
+# --- history -------------------------------------------------------------
+# Shared across every device you connect from, which is the whole point: run a
+# command from the laptop, recall it from the phone.
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt SHARE_HISTORY          # write and re-read between concurrent sessions
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_IGNORE_SPACE      # a leading space keeps a command out of history
+setopt HIST_REDUCE_BLANKS
+setopt EXTENDED_HISTORY       # record timestamps and durations
+
+# --- navigation ----------------------------------------------------------
+setopt AUTO_CD                # `src/` instead of `cd src/`
+setopt AUTO_PUSHD
+setopt PUSHD_IGNORE_DUPS
+setopt INTERACTIVE_COMMENTS   # allow `# note` in an interactive line
+
+# --- completion ----------------------------------------------------------
+autoload -Uz compinit
+# -C skips the security audit of the completion dumpfile. On a single-user box
+# that audit only costs startup latency, which you feel over a slow link.
+compinit -C
+zstyle ':completion:*' menu select
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # case-insensitive
+zstyle ':completion:*' list-colors ''
+
+# --- keys ----------------------------------------------------------------
+bindkey -e                                   # emacs bindings; ^A/^E work
+bindkey '^[[A' history-search-backward       # Up filters by what you typed
+bindkey '^[[B' history-search-forward
+bindkey '^[[3~' delete-char
+bindkey '^[[1;5C' forward-word
+bindkey '^[[1;5D' backward-word
+
+# --- prompt --------------------------------------------------------------
+# One line, like a stock zsh prompt. An earlier revision split it over two on
+# the theory that a long path plus a branch wraps badly on a phone; in practice
+# the second line was just noise. If a deep path does start wrapping on you,
+# swap %~ for %(4~|.../%3~|%~) to keep only the last three components.
+autoload -Uz vcs_info
+zstyle ':vcs_info:*' enable git
+zstyle ':vcs_info:git:*' check-for-changes true
+zstyle ':vcs_info:git:*' unstagedstr '*'
+zstyle ':vcs_info:git:*' stagedstr '+'
+zstyle ':vcs_info:git:*' formats ' %F{yellow}%b%u%c%f'
+zstyle ':vcs_info:git:*' actionformats ' %F{yellow}%b|%a%u%c%f'
+precmd() { vcs_info }
+setopt PROMPT_SUBST
+# %(?..) marks a non-zero exit — worth seeing when you scroll back a session
+# you were not watching live.
+PROMPT='%F{cyan}%m%f %F{blue}%~%f${vcs_info_msg_0_}%(?.. %F{red}[%?]%f) %(!.#.$) '
+
+# --- aliases -------------------------------------------------------------
+alias ll='ls -alFh'
+alias la='ls -A'
+alias l='ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias g='git'
+alias gs='git status --short --branch'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate -20'
+alias tree='find . -not -path "*/.git/*" -not -path "*/node_modules/*" | sed -e "s|[^/]*/|  |g"'
+
+# Ubuntu ships bat's binary as `batcat`; the Dockerfile adds a `bat` symlink.
+command -v bat >/dev/null && alias catp='bat --paging=never'
+
+# --- devbox conveniences -------------------------------------------------
+alias reload='exec zsh'
+# The toolchain installs once per volume; this is the deliberate refresh.
+alias update='devaloy-update'
+
+# --- your overrides ------------------------------------------------------
+# Sourced last so it wins over everything above. Never overwritten.
+[ -f "$HOME/.zshrc.local" ] && . "$HOME/.zshrc.local"

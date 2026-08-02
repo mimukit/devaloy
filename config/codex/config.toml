@@ -1,0 +1,23 @@
+# Codex global config for the devaloy devbox.
+#
+# MANAGED FILE. entrypoint.sh copies this over ~/.codex/config.toml on every
+# boot, so edit it here in the repo, not on the box. Codex has no include
+# mechanism and no *.local convention, so there is no escape hatch for this
+# one file — a setting you want to keep has to live here.
+#
+# Credentials (~/.codex/auth.json) and session history are never touched.
+
+# Ask before anything outside the workspace or the network. This box has
+# passwordless sudo and a GITHUB_TOKEN in its environment, so a wider default
+# is a worse trade here than on a laptop.
+approval_policy = "on-request"
+
+# Writes confined to the working directory. Escalation still works — it just
+# has to be asked for, per the policy above.
+sandbox_mode = "workspace-write"
+
+[sandbox_workspace_write]
+# Off by default: an agent that can reach the network can reach the tailnet,
+# and this container sits on it. Turn it on per-session when a task genuinely
+# needs to fetch something.
+network_access = false

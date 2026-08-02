@@ -57,6 +57,11 @@ RUN chmod 755 /entrypoint.sh \
         /usr/local/bin/devaloy-update \
         /usr/local/bin/link-shims
 
+# Managed dotfiles (zsh, Claude Code, Codex). entrypoint.sh copies these into
+# /home/dev on every boot — see the "config sync" section of the README for
+# what that overwrites and what it leaves alone.
+COPY config /opt/devaloy/config
+
 # No VOLUME instruction: compose declares the named volumes, and Docker seeds an
 # empty named volume from the image either way. Declaring it here would only
 # force an anonymous volume on a plain `docker run`.
