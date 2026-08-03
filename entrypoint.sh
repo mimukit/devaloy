@@ -131,6 +131,27 @@ if [ -d "${CONFIG_SRC}" ]; then
   log "Managed dotfiles synced from ${CONFIG_SRC}"
 fi
 
+# --- Claude Code onboarding stamp ---
+# The token authenticates the CLI, but the interactive TUI gates its first-run
+# "Select login method" screen on hasCompletedOnboarding in ~/.claude.json, not
+# on auth state — so `claude auth status` reports loggedIn while `claude` still
+# asks you to log in. Stamping the flag skips the screen. Only done when the
+# token is set: without one, that screen is the way you actually log in.
+# ~/.claude.json also holds MCP servers and per-project history, so this merges
+# into whatever is there rather than writing the file fresh.
+if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+  CLAUDE_JSON="${DEV_HOME}/.claude.json"
+  as_dev "
+    if [ -s '${CLAUDE_JSON}' ] && jq -e . '${CLAUDE_JSON}' >/dev/null 2>&1; then
+      jq '.hasCompletedOnboarding = true' '${CLAUDE_JSON}' > '${CLAUDE_JSON}.tmp' &&
+        mv '${CLAUDE_JSON}.tmp' '${CLAUDE_JSON}'
+    else
+      printf '%s\n' '{\"hasCompletedOnboarding\": true}' > '${CLAUDE_JSON}'
+    fi
+  "
+  log "Claude Code onboarding marked complete (token auth in use)"
+fi
+
 # --- tailscaled + Tailscale SSH (started FIRST, before the slow bootstrap) ---
 # Ordering matters: the toolchain install takes minutes on a cold volume, and
 # there is no sshd fallback any more. Bringing the tailnet up first means the
