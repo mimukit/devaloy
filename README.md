@@ -201,6 +201,22 @@ herdr
 Detach and reconnect from a different device — the session picks up where you
 left off.
 
+## (Optional) phone push notifications
+
+Because you are not sitting in front of this box, nothing tells you when an agent
+**blocks for permission** or **finishes a long turn**. Set a single `.env`
+variable and it sends one [ntfy](https://ntfy.sh) push to your phone per session
+— repo, state, elapsed — that updates in place:
+
+```sh
+NTFY_TOPIC=$(openssl rand -hex 16)   # this string IS the credential — keep it long and random
+```
+
+Redeploy, then subscribe to that topic in the ntfy app. Off by default; metadata
+only, never prompt or code. Full details — security model, quota, tuning, and the
+Android-16 caveat — are in
+[docs/wiki/push-notifications.md](docs/wiki/push-notifications.md).
+
 ## (Optional) the Orca apps
 
 Tailscale SSH gets you a terminal, which is everything a laptop or a phone with
