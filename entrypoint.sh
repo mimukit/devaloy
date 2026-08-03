@@ -107,6 +107,35 @@ write_secret GITHUB_TOKEN "${GITHUB_TOKEN:-}"
 # laptop and redeploy.
 write_secret CLAUDE_CODE_OAUTH_TOKEN "${CLAUDE_CODE_OAUTH_TOKEN:-}"
 
+# --- ntfy push-notification config for hooks ---
+# agent-push reads ~/.config/agent-push.env rather than the shell environment,
+# because Orca spawns panes via `su -l -s /bin/sh`, which sources neither
+# .zshenv nor .bashrc — so ~/.devaloy_secrets is not reliably in a hook's env.
+# Rewritten from scratch every boot (like ~/.devaloy_secrets above), so clearing
+# NTFY_TOPIC in .env and redeploying really does turn the feature off. Only
+# written when a topic is set; absent, agent-push's own no-topic gate keeps it
+# inert. .env's NTFY_* names map onto the script's PUSH_* keys here.
+PUSH_ENV_FILE="${DEV_HOME}/.config/agent-push.env"
+rm -f "${PUSH_ENV_FILE}"
+push_write() {
+  name="$1"; value="$2"
+  [ -n "${value}" ] || return 0
+  mkdir -p "${DEV_HOME}/.config"
+  chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.config" 2>/dev/null || true
+  [ -f "${PUSH_ENV_FILE}" ] || \
+    install -m 600 -o "${DEV_USER}" -g "${DEV_USER}" /dev/null "${PUSH_ENV_FILE}"
+  # Single-quote and escape embedded quotes, so a value with shell
+  # metacharacters cannot execute anything when agent-push sources this file.
+  printf "%s='%s'\n" "${name}" \
+    "$(printf '%s' "${value}" | sed "s/'/'\\\\''/g")" >> "${PUSH_ENV_FILE}"
+}
+if [ -n "${NTFY_TOPIC:-}" ]; then
+  push_write PUSH_NTFY_TOPIC "${NTFY_TOPIC}"
+  push_write PUSH_NTFY_URL   "${NTFY_SERVER:-}"
+  push_write PUSH_NTFY_TOKEN "${NTFY_TOKEN:-}"
+  log "ntfy push notifications enabled (topic configured; ~/.config/agent-push.env written)"
+fi
+
 # --- managed dotfiles (zsh, Claude Code, Codex) ---
 # The repo is the source of truth: every file shipped under config/ is copied
 # over its counterpart in /home/dev on each boot, so editing one in the repo

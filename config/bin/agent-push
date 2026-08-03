@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+# agent-push — ntfy push notifications for headless devaloy sessions, shared by
+# Claude Code and Codex CLI.
+#
+# devaloy runs agents on a VPS you are not sitting in front of. When an agent
+# stops for permission or finishes a long turn, nothing reaches your phone. This
+# hangs off the hook contract every agent already implements and publishes a
+# single ntfy notification per session — repo, state, elapsed, host — that
+# updates in place. Informational only: no prompt text, no assistant text, no
+# tool_input ever leaves the box.
+#
+#     bash "$HOME/.local/bin/agent-push" <agent> <Event>
+#
+# with the hook JSON payload on stdin. Wired for three events in the container's
+# config/claude/settings.json and config/codex/hooks.json:
+#   UserPromptSubmit   record the turn-start timestamp (never notifies)
+#   Notification       agent is blocked for input — always worth interrupting
+#   Stop               turn ended — notify only if it ran long enough
+#
+# This is a devaloy-native script, NOT a feature of the shared agent-hook
+# dispatcher. agent-hook is a byte-identical vendored copy of a chezmoi file, so
+# push code there would either fork the vendored file or ship inert on the
+# laptop. A standalone script has no upstream: agent-hook stays untouched, the
+# laptop never sees this, and the whole feature lives in one auditable file. It
+# borrows agent-hook's four load-bearing rules as a template but shares no code:
+#   1. Never write to stdout. A hook's stdout can be parsed by the agent.
+#   2. Fail open and silent. A dead network must never break a turn — no set -e.
+#   3. Drain stdin exactly once into $payload.
+#   4. Always exit 0. A non-zero exit is a hook error to the agent.
+#
+# The feature is OFF unless a topic is configured (see config load below), which
+# is the single gate that makes this safe to exist on any host.
+
+# --- args -------------------------------------------------------------------
+
+usage() {
+  cat <<'EOF'
+agent-push — ntfy push notifications for Claude Code and Codex CLI
+
+  agent-push <claude|codex> <Event>   dispatch a hook (payload JSON on stdin)
+  agent-push --help                   this message
+
+Events: UserPromptSubmit (timestamp only), Notification, Stop.
+Off unless PUSH_NTFY_TOPIC is configured in ~/.config/agent-push.env.
+EOF
+}
+
+case "${1:-}" in
+  -h | --help | help | "")
+    usage
+    exit 0
+    ;;
+esac
+
+AGENT="$1"
+EVENT="${2:-}"
+case "$AGENT" in
+  codex) AGENT_LABEL="Codex" ;;
+  *) AGENT_LABEL="Claude Code" ;;
+esac
+
+# --- config -----------------------------------------------------------------
+# Sourced from ~/.config/agent-push.env (0600, rewritten each boot by
+# entrypoint.sh from .env's NTFY_* vars). Orca spawns panes via `su -l -s
+# /bin/sh`, which reads neither .zshenv nor .bashrc, so ~/.devaloy_secrets is
+# not reliably in a hook's environment — the file is. Pre-set env vars still win
+# over the file, so a test harness or a one-off override beats the baked-in
+# values.
+
+PUSH_ENV_FILE="${PUSH_ENV_FILE:-$HOME/.config/agent-push.env}"
+push_keys='PUSH_NTFY_URL PUSH_NTFY_TOPIC PUSH_NTFY_TOKEN PUSH_MIN_TURN_SECONDS PUSH_COOLDOWN_SECONDS PUSH_DAILY_CAP'
+for _k in $push_keys; do
+  eval "_preset_${_k}=\${${_k}:-}"
+done
+# shellcheck source=/dev/null
+[ -r "$PUSH_ENV_FILE" ] && . "$PUSH_ENV_FILE" 2>/dev/null
+for _k in $push_keys; do
+  eval "_pv=\${_preset_${_k}:-}"
+  [ -n "${_pv}" ] && eval "${_k}=\${_preset_${_k}}"
+done
+unset _k _pv push_keys
+
+# The gate: no topic, no feature. Return before touching state or the network.
+[ -n "${PUSH_NTFY_TOPIC:-}" ] || exit 0
+
+PUSH_NTFY_URL="${PUSH_NTFY_URL:-https://ntfy.sh}"
+PUSH_NTFY_URL="${PUSH_NTFY_URL%/}"
+# Duration proxy for "am I sitting in front of this?". 0 disables it, falling
+# back to Orca's own model (event + cooldown only). Whether the proxy earns its
+# keep depends on whether an in-place update re-buzzes the phone — pinned by the
+# Phase 0 spike; default is the conservative "suppress short turns".
+PUSH_MIN_TURN_SECONDS="${PUSH_MIN_TURN_SECONDS:-60}"
+PUSH_COOLDOWN_SECONDS="${PUSH_COOLDOWN_SECONDS:-30}"
+# Soft cap under ntfy.sh's 250/day free-tier limit. Each in-place update still
+# costs a message, so a looping session at the cooldown could otherwise black
+# out the topic silently. Vanishes for free once self-hosted.
+PUSH_DAILY_CAP="${PUSH_DAILY_CAP:-200}"
+
+# --- helpers ----------------------------------------------------------------
+
+HAVE_JQ=""
+command -v jq >/dev/null 2>&1 && HAVE_JQ=1
+
+payload_get() {
+  [ -n "$HAVE_JQ" ] || return 0
+  printf '%s' "$payload" | jq -r "$1" 2>/dev/null
+}
+
+# Diagnostics go to stderr, never stdout (rule 1). Hooks surface stderr in the
+# agent's debug log without corrupting anything it parses.
+log() { printf 'agent-push: %s\n' "$*" >&2; }
+
+# Stable short hex of stdin, using whatever hasher is present.
+hash_hex() {
+  if command -v sha1sum >/dev/null 2>&1; then
+    sha1sum | cut -c1-16
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum | cut -c1-16
+  elif command -v md5sum >/dev/null 2>&1; then
+    md5sum | cut -c1-16
+  else
+    cksum | tr -cd '0-9' | cut -c1-16
+  fi
+}
+
+is_uint() { case "$1" in '' | *[!0-9]*) return 1 ;; *) return 0 ;; esac; }
+
+# --- drain stdin once (rule 3) ----------------------------------------------
+
+payload=$(cat)
+
+PROJECT_DIR=$(payload_get '.cwd // .tool_input.cwd // ""')
+[ -n "$PROJECT_DIR" ] || PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${CODEX_PROJECT_DIR:-$PWD}}"
+
+# Session identity → both the state-file name and the ntfy sequence id, so one
+# phone entry mutates per session instead of piling up. Codex's field shape for
+# Stop/Notification is unverified; the cwd-only fallback still collapses per
+# workspace when no session id is carried, which is the acceptable degradation.
+SESSION_ID=$(payload_get '.session_id // .conversation_id // .thread_id // ""')
+SESSION_KEY=$(printf '%s|%s' "$SESSION_ID" "$PROJECT_DIR" | hash_hex)
+SEQ_ID="dv-${SESSION_KEY}"
+
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/agent-push"
+mkdir -p "$STATE_DIR" 2>/dev/null || true
+START_FILE="$STATE_DIR/${SESSION_KEY}.start"
+SENT_FILE="$STATE_DIR/${SESSION_KEY}.sent"
+
+now=$(date +%s)
+today=$(date +%Y%m%d)
+COUNT_FILE="$STATE_DIR/count-${today}"
+CAPPED_FILE="$STATE_DIR/count-${today}.capped"
+
+HOSTNAME_SHORT="${TS_HOSTNAME:-$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo devaloy)}"
+
+# --- send -------------------------------------------------------------------
+
+# Cooldown is stamped as epoch content rather than mtime, to sidestep stat(1)'s
+# GNU-vs-BSD flag differences between the box and a laptop test run.
+within_cooldown() {
+  local last
+  last=$(cat "$SENT_FILE" 2>/dev/null) || return 1
+  is_uint "$last" || return 1
+  [ "$((now - last))" -lt "$PUSH_COOLDOWN_SECONDS" ]
+}
+
+# True if there is daily-quota headroom. Logs exactly once per day when the cap
+# trips, so a silent blackout is at least visible in the hook log.
+daily_ok() {
+  local count
+  count=$(cat "$COUNT_FILE" 2>/dev/null) || count=0
+  is_uint "$count" || count=0
+  if [ "$count" -ge "$PUSH_DAILY_CAP" ]; then
+    if [ ! -e "$CAPPED_FILE" ]; then
+      : >"$CAPPED_FILE" 2>/dev/null || true
+      log "daily cap of $PUSH_DAILY_CAP reached — suppressing further pushes until tomorrow"
+    fi
+    return 1
+  fi
+  return 0
+}
+
+record_send() {
+  local count
+  printf '%s' "$now" >"$SENT_FILE" 2>/dev/null || true
+  count=$(cat "$COUNT_FILE" 2>/dev/null) || count=0
+  is_uint "$count" || count=0
+  printf '%s' "$((count + 1))" >"$COUNT_FILE" 2>/dev/null || true
+}
+
+# Format elapsed seconds (or "" when the turn-start stamp is missing).
+elapsed_label() {
+  local s="$1"
+  [ "$s" -ge 0 ] 2>/dev/null || { printf ''; return 0; }
+  if [ "$s" -lt 60 ]; then
+    printf '%ds' "$s"
+  else
+    printf '%dm %ds' "$((s / 60))" "$((s % 60))"
+  fi
+}
+
+# The security boundary: this builds the ENTIRE outbound message from a fixed
+# vocabulary plus the cwd basename and elapsed time. No payload free-text field
+# is ever read here. CR/LF are stripped from the one interpolated string so a
+# hostile directory name cannot inject extra headers.
+send_notification() {
+  local state="$1" priority="$2" tags="$3" elapsed_secs="$4"
+  local dir_base title elapsed body
+
+  dir_base=$(basename "$PROJECT_DIR" 2>/dev/null | tr -d '\r\n')
+  [ -n "$dir_base" ] || dir_base="session"
+
+  title="${AGENT_LABEL} · ${dir_base}"
+  elapsed=$(elapsed_label "$elapsed_secs")
+  if [ -n "$elapsed" ]; then
+    body="${state} · ${elapsed} · ${HOSTNAME_SHORT}"
+  else
+    body="${state} · ${HOSTNAME_SHORT}"
+  fi
+
+  # One synchronous curl, bounded so a black-holed network cannot stretch the
+  # turn. Output discarded; never fails the hook (rule 2/4).
+  curl -fsS \
+    --connect-timeout 0.5 --max-time 1.5 \
+    -H "X-Sequence-ID: ${SEQ_ID}" \
+    -H "X-Title: ${title}" \
+    -H "X-Priority: ${priority}" \
+    -H "X-Tags: ${tags}" \
+    ${PUSH_NTFY_TOKEN:+-H "Authorization: Bearer ${PUSH_NTFY_TOKEN}"} \
+    -d "${body}" \
+    "${PUSH_NTFY_URL}/${PUSH_NTFY_TOPIC}" \
+    >/dev/null 2>&1 || true
+}
+
+# --- dispatch ---------------------------------------------------------------
+
+# Elapsed since the turn-start stamp; -1 when unknown (session predating this,
+# or a missing stamp). Unknown counts as "long enough" — a spurious notification
+# beats a silent one.
+start=$(cat "$START_FILE" 2>/dev/null) || start=""
+if is_uint "$start"; then
+  elapsed_secs=$((now - start))
+else
+  elapsed_secs=-1
+fi
+
+case "$EVENT" in
+  UserPromptSubmit)
+    printf '%s' "$now" >"$START_FILE" 2>/dev/null || true
+    # Prune stamps older than a day so the state dir cannot grow unbounded.
+    find "$STATE_DIR" -type f -mtime +1 -delete 2>/dev/null || true
+    ;;
+
+  Notification)
+    # Being blocked for input is always worth interrupting for — no duration
+    # gate. Still honours cooldown and the daily cap.
+    within_cooldown && exit 0
+    daily_ok || exit 0
+    send_notification "Needs your input" 4 "warning" "$elapsed_secs"
+    record_send
+    ;;
+
+  Stop)
+    # Suppress short turns you were probably watching. Skipped when the proxy is
+    # disabled (0) or the elapsed time is unknown (-1).
+    if [ "$PUSH_MIN_TURN_SECONDS" -gt 0 ] && [ "$elapsed_secs" -ge 0 ] &&
+      [ "$elapsed_secs" -lt "$PUSH_MIN_TURN_SECONDS" ]; then
+      exit 0
+    fi
+    within_cooldown && exit 0
+    daily_ok || exit 0
+    send_notification "Turn finished" 3 "white_check_mark" "$elapsed_secs"
+    record_send
+    ;;
+esac
+
+exit 0
