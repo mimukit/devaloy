@@ -213,6 +213,15 @@ passphrase** because nothing in the container can answer a prompt — an encrypt
 key is rejected at boot rather than hanging the entrypoint. If yours has one,
 copy the key and strip it from the copy with `ssh-keygen -p -N '' -f <copy>`.
 
+Note which half of the pair that is. The variable wants the **private** key,
+base64-encoded — not `id_ed25519.pub`, and not a line out of an
+`allowed_signers` file. A correct value runs to several hundred characters and
+decodes to a `BEGIN OPENSSH PRIVATE KEY` block; anything near a hundred is the
+public half, which the entrypoint rejects. It says so when it does, but that
+warning goes to the container's stdout, so it is `docker compose logs devaloy`
+on the Docker host that tells you why — not anything visible from an SSH session
+on the box itself.
+
 That is the whole setup. On boot the entrypoint derives the public half and
 registers it on your GitHub account itself, provided `GITHUB_TOKEN` carries the
 `admin:ssh_signing_key` scope (fine-grained: **SSH signing keys**, read+write).
