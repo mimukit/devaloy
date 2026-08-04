@@ -323,10 +323,17 @@ you set up by hand on a box you might rebuild tomorrow:
 ```
 config/
   zsh/zshrc            -> ~/.zshrc
-  claude/              -> ~/.claude/     (settings.json, CLAUDE.md, hooks/)
+  claude/              -> ~/.claude/     (settings.json, CLAUDE.md, statusline.sh, hooks/)
   codex/               -> ~/.codex/      (config.toml, AGENTS.md, hooks.json, rules/)
   bin/                 -> ~/.local/bin/  (agent-hook, rm-guard — shared by both)
 ```
+
+`claude/statusline.sh` draws Claude Code's status line — model, context window
+used, and the 5-hour and 7-day rate-limit windows with their reset times. It
+drops the current-directory segment the same script carries on a Mac: repos sit
+deep under `~/` here, and a long basename pushed the usage numbers off the right
+edge of a narrow SSH pane. Reset times print in the container's timezone, which
+is UTC unless you set `TZ`.
 
 Both agents run the same `agent-hook` dispatcher on every Bash call, which
 routes deletes through `rm-guard`: temp files and git-tracked files pass, `rm
