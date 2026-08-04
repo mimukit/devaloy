@@ -68,6 +68,14 @@ services:
       # the 0600 file in the home volume, and clearing it here plus a redeploy
       # is what revokes it.
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # ntfy push notifications when an agent blocks or finishes a long turn.
+      # OFF unless NTFY_TOPIC is set — the topic string IS the credential, so
+      # make it long and random. The entrypoint writes these into a 0600
+      # ~/.config/agent-push.env in the home volume, rebuilt each boot, so
+      # clearing NTFY_TOPIC here plus a redeploy is what turns it back off.
+      - NTFY_TOPIC=${NTFY_TOPIC:-}
+      - NTFY_SERVER=${NTFY_SERVER:-}
+      - NTFY_TOKEN=${NTFY_TOKEN:-}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
       - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
