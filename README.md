@@ -132,11 +132,30 @@ cp .env.example .env
 
 Set `GITHUB_TOKEN` in `.env` to a personal access token and both `gh` and
 `git push` over HTTPS are authenticated from first boot — no browser, no device
-code, nothing to do on a phone. Classic tokens want `repo`, `read:org` and
-`workflow`; fine-grained tokens want contents and pull-request access. Add
-`admin:ssh_signing_key` (fine-grained: **SSH signing keys**, read+write) if you
-also want [signed commits](#6-optional-git-identity-and-signed-commits) to
-register themselves.
+code, nothing to do on a phone.
+
+Mint a **classic** token at
+[github.com/settings/tokens/new](https://github.com/settings/tokens/new), give
+it a note you'll recognise later and an expiry you're willing to rotate, and
+tick:
+
+| scope | what it buys |
+|-------|--------------|
+| `repo` | clone and push, including private repos |
+| `read:org` | seeing org-owned repos at all |
+| `workflow` | letting an agent edit `.github/workflows` |
+| `admin:ssh_signing_key` | letting [signed commits](#6-optional-git-identity-and-signed-commits) register their own key |
+
+A fine-grained token also works — contents and pull-request access, plus **SSH
+signing keys** (read+write) for that last row — at the cost of re-scoping it
+every time the box needs a repo it has never seen.
+
+Do **not** paste the output of `gh auth token` here, tempting as it is. That is
+a `gho_` OAuth token issued to the GitHub CLI's own app rather than a PAT, and
+it behaves nothing like one: it never appears on the tokens page, its scopes can
+only change by re-running the browser login, and revoking it means revoking the
+*GitHub CLI* authorization — which logs `gh` out on every machine you use it
+from. A PAT is revocable on its own and carries its own expiry.
 
 The entrypoint writes the token to `~/.devaloy_secrets` (mode 600) inside the
 home volume, so **the volume now holds a live credential** — that is the cost of
