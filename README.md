@@ -133,7 +133,10 @@ cp .env.example .env
 Set `GITHUB_TOKEN` in `.env` to a personal access token and both `gh` and
 `git push` over HTTPS are authenticated from first boot — no browser, no device
 code, nothing to do on a phone. Classic tokens want `repo`, `read:org` and
-`workflow`; fine-grained tokens want contents and pull-request access.
+`workflow`; fine-grained tokens want contents and pull-request access. Add
+`admin:ssh_signing_key` (fine-grained: **SSH signing keys**, read+write) if you
+also want [signed commits](#6-optional-git-identity-and-signed-commits) to
+register themselves.
 
 The entrypoint writes the token to `~/.devaloy_secrets` (mode 600) inside the
 home volume, so **the volume now holds a live credential** — that is the cost of
@@ -165,7 +168,7 @@ running `/login` on the box while this is set does nothing; leave the variable
 empty if you want the interactive login to be the source of truth. (Codex has no
 equivalent — it still wants `codex login` on the box.)
 
-### 6. (Optional) git identity
+### 6. (Optional) git identity and signed commits
 
 A fresh container has no git identity, so the first commit an agent tries dies
 with `Author identity unknown` — and an unattended agent cannot recover from
@@ -174,8 +177,42 @@ configures `user.name` and `user.email` on every boot.
 
 Leave them empty and it asks GitHub who `GITHUB_TOKEN` belongs to instead,
 taking that account's name and its `ID+login@users.noreply.github.com` address.
-That address rather than the profile email on purpose: it is a real, verified
-address on the account, so nothing downstream has to guess at it.
+That address rather than the profile email on purpose: it is always a *verified*
+address on the account, which is a precondition for the next part.
+
+Commits still show as **Unverified** on GitHub until they carry a signature from
+a key registered on your account. Pass the SSH key you already use — there is no
+new key to generate:
+
+```sh
+base64 -i ~/.ssh/id_ed25519 | tr -d '\n'
+```
+
+Paste that one line into `GIT_SIGNING_SSH_KEY`. Base64 because a `.env` value
+cannot portably hold the newlines a key file needs, and it must have **no
+passphrase** because nothing in the container can answer a prompt — an encrypted
+key is rejected at boot rather than hanging the entrypoint. If yours has one,
+copy the key and strip it from the copy with `ssh-keygen -p -N '' -f <copy>`.
+
+That is the whole setup. On boot the entrypoint derives the public half and
+registers it on your GitHub account itself, provided `GITHUB_TOKEN` carries the
+`admin:ssh_signing_key` scope (fine-grained: **SSH signing keys**, read+write).
+Without that scope it logs a link and you do it once by hand at
+[github.com/settings/ssh/new](https://github.com/settings/ssh/new) with **Key
+type: Signing Key**.
+
+That registration is the one part that cannot be skipped, and it's where people
+get stuck: GitHub checks signatures against the keys listed under SSH *signing*
+keys, so a key already on your account for authentication does **not** verify
+commits — the same key has to be listed under both types. GitHub won't tell you
+that's why the badge stayed orange.
+
+SSH signing rather than GPG because it needs one key file and no agent process
+kept alive in a container. The entrypoint writes the key to
+`~/.ssh/devaloy_signing` (mode 600) and turns on `commit.gpgsign` and
+`tag.gpgsign`; as with the tokens, **the home volume now holds a live
+credential**, and clearing the variable plus a redeploy removes the key *and*
+turns signing back off, so later commits don't fail on a key that is gone.
 
 ### 7. Start the stack
 
@@ -373,8 +410,10 @@ this repo doesn't use.
 
 `~/.gitconfig` is the exception to that rule. It is not shipped from `config/`
 and not overwritten wholesale — the entrypoint sets only the keys it owns
-(`user.name` and `user.email`) one at a time. Aliases, diff tools and anything
-else you add on the box survive a redeploy; those two keys do not.
+(`user.name`, `user.email`, and the signing keys when
+[a signing key is configured](#6-optional-git-identity-and-signed-commits)) one
+at a time. Aliases, diff tools and anything else you add on the box survive a
+redeploy; those specific keys do not.
 
 Your escape hatch for zsh is `~/.zshrc.local`, sourced last and never touched.
 Claude Code and Codex have no equivalent include mechanism, so a setting you
@@ -466,4 +505,6 @@ re-cloning your repos and re-running `mise install`.
 - No host Docker socket access — devaloy can't control the host's other
   containers.
 - No public HTTPS domain, no Traefik, no Let's Encrypt.
-- No SSH key management, no password auth, no fallback sshd.
+- No SSH key management, no password auth, no fallback sshd — Tailscale SSH
+  decides who gets in. (The optional commit-signing key is a separate thing:
+  nothing authenticates with it.)

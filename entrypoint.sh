@@ -318,6 +318,137 @@ else
   log "WARNING: GIT_AUTHOR_EMAIL in .env, or supply a GITHUB_TOKEN."
 fi
 
+# --- SSH-signed commits ---
+# GitHub shows a commit as Unverified unless it carries a signature from a key
+# registered on the account. SSH signing rather than GPG: one key file, no
+# gpg-agent, no passphrase daemon to keep alive in a container.
+#
+# Rebuilt from scratch on every boot, exactly like ~/.devaloy_secrets — clearing
+# GIT_SIGNING_SSH_KEY in .env and redeploying really does remove the key AND
+# turn commit.gpgsign back off, so a later commit does not fail on a key that is
+# no longer there.
+SIGNING_KEY="${DEV_HOME}/.ssh/devaloy_signing"
+ALLOWED_SIGNERS="${DEV_HOME}/.config/git/allowed_signers"
+rm -f "${SIGNING_KEY}" "${SIGNING_KEY}.pub" "${ALLOWED_SIGNERS}"
+
+if [ -n "${GIT_SIGNING_SSH_KEY:-}" ]; then
+  # Accepts the key either base64-encoded on one line (the documented form —
+  # a .env value cannot portably hold the newlines a PEM block needs) or as
+  # literal PEM, for the case where it arrives through some other channel.
+  KEY_MATERIAL="${GIT_SIGNING_SSH_KEY}"
+  case "${KEY_MATERIAL}" in
+    *"PRIVATE KEY"*) ;;
+    *) KEY_MATERIAL="$(printf '%s' "${KEY_MATERIAL}" | tr -d ' \n' | base64 -d 2>/dev/null || true)" ;;
+  esac
+
+  case "${KEY_MATERIAL}" in
+    *"PRIVATE KEY"*)
+      as_dev "mkdir -p '${DEV_HOME}/.ssh' && chmod 700 '${DEV_HOME}/.ssh'"
+      install -m 600 -o "${DEV_USER}" -g "${DEV_USER}" /dev/null "${SIGNING_KEY}"
+      # Exactly one trailing newline: OpenSSH rejects a private key without it,
+      # and command substitution above already ate any that were there.
+      printf '%s\n' "${KEY_MATERIAL}" > "${SIGNING_KEY}"
+
+      # -P '' and </dev/null together are what stop this hanging forever on a
+      # passphrase prompt: an encrypted key fails fast here instead, which is
+      # the right outcome — nothing in this container can type a passphrase.
+      if as_dev "ssh-keygen -y -P '' -f '${SIGNING_KEY}' > '${SIGNING_KEY}.pub'" </dev/null 2>/dev/null &&
+         [ -s "${SIGNING_KEY}.pub" ]; then
+        git_cfg gpg.format ssh
+        # The PRIVATE key path, not the .pub: git hands this straight to
+        # `ssh-keygen -Y sign -f`, which needs the secret half and finds the
+        # public one beside it.
+        git_cfg user.signingkey "${SIGNING_KEY}"
+        git_cfg commit.gpgsign true
+        # Tags too — GitHub verifies those on the release page as well.
+        git_cfg tag.gpgsign true
+
+        # Only affects local `git log --show-signature` output, which without it
+        # reports every one of your own commits as from an unknown signer.
+        # GitHub does not read this file; it checks the key on your account.
+        as_dev "mkdir -p '$(dirname "${ALLOWED_SIGNERS}")'"
+        install -m 600 -o "${DEV_USER}" -g "${DEV_USER}" /dev/null "${ALLOWED_SIGNERS}"
+        printf '%s %s\n' "${GIT_EMAIL:-dev}" "$(cat "${SIGNING_KEY}.pub")" > "${ALLOWED_SIGNERS}"
+        git_cfg gpg.ssh.allowedSignersFile "${ALLOWED_SIGNERS}"
+
+        log "commits will be SSH-signed with $(ssh-keygen -lf "${SIGNING_KEY}.pub" 2>/dev/null | awk '{print $2}')"
+
+        # --- register the public half on GitHub as a signing key ---
+        # This is what turns the badge from Unverified to Verified, and it is
+        # not optional or inferrable: GitHub checks the signature against the
+        # keys listed under SSH *signing* keys on the account. A key you already
+        # use for authentication does not count, even byte-for-byte identical —
+        # it has to be listed under both types. Doing it here means bringing
+        # your existing key needs nothing done on github.com.
+        #
+        # Best-effort on purpose. It needs admin:ssh_signing_key on the PAT
+        # (fine-grained: "SSH signing keys" read+write), which a token minted for
+        # `git push` will not have. Every failure path prints the manual step and
+        # boots on rather than holding the box hostage to a scope.
+        if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
+          # Match on the key body alone, never the whole line: the comment field
+          # differs between the copy on your laptop and the one ssh-keygen -y
+          # regenerates here, so comparing lines would re-upload every boot.
+          PUB_BODY="$(awk '{print $2}' "${SIGNING_KEY}.pub")"
+          # No --paginate: one page of 100 is far past anyone's signing-key count,
+          # and paginating an array endpoint hands jq concatenated arrays.
+          # shellcheck disable=SC2016  # $HOME is expanded by the dev user's shell.
+          SIGNING_KEYS_JSON="$(as_dev '. "$HOME/.devaloy_secrets" && gh api "/user/ssh_signing_keys?per_page=100"' 2>/dev/null || true)"
+
+          if printf '%s' "${SIGNING_KEYS_JSON}" | jq -e --arg k "${PUB_BODY}" \
+               'any(.[]; (.key | split(" ")[1]) == $k)' >/dev/null 2>&1; then
+            log "signing key is already registered on GitHub"
+          else
+            # shellcheck disable=SC2016  # as above.
+            ADD_CMD='. "$HOME/.devaloy_secrets" && gh api --method POST /user/ssh_signing_keys'
+            ADD_CMD="${ADD_CMD} -f title=$(sq "devaloy (${TS_HOSTNAME:-devaloy})")"
+            ADD_CMD="${ADD_CMD} -f key=$(sq "$(cat "${SIGNING_KEY}.pub")")"
+            ADD_OUT="$(as_dev "${ADD_CMD}" 2>&1 || true)"
+            case "${ADD_OUT}" in
+              # Also the path taken when the token can write but not read, so the
+              # listing above came back empty and this POST was a no-op.
+              *'already in use'*|*'already exists'*)
+                log "signing key is already registered on GitHub" ;;
+              *'"id"'*)
+                log "registered the signing key on GitHub — commits will show as Verified" ;;
+              *)
+                log "WARNING: could not register the signing key on GitHub."
+                log "WARNING: add ~/.ssh/devaloy_signing.pub by hand at"
+                log "WARNING:   https://github.com/settings/ssh/new  (type: Signing Key)"
+                log "WARNING: or give the PAT the admin:ssh_signing_key scope to"
+                log "WARNING: let this happen on its own. Commits are signed either"
+                log "WARNING: way; GitHub just shows them Unverified until it is done." ;;
+            esac
+          fi
+        else
+          log "GitHub marks these Verified only once the matching PUBLIC key is"
+          log "added to your account as a SIGNING key (not an authentication key):"
+          log "  https://github.com/settings/ssh/new"
+        fi
+      else
+        rm -f "${SIGNING_KEY}" "${SIGNING_KEY}.pub"
+        log "WARNING: GIT_SIGNING_SSH_KEY is not a usable key — commits stay unsigned."
+        log "WARNING: it must be an OpenSSH private key with NO passphrase."
+      fi
+      ;;
+    *)
+      log "WARNING: GIT_SIGNING_SSH_KEY did not decode to an SSH private key."
+      log "WARNING: expected base64 of the key file — commits stay unsigned."
+      ;;
+  esac
+fi
+
+# Reached both when no key is configured and when one failed to install, so a
+# box that signed yesterday does not fail every commit today.
+git_unset() { as_dev "git config --global --unset-all $(sq "$1") || true"; }
+if [ ! -s "${SIGNING_KEY}" ]; then
+  git_unset commit.gpgsign
+  git_unset tag.gpgsign
+  git_unset user.signingkey
+  git_unset gpg.format
+  git_unset gpg.ssh.allowedSignersFile
+fi
+
 # --- Orca headless runtime (only present when built with WITH_ORCA=true) ---
 # Lets the Orca desktop and mobile apps talk to this box, which Tailscale SSH
 # alone cannot do — they speak to a runtime, not a terminal.

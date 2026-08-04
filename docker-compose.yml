@@ -71,10 +71,17 @@ services:
       # git identity for commits made on the box. Both optional: with a
       # GITHUB_TOKEN set, the entrypoint falls back to whoever that token
       # belongs to. Without either, every commit fails on "Author identity
-      # unknown", so leaving both empty is only right if you never commit
+      # unknown", so leaving all three empty is only right if you never commit
       # from here.
       - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-}
       - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-}
+      # base64 of a passphrase-less OpenSSH private key — the one you already
+      # use is fine — which signs every commit so GitHub shows it as Verified.
+      # The entrypoint registers its public half on your account when the token
+      # above has admin:ssh_signing_key. Same lifecycle as the tokens: written
+      # into a 0600 file in the home volume on each boot, and clearing it here
+      # plus a redeploy removes the key and stops signing.
+      - GIT_SIGNING_SSH_KEY=${GIT_SIGNING_SSH_KEY:-}
       # ntfy push notifications when an agent blocks or finishes a long turn.
       # OFF unless NTFY_TOPIC is set — the topic string IS the credential, so
       # make it long and random. The entrypoint writes these into a 0600
