@@ -68,6 +68,13 @@ services:
       # the 0600 file in the home volume, and clearing it here plus a redeploy
       # is what revokes it.
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # git identity for commits made on the box. Both optional: with a
+      # GITHUB_TOKEN set, the entrypoint falls back to whoever that token
+      # belongs to. Without either, every commit fails on "Author identity
+      # unknown", so leaving both empty is only right if you never commit
+      # from here.
+      - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-}
+      - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-}
       # ntfy push notifications when an agent blocks or finishes a long turn.
       # OFF unless NTFY_TOPIC is set — the topic string IS the credential, so
       # make it long and random. The entrypoint writes these into a 0600

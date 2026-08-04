@@ -165,13 +165,25 @@ running `/login` on the box while this is set does nothing; leave the variable
 empty if you want the interactive login to be the source of truth. (Codex has no
 equivalent — it still wants `codex login` on the box.)
 
-### 6. Start the stack
+### 6. (Optional) git identity
+
+A fresh container has no git identity, so the first commit an agent tries dies
+with `Author identity unknown` — and an unattended agent cannot recover from
+that. Set `GIT_AUTHOR_NAME` and `GIT_AUTHOR_EMAIL` in `.env` and the entrypoint
+configures `user.name` and `user.email` on every boot.
+
+Leave them empty and it asks GitHub who `GITHUB_TOKEN` belongs to instead,
+taking that account's name and its `ID+login@users.noreply.github.com` address.
+That address rather than the profile email on purpose: it is a real, verified
+address on the account, so nothing downstream has to guess at it.
+
+### 7. Start the stack
 
 ```sh
 docker compose up -d --build
 ```
 
-### 7. Disable key expiry
+### 8. Disable key expiry
 
 Once the node appears in the
 [admin console](https://login.tailscale.com/admin/machines), **disable key
@@ -358,6 +370,11 @@ The copy is a merge, not a replace, so anything the repo does not ship is left
 alone: credentials (`~/.claude/.credentials.json`, `~/.codex/auth.json`),
 session history, and any hook or skill you added on the box by hand under a name
 this repo doesn't use.
+
+`~/.gitconfig` is the exception to that rule. It is not shipped from `config/`
+and not overwritten wholesale — the entrypoint sets only the keys it owns
+(`user.name` and `user.email`) one at a time. Aliases, diff tools and anything
+else you add on the box survive a redeploy; those two keys do not.
 
 Your escape hatch for zsh is `~/.zshrc.local`, sourced last and never touched.
 Claude Code and Codex have no equivalent include mechanism, so a setting you

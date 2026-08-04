@@ -274,6 +274,50 @@ if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
   fi
 fi
 
+# --- git identity ---
+# Without this every commit from the box dies with "Author identity unknown",
+# which an unattended agent cannot recover from. Written with `git config
+# --global`, one key at a time, rather than by templating ~/.gitconfig: the file
+# lives in the home volume and may hold aliases, diff tools and other settings
+# added by hand, and only the keys below are ours to own.
+#
+# Runs after the gh block on purpose — the fallback path shells out to gh.
+sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+git_cfg() { as_dev "git config --global $(sq "$1") $(sq "$2")"; }
+
+GIT_NAME="${GIT_AUTHOR_NAME:-}"
+GIT_EMAIL="${GIT_AUTHOR_EMAIL:-}"
+
+# Fallback: ask GitHub who the token belongs to. The address is the account's
+# ID+login noreply form rather than .email, because .email is null unless the
+# profile email is public, and the noreply address is ALWAYS a verified address
+# on the account — which is what GitHub requires before it will mark a signed
+# commit as Verified.
+if { [ -z "${GIT_NAME}" ] || [ -z "${GIT_EMAIL}" ]; } &&
+   [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
+  # shellcheck disable=SC2016  # $HOME is expanded by the dev user's shell.
+  GH_USER_JSON="$(as_dev '. "$HOME/.devaloy_secrets" && gh api user' 2>/dev/null || true)"
+  if [ -n "${GH_USER_JSON}" ]; then
+    # `|| true` inside each substitution, not after: gh can hand back a body
+    # that is not the object jq expects, and a bare jq failure would take the
+    # whole entrypoint down under `set -e` before tailscaled is even waited on.
+    [ -n "${GIT_NAME}" ] || GIT_NAME="$(printf '%s' "${GH_USER_JSON}" |
+      jq -r '.name // .login // empty' 2>/dev/null || true)"
+    [ -n "${GIT_EMAIL}" ] || GIT_EMAIL="$(printf '%s' "${GH_USER_JSON}" |
+      jq -r 'select(.id and .login) | "\(.id)+\(.login)@users.noreply.github.com"' 2>/dev/null || true)"
+  fi
+fi
+
+if [ -n "${GIT_NAME}" ] && [ -n "${GIT_EMAIL}" ]; then
+  git_cfg user.name  "${GIT_NAME}"
+  git_cfg user.email "${GIT_EMAIL}"
+  log "git identity set to ${GIT_NAME} <${GIT_EMAIL}>"
+else
+  log "WARNING: no git identity — commits from this box will fail with"
+  log "WARNING: 'Author identity unknown'. Set GIT_AUTHOR_NAME and"
+  log "WARNING: GIT_AUTHOR_EMAIL in .env, or supply a GITHUB_TOKEN."
+fi
+
 # --- Orca headless runtime (only present when built with WITH_ORCA=true) ---
 # Lets the Orca desktop and mobile apps talk to this box, which Tailscale SSH
 # alone cannot do — they speak to a runtime, not a terminal.
