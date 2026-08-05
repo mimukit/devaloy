@@ -158,11 +158,21 @@ only change by re-running the browser login, and revoking it means revoking the
 from. A PAT is revocable on its own and carries its own expiry.
 
 The entrypoint writes the token to `~/.devaloy_secrets` (mode 600) inside the
-home volume, so **the volume now holds a live credential** — that is the cost of
-skipping the interactive login. Clearing the variable and redeploying deletes
-the file. Leave it empty to use `gh auth login` by hand instead; note that `gh`
-refuses that flow while `GITHUB_TOKEN` is set, which is expected rather than a
-fault.
+home volume, and also runs `gh auth login --with-token` with it, which stores a
+second copy in `~/.config/gh/hosts.yml`. So **the volume now holds a live
+credential** — that is the cost of skipping the interactive login. Clearing the
+variable and redeploying deletes both files.
+
+The stored `gh` login is not redundant with the environment variable. Only
+`.zshenv` and `.bashrc` put `GITHUB_TOKEN` into a shell, so anything that runs
+`gh` outside a login shell — most visibly the Orca app's repo, branch, PR and
+issue pickers, which the headless server shells out for under `su -l -s /bin/sh`
+— sees no token at all and reports `To get started with GitHub CLI, please run:
+gh auth login`. The stored credential is what those callers read.
+
+Leave the variable empty to use `gh auth login` by hand instead; note that `gh`
+refuses that flow while `GITHUB_TOKEN` is set in your shell, which is expected
+rather than a fault.
 
 ### 5. (Optional) Claude Code token
 

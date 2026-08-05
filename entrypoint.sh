@@ -259,13 +259,48 @@ fi
 DEV_HOME="${DEV_HOME}" /usr/local/bin/link-shims || \
   log "WARNING: link-shims failed — non-interactive commands may not find the toolchain."
 
-# --- git over HTTPS via GITHUB_TOKEN ---
-# gh picks the token up from the environment on its own; this only teaches git
-# to ask gh for credentials, so `git push` works without a second login. Run
-# after link-shims because that is what puts gh on root's PATH. The token is
-# read from the 0600 file rather than passed on the command line, where it
-# would be readable in /proc for the life of the call.
+# --- gh and git over HTTPS via GITHUB_TOKEN ---
+# Run after link-shims because that is what puts gh on root's PATH.
+#
+# gh's credential is stored on disk rather than left to the environment, and
+# that is the whole point of this block. gh does read GITHUB_TOKEN by itself,
+# but only from a process that HAS it — and the token deliberately lives in
+# ~/.devaloy_secrets (see the tokens block above), which nothing sources except
+# .zshenv and .bashrc. Orca's headless server is started through
+# `su -l -s /bin/sh`, which reads neither and which clears the environment it
+# inherited from PID 1, so every `gh` that server shells out for — the mobile
+# app's repo, branch, PR and issue pickers — came back with "To get started with
+# GitHub CLI, please run: gh auth login" while an interactive terminal on the
+# same box worked fine. Storing it takes the environment out of the loop for
+# every consumer at once, instead of teaching each one to source the file.
+#
+# hosts.yml is rebuilt from scratch on every boot, exactly like
+# ~/.devaloy_secrets — removed here unconditionally, ABOVE the token check, so
+# clearing GITHUB_TOKEN in .env and redeploying genuinely revokes gh's access
+# rather than leaving a working credential behind in the home volume.
+rm -f "${DEV_HOME}/.config/gh/hosts.yml"
+
 if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
+  # The token is read from the 0600 file and piped on stdin, never passed as an
+  # argument, where it would be readable in /proc for the life of the call.
+  # GITHUB_TOKEN has to be unset around the call itself: gh refuses to write
+  # hosts.yml while an environment token is set, on the grounds that the
+  # environment would outrank the stored credential anyway.
+  # shellcheck disable=SC2016  # $HOME and $GITHUB_TOKEN belong to the dev shell.
+  if as_dev '. "$HOME/.devaloy_secrets"; _t="$GITHUB_TOKEN"; unset GITHUB_TOKEN GH_TOKEN; printf "%s" "$_t" | gh auth login --with-token' 2>/dev/null; then
+    log "gh authenticated to GitHub (credential stored, not environment-bound)"
+  else
+    log "WARNING: gh auth login failed — the Orca app's GitHub pickers, and any"
+    log "WARNING: other gh call from outside a login shell, will report that you"
+    log "WARNING: must run 'gh auth login' first."
+  fi
+
+  # Teaches git to ask gh for credentials, so `git push` works without a second
+  # login. The helper it installs re-invokes gh, which is why this runs after
+  # the login above — with hosts.yml in place the helper answers from any
+  # process, including one Orca spawned, rather than only from a login shell.
+  # Still sources the secrets itself so that a failed login above costs the
+  # pickers but not `git push`, which the environment token alone can carry.
   # shellcheck disable=SC2016  # $HOME is expanded by the dev user's shell.
   if as_dev '. "$HOME/.devaloy_secrets" && gh auth setup-git' 2>/dev/null; then
     log "git configured to authenticate to GitHub through gh"
