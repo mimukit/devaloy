@@ -40,8 +40,8 @@ network_access = false
 # denying the file would be theatre. Revoke at GitHub if it ever matters.
 
 [features]
-# Load-bearing for hooks.json. Without it, that file is inert and the rm-guard
-# delete check never runs — silently, with no error to notice.
+# Load-bearing for hooks.json. Without it, that file is inert and the agent-push
+# notifications never fire — silently, with no error to notice.
 hooks = true
 
 [tui]

@@ -151,12 +151,17 @@ if [ -d "${CONFIG_SRC}" ]; then
   as_dev "cp -f '${CONFIG_SRC}/zsh/zshrc' '${DEV_HOME}/.zshrc'"
   seed_config "${CONFIG_SRC}/claude" "${DEV_HOME}/.claude"
   seed_config "${CONFIG_SRC}/codex"  "${DEV_HOME}/.codex"
-  # Shared agent scripts (agent-hook, rm-guard). ~/.local/bin rather than either
-  # agent's directory, because both agents run the same dispatcher — the hook
-  # entries in settings.json and hooks.json both point here. This directory is
-  # already on PATH via .devaloy_env, and mise owns it too, so the merge copy
-  # matters: a replace would take out mise's own binary.
+  # Shared agent scripts (agent-push). ~/.local/bin rather than either agent's
+  # directory, because both agents run the same script — the hook entries in
+  # settings.json and hooks.json both point here. This directory is already on
+  # PATH via .devaloy_env, and mise owns it too, so the merge copy matters: a
+  # replace would take out mise's own binary.
   seed_config "${CONFIG_SRC}/bin" "${DEV_HOME}/.local/bin"
+  # The delete guard was removed: this box is a disposable container, and a
+  # PreToolUse prompt on every rm defeats the point of running agents here
+  # unattended. Seeding is a merge, so copies from before the removal would
+  # otherwise sit on the persistent volume forever, unwired but on PATH.
+  as_dev "rm -f '${DEV_HOME}/.local/bin/agent-hook' '${DEV_HOME}/.local/bin/rm-guard'"
   log "Managed dotfiles synced from ${CONFIG_SRC}"
 fi
 

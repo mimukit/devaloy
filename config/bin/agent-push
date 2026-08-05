@@ -17,12 +17,11 @@
 #   Notification       agent is blocked for input — always worth interrupting
 #   Stop               turn ended — notify only if it ran long enough
 #
-# This is a devaloy-native script, NOT a feature of the shared agent-hook
-# dispatcher. agent-hook is a byte-identical vendored copy of a chezmoi file, so
-# push code there would either fork the vendored file or ship inert on the
-# laptop. A standalone script has no upstream: agent-hook stays untouched, the
-# laptop never sees this, and the whole feature lives in one auditable file. It
-# borrows agent-hook's four load-bearing rules as a template but shares no code:
+# This is a devaloy-native script with no chezmoi upstream, so nothing here
+# forks a vendored file or leaks onto the laptop — the whole feature lives in
+# one auditable file. It was written alongside the laptop's agent-hook
+# dispatcher (since removed from this box with the rm-guard delete check it
+# carried) and keeps that script's four load-bearing rules, sharing no code:
 #   1. Never write to stdout. A hook's stdout can be parsed by the agent.
 #   2. Fail open and silent. A dead network must never break a turn — no set -e.
 #   3. Drain stdin exactly once into $payload.

@@ -119,8 +119,8 @@ mind until your phone picks up the fix.
 
 - **`config/bin/agent-push`** — a standalone hook script (seeded to
   `~/.local/bin/agent-push`), arg-dispatched `agent-push <claude|codex>
-  <Event>`. It is *not* part of the shared `agent-hook` dispatcher, which stays
-  a byte-identical vendored copy.
+  <Event>`. It is the only hook script this repo ships — the `agent-hook`
+  dispatcher and its `rm-guard` delete check were removed from the box.
 - **Events** (wired in `config/claude/settings.json` and
   `config/codex/hooks.json`): `UserPromptSubmit` records the turn-start time,
   `Notification` fires when the agent blocks, `Stop` fires when a long turn

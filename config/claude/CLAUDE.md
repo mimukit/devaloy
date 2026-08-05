@@ -27,21 +27,23 @@ request unattended — committing and pushing is the job, not a violation of it.
 
 ## Deleting
 
-A shared guard (`~/.local/bin/rm-guard`, policy tier: Balanced) checks every
-delete you run through Bash, so do not pre-emptively refuse a safe one or hand
-the owner a manual to-do list. Just run the `rm`.
+**Nothing checks your deletes here.** There was a `rm-guard` hook on every Bash
+call; it was removed on purpose. This is a throwaway container built to run
+agents unattended, and a permission prompt on every `rm` defeated that. Your own
+judgement is now the only guard, so:
 
-- **Safe, no prompt:** temp files, and git-*tracked* files inside a repo, which
-  git can recover.
-- **Risky, the owner is prompted:** untracked files, any `rm -rf` of a
-  directory, globs, `..` traversal, `sudo`/`xargs` deletes, `git clean`, and
-  anything outside a repo. Issue the command anyway — the prompt is the point.
-- **Blocked outright:** `/`, `/home`, `/home/dev`, and system roots.
+- **Just do it:** temp files, build output, and git-*tracked* files inside a
+  repo — git can recover those.
+- **Look before you delete:** untracked files, `rm -rf` of a directory, globs,
+  and `..` traversal. Read the target first (`ls`, `git status`), then delete.
+  Nobody will stop you if the glob is wrong.
+- **Never:** `/`, `/home`, `/home/dev`, `~/.claude`, `~/.codex`,
+  `~/.devaloy_secrets`, and system roots. Deleting the home volume's contents
+  destroys every repo and credential on the box.
 
-If a delete is denied, surface it to the owner rather than retrying it a
-different way. And remember what this box does *not* have: no backup job, no
-snapshot, and a home volume that a `docker compose down -v` erases entirely.
-Git-tracked is only recoverable if it has been **pushed**.
+Remember what this box does *not* have: no backup job, no snapshot, and a home
+volume that a `docker compose down -v` erases entirely. Git-tracked is only
+recoverable if it has been **pushed**.
 
 ## Background processes
 

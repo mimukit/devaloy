@@ -42,19 +42,6 @@
     "command": "bash \"$HOME/.claude/statusline.sh\""
   },
   "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$HOME/.local/bin/agent-hook\" claude PreToolUse",
-            "timeout": 10,
-            "statusMessage": "Checking rm target safety"
-          }
-        ]
-      }
-    ],
     "SessionStart": [
       {
         "matcher": "*",

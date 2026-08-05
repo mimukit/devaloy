@@ -25,11 +25,12 @@ request unattended — committing and pushing is the job, not a violation of it.
 
 ## Deleting
 
-A shared guard (`~/.local/bin/rm-guard`) checks every delete you run, so do not
-pre-emptively refuse a safe one — just run the `rm`. Temp files and git-tracked
-files pass; untracked files, `rm -rf` of a directory, globs and `git clean`
-prompt the owner; `/`, `/home`, `/home/dev` and system roots are blocked. If a
-delete is denied, surface it rather than retrying it another way.
+**Nothing checks your deletes here.** The `rm-guard` hook that used to run on
+every Bash call was removed on purpose — this is a throwaway container meant to
+run unattended, and prompting on every `rm` defeated that. So: delete temp
+files, build output and git-tracked files freely; read the target first (`ls`,
+`git status`) before an `rm -rf`, a glob, or anything untracked; and never touch
+`/`, `/home`, `/home/dev`, `~/.codex`, `~/.devaloy_secrets` or system roots.
 
 Note what recoverable means here: no backup job, no snapshot, and git-tracked
 only helps if the work has been **pushed**.

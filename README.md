@@ -412,7 +412,7 @@ config/
   zsh/zshrc            -> ~/.zshrc
   claude/              -> ~/.claude/     (settings.json, CLAUDE.md, statusline.sh, hooks/)
   codex/               -> ~/.codex/      (config.toml, AGENTS.md, hooks.json, rules/)
-  bin/                 -> ~/.local/bin/  (agent-hook, rm-guard — shared by both)
+  bin/                 -> ~/.local/bin/  (agent-push — shared by both)
 ```
 
 `claude/statusline.sh` draws Claude Code's status line — model, context window
@@ -422,10 +422,15 @@ deep under `~/` here, and a long basename pushed the usage numbers off the right
 edge of a narrow SSH pane. Reset times print in the container's timezone, which
 is UTC unless you set `TZ`.
 
-Both agents run the same `agent-hook` dispatcher on every Bash call, which
-routes deletes through `rm-guard`: temp files and git-tracked files pass, `rm
--rf` of a directory prompts, and `/home/dev` is refused outright. The toast and
-worktree-cleanup features it carries on a Mac no-op here, by design.
+**There is no delete guard on this box.** Earlier versions ran an `agent-hook`
+dispatcher on every Bash call that routed deletes through `rm-guard`, prompting
+before an `rm -rf`. Both scripts are gone: this is a disposable container that
+exists to run agents unattended over a phone-grade SSH link, and a permission
+prompt on every `rm` is exactly the thing that stalls a session nobody is
+watching. What replaces it is scope — writes land in a container whose only
+persistent state is `/home/dev`, and the agent instructions in
+`config/claude/CLAUDE.md` and `config/codex/AGENTS.md` spell out the paths to
+leave alone. Push your work; that is the backup.
 
 Two things are deliberately **not** shipped from `config/`, because something
 else already owns them and a copy here would fork on the next upgrade:
