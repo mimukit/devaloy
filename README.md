@@ -402,6 +402,17 @@ It also reinstalls the agent skills, so it doubles as the publish loop — see
 toolchain visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`,
 `rsync`, git-over-ssh). Run it after any `npm i -g`.
 
+### Why the agent CLIs opt out of mise's release delay
+
+mise holds back any release younger than 24 hours (`minimum_release_age`) as a
+supply-chain cooling-off period. Claude Code and Codex ship most days and check
+their own release channel, which has no such delay — so mise's "latest" sat
+permanently one release behind what the CLI itself considered current, and
+`claude` nagged *"Update available! Run: `mise upgrade claude`"* with no version
+of that command able to satisfy it. `MISE_MINIMUM_RELEASE_AGE_EXCLUDES` exempts
+those two tools and nothing else, in `entrypoint.sh` (every shell) and
+`bootstrap-toolchain.sh` (the boot path, which sources no shell config).
+
 ## Config as code
 
 Shell and agent config live in [`config/`](config) in this repo, not in dotfiles

@@ -40,6 +40,19 @@ done
 unset _devaloy_dir
 export PATH
 
+# mise holds back any release younger than its `minimum_release_age` window
+# (24h by default) as a supply-chain cooling-off period. For a tool that ships
+# once a month that is free safety; for the agent CLIs, which ship most days, it
+# means mise's "latest" is permanently one release behind the version Claude
+# Code and Codex check themselves — so `claude` nags "Update available! Run:
+# mise upgrade claude" forever and `mise upgrade claude` can never satisfy it.
+# Excluding just those two keeps the delay on everything else.
+#
+# Exported here so the upgrade the nag tells you to type works from any shell.
+# bootstrap-toolchain.sh exports it again for the boot path, which runs under
+# `su -l -s /bin/sh` and never sources this file.
+export MISE_MINIMUM_RELEASE_AGE_EXCLUDES="claude,codex"
+
 # Tokens live in a separate 0600 file so this one stays safe to cat.
 [ -f "$HOME/.devaloy_secrets" ] && . "$HOME/.devaloy_secrets"
 
