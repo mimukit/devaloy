@@ -28,8 +28,9 @@ TOOLSET_REVISION=4
 
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
 
+FORCE=0
 case "${1:-}" in
-  --force) ;;
+  --force) FORCE=1 ;;
   '')
     if [ "$(cat "${MARKER}" 2>/dev/null)" = "${TOOLSET_REVISION}" ]; then
       echo "toolset revision ${TOOLSET_REVISION} already installed, skipping (run devaloy-update to refresh)"
@@ -79,6 +80,21 @@ mise use -g codex@latest
 # any other here, so it lands in the home volume and survives a redeploy.
 mise use -g npm:skills@latest
 mise install
+
+# `mise install` does NOT move a tool that is already installed, even one pinned
+# to `latest` — it resolves `latest` against what is on disk, prints "all tools
+# are installed" and stops. Every @latest tool above was therefore frozen at
+# whatever version first landed on the home volume, and devaloy-update upgraded
+# nothing. `mise upgrade` is the command that actually re-resolves.
+#
+# Only on --force. The boot path must stay install-only: the revision marker
+# exists precisely so a redeploy cannot swap an agent CLI under a live session,
+# and upgrading here would hand that back. No --bump — that would rewrite the
+# pins above to concrete versions and defeat tracking latest at all.
+if [ "${FORCE}" -eq 1 ]; then
+  echo "upgrading tools that track latest"
+  mise upgrade
+fi
 
 # --- agent skills -----------------------------------------------------------
 # Skills are NOT shipped in config/ like the rest of the agent setup. They live
