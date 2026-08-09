@@ -1,3 +1,4 @@
+<!-- wikikit:front-door:start -->
 # devaloy
 
 A portable, self-contained Docker Compose dev box you SSH into and pick up a
@@ -10,6 +11,22 @@ never on any public IP and never on any published port. There are no SSH keys to
 manage: `tailscaled` terminates the connection itself and authorizes you from
 your tailnet identity plus your tailnet policy file. Tools and cloned repos
 survive container restarts and redeploys.
+
+## Documentation
+
+The rest of this file is the long-form setup guide. The docs set covers the same
+ground in shorter, task-shaped pages:
+
+- [Getting started](docs/wiki/getting-started.md) — the required path only,
+  clone to shell.
+- [Architecture](docs/wiki/architecture.md) — what runs where, what persists,
+  and why the trades were made.
+- [Reference](docs/wiki/reference.md) — every `.env` variable, command, flag and
+  managed file.
+- [Recover a box you cannot reach](docs/wiki/recover-an-unreachable-box.md) —
+  when Tailscale SSH stops answering.
+- [All docs](docs/wiki/index.md)
+<!-- wikikit:front-door:end -->
 
 ## How it works
 
