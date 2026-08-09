@@ -51,6 +51,34 @@ services:
     # back to 0 (see entrypoint.sh), so a runaway build is the preferred victim.
     # Docker applies this itself; no CAP_SYS_RESOURCE needed.
     oom_score_adj: -500
+    # Resource ceilings, all OFF by default so the stack stays portable: a
+    # hardcoded number here would bake in a host-size assumption, and 0 / -1
+    # mean "unlimited" to Docker. Set them per host in .env.
+    #
+    # These matter most on a shared box. Without a mem_limit the container can
+    # grow until the HOST runs out and the kernel picks a victim by oom_score,
+    # which on a box with neighbours is rarely the process you would choose.
+    # With one, the cgroup OOM killer fires inside this container only: it takes
+    # the largest process here (an agent session, thanks to the oom_score_adj
+    # above), tini survives as PID 1, and nothing else on the host notices.
+    #
+    # DEVALOY_MEMSWAP_LIMIT is the combined RAM+swap ceiling, not swap on its
+    # own, so it must be >= DEVALOY_MEM_LIMIT and the difference is how much
+    # swap this container may use. Leaving it at 0 lets Docker default it to
+    # twice DEVALOY_MEM_LIMIT. Idle agent sessions are mostly cold pages and
+    # swap well, so a generous allowance here buys you sessions that go slow
+    # rather than sessions that die.
+    #
+    # See docs/wiki/vm-resource-limits.md for how to size all five.
+    mem_limit: ${DEVALOY_MEM_LIMIT:-0}
+    memswap_limit: ${DEVALOY_MEMSWAP_LIMIT:-0}
+    mem_reservation: ${DEVALOY_MEM_RESERVATION:-0}
+    cpus: ${DEVALOY_CPUS:-0}
+    # Only bites under contention. Below 1024 means the neighbours win when both
+    # want CPU at once, which is the right call when the neighbours are
+    # someone's live site and this is a dev box.
+    cpu_shares: ${DEVALOY_CPU_SHARES:-1024}
+    pids_limit: ${DEVALOY_PIDS_LIMIT:--1}
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
       - TS_HOSTNAME=${TS_HOSTNAME:-devaloy}
