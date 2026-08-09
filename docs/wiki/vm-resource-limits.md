@@ -13,8 +13,8 @@ devaloy only: it takes the largest process there, `tini` survives as PID 1, and
 nothing else on the host notices.
 
 This page covers the container half. The host half — earlyoom, swappiness, log
-rotation, prune timer — is in [Harden the Docker host](harden-the-host.md), and
-the two are complementary rather than alternatives.
+rotation, prune timer — is in [The host resource guard](host-resource-guard.md),
+and the two are complementary rather than alternatives.
 
 ## The six variables
 
@@ -153,8 +153,8 @@ is on.
 
 - [Reading `docker stats`](reading-docker-stats.md) — the measurements this page
   asks you to take.
-- [Harden the Docker host](harden-the-host.md) — earlyoom and swappiness, the
-  backstop for everything a cgroup limit cannot see.
+- [The host resource guard](host-resource-guard.md) — earlyoom and swappiness,
+  the backstop for everything a cgroup limit cannot see.
 - [Deploy with Dokploy](deploy-with-dokploy.md) — where these variables go when
   Dokploy owns the `.env`.
 

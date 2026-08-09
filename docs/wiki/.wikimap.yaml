@@ -45,11 +45,11 @@ pages:
       - entrypoint.sh
       - scripts/host-resource-guard.sh
 
-  - path: harden-the-host.md
+  - path: lock-down-the-host-firewall.md
     mode: how-to
     documents:
       - scripts/host-firewall-lockdown.sh
-      - scripts/host-resource-guard.sh
+      - .dockerignore
 
   - path: recover-an-unreachable-box.md
     mode: how-to
@@ -94,3 +94,10 @@ pages:
     documents:
       - docker-compose.yml
       - scripts/host-resource-guard.sh
+
+  - path: host-resource-guard.md
+    mode: how-to
+    adopted: true
+    documents:
+      - scripts/host-resource-guard.sh
+      - .dockerignore

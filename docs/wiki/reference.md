@@ -124,8 +124,10 @@ before.
 
 ## Commands on the Docker host
 
-Both live in `scripts/` and are covered in
-[Harden the Docker host](harden-the-host.md).
+Both live in `scripts/`, which is excluded from the Docker build context — so
+neither is in the image, and both are run on the host. Each has its own page:
+[Lock down the host firewall](lock-down-the-host-firewall.md) and
+[The host resource guard](host-resource-guard.md).
 
 ### `host-firewall-lockdown.sh`
 

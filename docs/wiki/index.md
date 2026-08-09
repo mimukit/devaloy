@@ -18,8 +18,10 @@ it when it stops answering.
   Compose service instead of by hand.
 - [Size the container resource limits](vm-resource-limits.md) — the six
   `DEVALOY_*` ceilings, and what to set them to.
-- [Harden the Docker host](harden-the-host.md) — the two `scripts/` helpers that
-  run on the host, not on devaloy.
+- [The host resource guard](host-resource-guard.md) — earlyoom, swappiness, log
+  rotation and a prune timer, on the host rather than on devaloy.
+- [Lock down the host firewall](lock-down-the-host-firewall.md) — the other
+  host-side script, and the two guards that stop it locking you out.
 - [Turn on phone push notifications](push-notifications.md) — one ntfy push per
   agent session when it blocks or finishes.
 - [Pair the Orca apps](pair-the-orca-apps.md) — the optional `WITH_ORCA=true`
