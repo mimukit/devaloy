@@ -446,13 +446,49 @@ From another machine on the tailnet, the CLI takes the same address:
 paseo --host 100.x.y.z:6767 ls
 ```
 
-On the box itself, plain `paseo ls` already works.
+On the box itself, plain `paseo ls` already works, because the boot writes the
+same address into the daemon's config file.
+
+### The daemon's config file
+
+Paseo keeps its settings in `~/.paseo/config.json`, and that file is not just
+the daemon's. Every `paseo` you run on the box reads it to find the daemon —
+`paseo ls`, `paseo daemon restart` after you change something, the MCP endpoint.
+Paseo's own default is `127.0.0.1:6767`, which is not where this daemon listens,
+so without the file the CLI on the box talks to nothing.
+
+devaloy writes the file on every boot, from three layers. Each one overrides the
+one before it:
+
+1. the file already in the home volume — what the Paseo app wrote, and what you
+   edited on the box
+2. [`config/paseo/config.json`](config/paseo/config.json) from this repo
+3. the values the entrypoint derives from the container: `daemon.listen` (the
+   tailnet address, which nothing can know before `tailscale up` runs),
+   `daemon.hostnames`, and `features.webUi.enabled`
+
+The merge is recursive for objects and whole-array for arrays, and that split is
+the point. A terminal profile you create in the app sits under a key the repo
+does not ship, so it survives a redeploy. `daemon.cors.allowedOrigins` is
+shipped, so it is reset from the repo every boot. If you want a setting to hold
+across redeploys, put it in `config/paseo/config.json` — the same trade the rest
+of [Config as code](#config-as-code) makes.
+
+`PASEO_PASSWORD` is the one setting that stays out of the file. The schema's
+`daemon.auth.password` takes a bcrypt hash and nothing else, so the plaintext
+stays in `~/.devaloy_secrets` and the daemon hashes it at startup.
+
+Two of the shipped keys are choices rather than plumbing. `worktrees.root` is
+`~/worktrees/` instead of Paseo's default `~/.paseo/worktrees`, so the branches
+an agent works on sit next to your repos rather than inside a state directory.
+`daemon.cors.allowedOrigins` lists `https://app.paseo.sh`, which is what lets
+the hosted web client reach a daemon it is not served from.
 
 ### What to know before you turn it on
 
 - **The relay is off.** Paseo can tunnel to your daemon through
   `app.paseo.sh` end-to-end encrypted, which is how you reach it from a phone
-  with no VPN. devaloy passes `--no-relay` on every launch, because an outbound
+  with no VPN. devaloy ships `daemon.relay.enabled: false`, because an outbound
   tunnel is exactly the thing that would make "the tailnet is the only remote
   way in" false. The cost is that the phone needs Tailscale.
 - **There is no password unless you set one.** `PASEO_PASSWORD` is optional and
@@ -471,9 +507,9 @@ On the box itself, plain `paseo ls` already works.
   much of the point, but it means a session started through Paseo has a
   different tool list from one you started over SSH.
 - **Turning it off leaves the CLI behind.** `WITH_PASEO=false` stops the daemon
-  on the next boot. It does not uninstall `paseo` and it does not touch
-  `~/.paseo`, so your paired clients are still there when you turn it back on. A
-  `paseo` with no daemon behind it does nothing.
+  on the next boot. It does not uninstall `paseo` and it does not rewrite
+  `~/.paseo/config.json`, so your paired clients and settings are still there
+  when you turn it back on. A `paseo` with no daemon behind it does nothing.
 - **Upgrading is `devaloy-update`,** unlike Orca. Paseo tracks `latest` through
   mise like `claude` and `codex` do. Pin it with `MISE_PASEO_VERSION` if you
   want it to hold still.
@@ -525,7 +561,12 @@ config/
   claude/              -> ~/.claude/     (settings.json, CLAUDE.md, statusline.sh, hooks/)
   codex/               -> ~/.codex/      (config.toml, AGENTS.md, hooks.json, rules/)
   bin/                 -> ~/.local/bin/  (agent-push — shared by both)
+  paseo/config.json    -> ~/.paseo/config.json   (only with WITH_PASEO=true)
 ```
+
+`paseo/config.json` is merged key by key rather than copied, because the Paseo
+app writes that same file. See
+[the daemon's config file](#the-daemons-config-file).
 
 `claude/statusline.sh` draws Claude Code's status line — model, context window
 used, and the 5-hour and 7-day rate-limit windows with their reset times. It
