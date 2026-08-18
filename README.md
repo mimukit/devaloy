@@ -58,6 +58,7 @@ From the image, available the moment you can log in:
 | Build | `build-essential`, `git`, `curl`, `jq` |
 | Agent sandbox | `bubblewrap` (`bwrap`), what Codex confines its shell with |
 | Optional | the Orca runtime (`orca-ide`), only when built with `WITH_ORCA=true` — see [(Optional) the Orca apps](#optional-the-orca-apps) |
+| Optional | the Paseo daemon (`paseo`), only when run with `WITH_PASEO=true` — see [(Optional) the Paseo apps](#optional-the-paseo-apps). Installed from `mise`, not the image. |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `lazygit`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
@@ -397,6 +398,89 @@ reaches — the same reason Tailscale SSH works with no `ports:` key.
 - **One box at a time.** Orca warns against two servers serving the same setup.
   `WITH_ORCA=false` being the default is most of the guard here; nothing stops a
   second devaloy from advertising itself if you deliberately turn it on twice.
+
+## (Optional) the Paseo apps
+
+[Paseo](https://paseo.sh) is the other way to reach this box without a terminal.
+Like Orca it is a daemon that owns agent processes, worktrees and terminals,
+with phone, desktop, browser and CLI clients on the other end. Unlike Orca it is
+a plain npm package, so it costs the image nothing and the switch is a runtime
+one:
+
+```sh
+# in .env
+WITH_PASEO=true
+```
+
+```sh
+docker compose up -d
+```
+
+**No `--build` here.** That is the one thing to keep straight between the two
+keys, because they look alike and are not. `WITH_ORCA` decides what goes into
+the image; `WITH_PASEO` decides what `bootstrap-toolchain.sh` installs into the
+home volume and whether the entrypoint starts a daemon. A plain `up -d` picks it
+up.
+
+The first boot after you flip it re-runs the toolchain bootstrap, because the
+revision marker records the key alongside the revision. That is quick: the boot
+path installs, it never upgrades, so nothing already on the volume moves.
+
+### Connecting
+
+The daemon starts after the tailnet comes up and binds the tailnet address on
+port 6767. Get the address from the log:
+
+```sh
+docker compose logs devaloy | grep -i "Paseo daemon on"
+```
+
+In the phone or desktop app, go to **Settings → Add host → Direct connection**,
+enter that address and `6767`, leave **Use SSL** off, and connect. Keep
+Tailscale connected on the phone — the relay is deliberately disabled, so the
+tailnet is the only route.
+
+From another machine on the tailnet, the CLI takes the same address:
+
+```sh
+paseo --host 100.x.y.z:6767 ls
+```
+
+On the box itself, plain `paseo ls` already works.
+
+### What to know before you turn it on
+
+- **The relay is off.** Paseo can tunnel to your daemon through
+  `app.paseo.sh` end-to-end encrypted, which is how you reach it from a phone
+  with no VPN. devaloy passes `--no-relay` on every launch, because an outbound
+  tunnel is exactly the thing that would make "the tailnet is the only remote
+  way in" false. The cost is that the phone needs Tailscale.
+- **There is no password unless you set one.** `PASEO_PASSWORD` is optional and
+  empty by default, so anything on your tailnet can drive your agents. That is
+  the same trust model Tailscale SSH already runs on here. Note the scope if you
+  do set it: Paseo's password is daemon-wide, so the phone's direct connection
+  will ask for it too, not just a browser.
+- **The web UI is a second key.** `WITH_PASEO_WEB_UI=true` serves a full browser
+  client from `http://<tailnet-ip>:6767/`, with no app to install. Its static
+  files load without authentication. If you turn it on with no
+  `PASEO_PASSWORD`, the entrypoint warns loudly and serves it anyway — the API
+  on the same address is open either way, so withholding just the UI would
+  protect nothing while costing you a working surface.
+- **Paseo injects its own tools into every agent it launches.** A Claude Code
+  session started from the phone can spawn and coordinate other agents. That is
+  much of the point, but it means a session started through Paseo has a
+  different tool list from one you started over SSH.
+- **Turning it off leaves the CLI behind.** `WITH_PASEO=false` stops the daemon
+  on the next boot. It does not uninstall `paseo` and it does not touch
+  `~/.paseo`, so your paired clients are still there when you turn it back on. A
+  `paseo` with no daemon behind it does nothing.
+- **Upgrading is `devaloy-update`,** unlike Orca. Paseo tracks `latest` through
+  mise like `claude` and `codex` do. Pin it with `MISE_PASEO_VERSION` if you
+  want it to hold still.
+- **Workspace service previews do not work.** Paseo can proxy a workspace's dev
+  server, but it routes by hostnames like `web-feature-x-myapp.localhost`, and
+  those do not resolve from a phone on the tailnet. Agents, terminals, diffs and
+  git are unaffected. This is a DNS limit, not a Paseo one.
 
 ## Updating the toolchain
 
