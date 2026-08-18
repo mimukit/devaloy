@@ -119,6 +119,13 @@ write_secret GITHUB_TOKEN "${GITHUB_TOKEN:-}"
 # never refreshes itself; when it lapses, re-run `claude setup-token` on your
 # laptop and redeploy.
 write_secret CLAUDE_CODE_OAUTH_TOKEN "${CLAUDE_CODE_OAUTH_TOKEN:-}"
+# Optional, and only meaningful with WITH_PASEO=true. It goes through this file
+# rather than the container environment for two reasons at once: the Paseo block
+# at the bottom sources it to hand the daemon its password, and an interactive
+# shell picking it up is what lets `paseo ls` on the box talk to its own daemon
+# with no --host. Note the scope — Paseo's password is DAEMON-wide, not web-UI
+# only, so setting this also makes the phone's direct connection ask for it.
+write_secret PASEO_PASSWORD "${PASEO_PASSWORD:-}"
 
 # --- ntfy push-notification config for hooks ---
 # agent-push reads ~/.config/agent-push.env rather than the shell environment,
@@ -266,6 +273,8 @@ fi
 log "Checking the mise toolchain"
 if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
     MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
+    WITH_PASEO='${WITH_PASEO:-false}' \
+    MISE_PASEO_VERSION='${MISE_PASEO_VERSION:-}' \
     /usr/local/bin/bootstrap-toolchain.sh"; then
   log "Toolchain ready"
 else
@@ -567,6 +576,112 @@ if [ -x "${ORCA_BIN}" ]; then
     # fails at pairing time rather than here where the log explains why.
     log "WARNING: no tailnet IPv4 — not starting orca serve."
     log "WARNING: fix the tailscale failure above, then restart the container."
+  fi
+fi
+
+# --- Paseo daemon (only when WITH_PASEO=true) ---
+# The second remote runtime, next to Orca above and answering the same want: the
+# Paseo phone, desktop, browser and CLI clients speak to a daemon, not a
+# terminal. Everything else about the box is unchanged.
+#
+# Read the differences from the Orca block before editing this one — they are
+# deliberate, not drift:
+#
+#   * The KEY IS A RUNTIME VARIABLE, not a build arg. Paseo is a plain npm
+#     package installed into the home volume by bootstrap-toolchain.sh, so there
+#     is no image payload to gate and `docker compose up -d` is enough to flip
+#     it. WITH_ORCA needs --build; this does not.
+#   * A MISSING BINARY IS A FAULT HERE, and warns. A missing orca-ide is the
+#     default build and so is silent. A missing paseo when the key is on means
+#     the bootstrap failed, and the log should say so.
+#   * IT BINDS THE TAILNET ADDRESS, not 0.0.0.0. Paseo takes a bind address
+#     (orca serve does not), and its own default is 127.0.0.1, so this widens
+#     it exactly as far as the tailnet and no further. Nothing lands on the
+#     docker bridge, unlike Orca's 6768.
+#
+# Runs after link-shims for the same reason Orca does: the daemon shells out to
+# `claude` and `codex`, and `su -l -s /bin/sh` gets /usr/local/bin but not mise's
+# shim directory.
+PASEO_PORT=6767
+
+if [ "${WITH_PASEO:-false}" = "true" ]; then
+  if as_dev "command -v paseo >/dev/null 2>&1"; then
+    PASEO_IP="$(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1 || true)"
+    if [ -n "${PASEO_IP}" ]; then
+      # The web UI is a second, separate key: it serves a full browser client
+      # from the daemon's own origin, and the static files load without auth.
+      # --hostnames is what stops a MagicDNS visit returning 403 — Paseo allows
+      # bare IPs and localhost by default and rejects DNS names.
+      PASEO_UI_ARGS=""
+      if [ "${WITH_PASEO_WEB_UI:-false}" = "true" ]; then
+        PASEO_UI_ARGS="--web-ui --hostnames '${TS_HOSTNAME:-devaloy},.ts.net'"
+        if [ -z "${PASEO_PASSWORD:-}" ]; then
+          # Warn, then serve anyway. Withholding the UI would cost a working
+          # surface over a configuration choice, and gating only the UI while
+          # the WebSocket API stays open on the same address protects nothing.
+          log "WARNING: WITH_PASEO_WEB_UI is on and PASEO_PASSWORD is empty."
+          log "WARNING: anything that can reach ${PASEO_IP} gets a full browser"
+          log "WARNING: client and an unauthenticated API. Set PASEO_PASSWORD in"
+          log "WARNING: .env and redeploy, or turn the web UI back off."
+        fi
+      fi
+
+      (
+        # Explicit, NOT inherited — see the identical note in the Orca block.
+        # The container starts at -500 to keep tailscaled off the OOM killer's
+        # list, so an untouched daemon would be as protected as the only process
+        # that keeps you connected. -250 sits above a runaway build and below
+        # tailscaled.
+        echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
+
+        # A SECOND supervision layer, on purpose. `paseo daemon start
+        # --foreground` execs Paseo's own supervisor, which restarts its worker
+        # on crash and holds a PID lock under ~/.paseo. Nothing but this loop
+        # restarts the supervisor itself, and it costs nothing while the inner
+        # layer is doing its job. --foreground is also what keeps the daemon's
+        # output in `docker compose logs`: without it Paseo detaches and writes
+        # to a file, and the container log is the recovery surface when the
+        # tailnet is down.
+        #
+        # Sourcing the secrets file is load-bearing and not decoration. Agents
+        # the daemon spawns inherit ITS environment, and as_dev runs
+        # `su -l -s /bin/sh`, which reads neither .zshenv nor .bashrc — so
+        # without this line CLAUDE_CODE_OAUTH_TOKEN never reaches a Claude Code
+        # session started from the phone, and it falls back to a credentials
+        # file a token-provisioned box does not have. Same trap the gh block
+        # above exists to work around. It also carries PASEO_PASSWORD to the
+        # daemon.
+        #
+        # The `if [ -f ]` guard is NOT belt-and-braces, and `. file || true` is
+        # not a substitute for it. write_secret only creates that file when at
+        # least one secret is set, so a box with no tokens and no password does
+        # not have one — and as_dev runs `su -l -s /bin/sh`, which is dash here.
+        # `.` is a POSIX special builtin, so in dash a missing file exits the
+        # whole shell BEFORE the `||` is ever considered. Written the other way,
+        # such a box never starts the daemon and this loop warns every 10s
+        # forever.
+        while true; do
+          as_dev "if [ -f '${SECRETS_SNIPPET}' ]; then . '${SECRETS_SNIPPET}'; fi; \
+            paseo daemon start --foreground --no-relay \
+              --listen '${PASEO_IP}:${PASEO_PORT}' ${PASEO_UI_ARGS}" || true
+          log "WARNING: the Paseo daemon exited — restarting in 10s"
+          sleep 10
+        done
+      ) &
+      log "Paseo daemon on ${PASEO_IP}:${PASEO_PORT} — add it in the app under"
+      log "Settings > Add host > Direct connection, with SSL off. The relay is"
+      log "deliberately disabled, so the phone needs Tailscale connected."
+    else
+      # Same call as the Orca block and as tailscale up's own failure path: a
+      # daemon on an address nothing can route to fails at connect time rather
+      # than here, where the log can still explain why.
+      log "WARNING: no tailnet IPv4 — not starting the Paseo daemon."
+      log "WARNING: fix the tailscale failure above, then restart the container."
+    fi
+  else
+    log "WARNING: WITH_PASEO is true but paseo is not installed. The toolchain"
+    log "WARNING: bootstrap above did not finish — once you are in, re-run it"
+    log "WARNING: with: devaloy-update"
   fi
 fi
 

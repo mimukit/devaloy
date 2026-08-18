@@ -24,16 +24,33 @@ set -euo pipefail
 # re-resolving skills mid-session, but it is NOT how a newly authored skill
 # reaches the box. That is `devaloy-update` (or `skmi`), which runs --force and
 # skips the gate entirely — so publishing a skill needs no edit here.
-TOOLSET_REVISION=4
+TOOLSET_REVISION=5
 
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
+
+# The optional Paseo daemon (see the block further down). Read up here because
+# the marker has to know about it: a revision number alone cannot express an
+# optional tool, so a volume already at revision N would skip this script
+# forever and WITH_PASEO=true would never install anything. Same class of bug as
+# the one described above, where claude and codex arrived on a volume whose
+# marker already said "done".
+#
+# So the marker records the FLAG as well as the revision — `5` or `5+paseo` —
+# and flipping the key invalidates it. Re-running is close to free: the boot
+# path below runs `mise install`, never `mise upgrade`, so every tool already on
+# the volume stays exactly where it is.
+WITH_PASEO="${WITH_PASEO:-false}"
+MARKER_VALUE="${TOOLSET_REVISION}"
+if [ "${WITH_PASEO}" = "true" ]; then
+  MARKER_VALUE="${TOOLSET_REVISION}+paseo"
+fi
 
 FORCE=0
 case "${1:-}" in
   --force) FORCE=1 ;;
   '')
-    if [ "$(cat "${MARKER}" 2>/dev/null)" = "${TOOLSET_REVISION}" ]; then
-      echo "toolset revision ${TOOLSET_REVISION} already installed, skipping (run devaloy-update to refresh)"
+    if [ "$(cat "${MARKER}" 2>/dev/null)" = "${MARKER_VALUE}" ]; then
+      echo "toolset ${MARKER_VALUE} already installed, skipping (run devaloy-update to refresh)"
       exit 0
     fi
     ;;
@@ -56,8 +73,12 @@ MISE_NODE_VERSION="${MISE_NODE_VERSION:-24}"
 # marker above, so an ordinary redeploy can't swap it under a live session. Set
 # MISE_HERDR_VERSION in compose to pin it.
 MISE_HERDR_VERSION="${MISE_HERDR_VERSION:-latest}"
+# Paseo ships often, and the marker above already stops a redeploy swapping it
+# under a live session, so it tracks latest like herdr. Set MISE_PASEO_VERSION
+# in compose to pin it.
+MISE_PASEO_VERSION="${MISE_PASEO_VERSION:-latest}"
 
-echo "installing toolset revision ${TOOLSET_REVISION} — several minutes on a cold volume"
+echo "installing toolset ${MARKER_VALUE} — several minutes on a cold volume"
 
 if [ ! -x "${HOME}/.local/bin/mise" ]; then
   curl -fsSL https://mise.run | sh
@@ -84,6 +105,26 @@ mise use -g codex@latest
 # The skills.sh CLI, which installs the agent skills below. It is a tool like
 # any other here, so it lands in the home volume and survives a redeploy.
 mise use -g npm:skills@latest
+
+# --- OPTIONAL: the Paseo daemon (WITH_PASEO). BEGIN ---------------------------
+# One contiguous block, so removing Paseo later is deleting a unit rather than
+# unpicking a line from the list above.
+#
+# It lives HERE and not in the Dockerfile — the opposite of Orca — because it is
+# a plain npm package with npm dependencies. No system package, no apt
+# resolution, no architecture to match. That means the key is a runtime variable
+# and not a build argument: the payload lands in the home volume, so
+# `docker compose up -d` is enough to turn it on. Nothing enters the image.
+#
+# Turning the key back off stops the daemon (see entrypoint.sh); it does NOT
+# uninstall this. A `paseo` with no daemon behind it does nothing, and pulling a
+# tool out from under a live session is worse than leaving a dormant command on
+# PATH.
+if [ "${WITH_PASEO}" = "true" ]; then
+  mise use -g "npm:@getpaseo/cli@${MISE_PASEO_VERSION}"
+fi
+# --- OPTIONAL: the Paseo daemon. END ------------------------------------------
+
 mise install
 
 # `mise install` does NOT move a tool that is already installed, even one pinned
@@ -159,4 +200,4 @@ unset _target
 # Written last, and only on success: a bootstrap that died halfway through must
 # leave the volume behind the revision so the next boot retries it.
 mkdir -p "$(dirname "${MARKER}")"
-printf '%s\n' "${TOOLSET_REVISION}" > "${MARKER}"
+printf '%s\n' "${MARKER_VALUE}" > "${MARKER}"

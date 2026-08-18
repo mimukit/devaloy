@@ -27,6 +27,13 @@ services:
     # socket and can `docker exec` in as root, so the port grants them nothing
     # they did not already have. It does mean you should not attach other
     # containers to this container's network.
+    #
+    # The Paseo daemon (WITH_PASEO=true) does NOT have that nuance, and the two
+    # are worth telling apart rather than assuming they behave alike. Paseo
+    # takes a bind address, so the entrypoint starts it with
+    # `--listen <tailnet-ip>:6767`. Port 6767 exists only on the tailnet
+    # interface: it is not on the docker bridge and the Docker host cannot reach
+    # it. Both runtimes can run at once — different ports, no clash.
     cap_add:
       # tailscaled needs this to create and configure the tailscale0 interface.
       - NET_ADMIN
@@ -118,9 +125,33 @@ services:
       - NTFY_TOPIC=${NTFY_TOPIC:-}
       - NTFY_SERVER=${NTFY_SERVER:-}
       - NTFY_TOKEN=${NTFY_TOKEN:-}
+      # The optional Paseo daemon, for the Paseo phone, desktop, browser and CLI
+      # clients. Read the contrast with WITH_ORCA in the build block above
+      # carefully, because these look alike and are not: WITH_PASEO is an
+      # ENVIRONMENT variable, not a build arg. Paseo is an npm package that
+      # bootstrap-toolchain.sh installs into the home volume, so nothing goes
+      # into the image and `docker compose up -d` alone picks up a change. No
+      # --build needed.
+      #
+      # Turning it back off stops the daemon on the next boot. It does not
+      # uninstall the CLI and it does not touch ~/.paseo, so re-enabling costs
+      # nothing. See the README.
+      - WITH_PASEO=${WITH_PASEO:-false}
+      # Serves Paseo's bundled web client from the daemon's own origin, so a
+      # browser on the tailnet needs no app install. Separate key because the
+      # static UI loads without auth. With no PASEO_PASSWORD set the entrypoint
+      # warns and serves anyway — the API on the same address is open either
+      # way, so gating only the UI would protect nothing.
+      - WITH_PASEO_WEB_UI=${WITH_PASEO_WEB_UI:-false}
+      # Optional, and DAEMON-wide rather than web-UI only: setting it also makes
+      # the phone's direct connection ask for it. Same lifecycle as the tokens
+      # above — the entrypoint writes it into the 0600 file in the home volume,
+      # and clearing it here plus a redeploy is what revokes it.
+      - PASEO_PASSWORD=${PASEO_PASSWORD:-}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
       - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
+      - MISE_PASEO_VERSION=${MISE_PASEO_VERSION:-}
     volumes:
       - home:/home/dev
       # Node identity lives here. Lose it and the box rejoins as a new machine.
