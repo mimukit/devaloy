@@ -54,13 +54,32 @@ Off by default. See [Connect the Paseo apps](connect-the-paseo-apps.md).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `WITH_PASEO` | `false` | Installs the `paseo` CLI through mise and starts its daemon on `<tailnet-ip>:6767` with `--no-relay`. A **runtime** variable, unlike `WITH_ORCA` — `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the daemon; it uninstalls nothing and does not touch `~/.paseo`. |
-| `WITH_PASEO_WEB_UI` | `false` | Adds `--web-ui` and `--hostnames "${TS_HOSTNAME},.ts.net"`, serving a browser client from the daemon's origin. Static files load without auth. |
-| `PASEO_PASSWORD` | empty | Optional, and **daemon-wide** rather than web-UI only: setting it makes the phone's direct connection ask for it too. Written to `~/.devaloy_secrets` (0600). Empty with `WITH_PASEO_WEB_UI=true` logs a warning and serves anyway. |
+| `WITH_PASEO` | `false` | Installs the `paseo` CLI through mise, writes `~/.paseo/config.json`, and starts the daemon on `<tailnet-ip>:6767`. A **runtime** variable, unlike `WITH_ORCA` — `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the daemon; it uninstalls nothing and stops rewriting the config. |
+| `WITH_PASEO_WEB_UI` | `false` | Sets `features.webUi.enabled`, serving a browser client from the daemon's origin. Static files load without auth. |
+| `PASEO_PASSWORD` | empty | Optional, and **daemon-wide** rather than web-UI only: setting it makes the phone's direct connection ask for it too. Written to `~/.devaloy_secrets` (0600), never to the config file — `daemon.auth.password` takes a bcrypt hash only. Empty with `WITH_PASEO_WEB_UI=true` logs a warning and serves anyway. |
 
 Flipping `WITH_PASEO` re-runs the toolchain bootstrap, because the revision
 marker records the key alongside the revision (`5` vs `5+paseo`). The boot path
 installs and never upgrades, so nothing already on the volume moves.
+
+The daemon takes no command-line settings. They live in `~/.paseo/config.json`,
+which every `paseo` on the box reads too, and which the entrypoint rebuilds on
+each boot from three layers: the file already in the `home` volume, then
+`config/paseo/config.json` from the repo, then the values derived from the
+container.
+
+| Key | Layer | Value |
+|---|---|---|
+| `daemon.listen` | container | `<tailnet-ip>:6767` |
+| `daemon.hostnames` | container | `["${TS_HOSTNAME}", ".ts.net"]` |
+| `features.webUi.enabled` | container | `WITH_PASEO_WEB_UI` |
+| `daemon.relay.enabled` | repo | `false` |
+| `daemon.cors.allowedOrigins` | repo | `["https://app.paseo.sh"]` |
+| `worktrees.root` | repo | `~/worktrees/` |
+
+Objects merge key by key and arrays are replaced whole, so a key the repo does
+not ship — terminal profiles the app created, for instance — survives a
+redeploy, and every key in the table above does not.
 
 ### Toolchain pins
 

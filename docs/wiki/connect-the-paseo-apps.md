@@ -96,6 +96,10 @@ paseo ls
 paseo run "fix the failing tests"
 ```
 
+No `--host` is needed because the boot writes the tailnet address into
+`~/.paseo/config.json`, which is where the CLI looks. See
+[Where the settings live](#where-the-settings-live).
+
 From another machine on the tailnet, point it at the address:
 
 ```sh
@@ -130,9 +134,12 @@ Two things to know about the password:
   scratch on every boot, so clearing it in `.env` and redeploying really does
   revoke it.
 
-`--hostnames` is set for you from `TS_HOSTNAME`, plus `.ts.net`, which is what
-lets a MagicDNS name work in the browser. Paseo allows bare IPs and `localhost`
-by default and answers `403 Host not allowed` to anything else.
+`daemon.hostnames` is set for you from `TS_HOSTNAME`, plus `.ts.net`, which is
+what lets a MagicDNS name work in the browser. Paseo allows `localhost`,
+`*.localhost` and every IP address before it looks at that list, and answers
+`403 Host not allowed` to any other name. The list only adds to the defaults, so
+it never costs you the connection to a bare IP — and because the same check
+gates the WebSocket upgrade, devaloy sets it whether or not the web UI is on.
 
 ## 6. Confirm it survives a redeploy
 
@@ -143,6 +150,48 @@ docker compose down && docker compose up -d
 ```
 
 Your clients should reconnect with nothing to reconfigure.
+
+## Where the settings live
+
+`~/.paseo/config.json` holds the daemon's settings, and it is not only the
+daemon's file. Every `paseo` on the box reads it to find the daemon — `paseo
+ls`, `paseo daemon restart`, the MCP endpoint — and Paseo's own default is
+`127.0.0.1:6767`, which is not where this daemon listens. That is why devaloy
+writes the address into the file instead of passing it on the command line: a
+restart you run yourself over SSH then behaves the same as the one the boot
+does.
+
+The entrypoint rebuilds the file on every boot, from three layers. Each
+overrides the one before it:
+
+| Layer | Where it comes from | Example |
+|---|---|---|
+| 1 | the file already in the `home` volume | a terminal profile you created in the app |
+| 2 | `config/paseo/config.json` in the repo | `daemon.relay.enabled`, `daemon.cors.allowedOrigins`, `worktrees.root` |
+| 3 | the container environment, at boot | `daemon.listen`, `daemon.hostnames`, `features.webUi.enabled` |
+
+Objects merge key by key and arrays are replaced whole. So a key the repo does
+not ship survives a redeploy, and a key it does ship is reset from the repo. If
+you want a setting to hold, put it in `config/paseo/config.json` rather than
+editing the file on the box.
+
+`PASEO_PASSWORD` is the exception and stays out of the file. `daemon.auth.password`
+takes a bcrypt hash and nothing else, so the plaintext lives in
+`~/.devaloy_secrets` and the daemon hashes it when it starts.
+
+Check what the boot wrote:
+
+```sh
+docker compose logs devaloy | grep -i "Paseo config"
+```
+
+```
+[entrypoint] Paseo config written to ~/.paseo/config.json (listen 100.x.y.z:6767)
+```
+
+A `WARNING: could not write ~/.paseo/config.json` line instead means the merge
+failed. The daemon still comes up on the right address, from flags, but `paseo`
+on the box then needs `--host 100.x.y.z:6767`.
 
 ## What this does not change
 
@@ -155,7 +204,7 @@ Your clients should reconnect with nothing to reconfigure.
   in.
 - **The relay stays off.** Paseo can tunnel to your daemon through
   `app.paseo.sh`, end-to-end encrypted, which is how you would reach it from a
-  phone with no VPN. devaloy passes `--no-relay` on every launch, because an
+  phone with no VPN. devaloy ships `daemon.relay.enabled: false`, because an
   outbound tunnel is exactly what would make "the tailnet is the only remote way
   in" false.
 
@@ -173,9 +222,10 @@ one. Agents, terminals, diffs and git all work normally.
 | Thing | Why it bites |
 |---|---|
 | Reaching for `--build` | `WITH_PASEO` is an environment variable. `--build` is harmless but does nothing, and expecting to need it means you will assume it behaves like `WITH_ORCA` in other ways too. |
-| `WITH_PASEO=false` leaves `paseo` on `PATH` | The key stops the daemon. It does not uninstall the CLI or delete `~/.paseo`, so turning it back on costs nothing. A `paseo` with no daemon behind it does nothing. |
+| `WITH_PASEO=false` leaves `paseo` on `PATH` | The key stops the daemon. It does not uninstall the CLI or rewrite `~/.paseo/config.json`, so turning it back on costs nothing. A `paseo` with no daemon behind it does nothing. |
+| Editing `~/.paseo/config.json` on the box | Only the keys the repo does not ship survive a redeploy. `daemon.listen`, `daemon.hostnames`, `features.webUi.enabled`, `daemon.relay.enabled`, `daemon.cors.allowedOrigins` and `worktrees.root` are all rewritten on the next boot. |
 | No password by default | Anything on your tailnet can drive your agents. That is the same trust model Tailscale SSH already runs on here, but it surprises people who expected the app to ask for something. |
 | A different tool list inside agents | Paseo injects its own orchestration tools into every agent it launches, so a Claude Code session started from the phone can spawn other agents. A session you started over SSH cannot. |
 | Upgrading | `devaloy-update`, not a rebuild. This is the opposite of Orca. Pin it with `MISE_PASEO_VERSION` if you want it to hold still. |
-| A tailnet IP that changed | The daemon binds the address captured at boot. If `tailscaled` ever re-registers on a different IPv4, restart the container. The node identity lives in the `tailscale-state` volume, so this is rare. |
+| A tailnet IP that changed | The daemon binds the address captured at boot, and `daemon.listen` in the config still holds the old one. If `tailscaled` ever re-registers on a different IPv4, restart the container and both are rewritten. The node identity lives in the `tailscale-state` volume, so this is rare. |
 | Both runtimes at once | Fine. Orca is 6768, Paseo is 6767, and neither knows about the other. |
