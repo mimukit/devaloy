@@ -26,6 +26,8 @@ it when it stops answering.
   agent session when it blocks or finishes.
 - [Pair the Orca apps](pair-the-orca-apps.md) — the optional `WITH_ORCA=true`
   runtime, for the desktop and mobile clients.
+- [Connect the Paseo apps](connect-the-paseo-apps.md) — the optional
+  `WITH_PASEO=true` daemon, and how it differs from the Orca one.
 
 ## When something is wrong
 

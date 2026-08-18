@@ -48,12 +48,27 @@ Off entirely unless `NTFY_TOPIC` is set. Full behavior is in
 | `NTFY_SERVER` | empty | `PUSH_NTFY_URL` |
 | `NTFY_TOKEN` | empty | `PUSH_NTFY_TOKEN` |
 
+### Paseo daemon
+
+Off by default. See [Connect the Paseo apps](connect-the-paseo-apps.md).
+
+| Variable | Default | Effect |
+|---|---|---|
+| `WITH_PASEO` | `false` | Installs the `paseo` CLI through mise and starts its daemon on `<tailnet-ip>:6767` with `--no-relay`. A **runtime** variable, unlike `WITH_ORCA` — `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the daemon; it uninstalls nothing and does not touch `~/.paseo`. |
+| `WITH_PASEO_WEB_UI` | `false` | Adds `--web-ui` and `--hostnames "${TS_HOSTNAME},.ts.net"`, serving a browser client from the daemon's origin. Static files load without auth. |
+| `PASEO_PASSWORD` | empty | Optional, and **daemon-wide** rather than web-UI only: setting it makes the phone's direct connection ask for it too. Written to `~/.devaloy_secrets` (0600). Empty with `WITH_PASEO_WEB_UI=true` logs a warning and serves anyway. |
+
+Flipping `WITH_PASEO` re-runs the toolchain bootstrap, because the revision
+marker records the key alongside the revision (`5` vs `5+paseo`). The boot path
+installs and never upgrades, so nothing already on the volume moves.
+
 ### Toolchain pins
 
 | Variable | Default | Effect |
 |---|---|---|
 | `MISE_NODE_VERSION` | `24` | Node **major**, not mise's floating `lts` alias — that alias rolls across majors. |
 | `MISE_HERDR_VERSION` | `latest` | Pin herdr. |
+| `MISE_PASEO_VERSION` | `latest` | Pin `@getpaseo/cli`. Only read when `WITH_PASEO=true`. |
 
 Everything else in the toolchain (`pnpm`, `gh`, `turbo`, `lazygit`, `claude`,
 `codex`, `skills`) tracks `latest` and is pinned by editing
@@ -81,6 +96,10 @@ All off by default. See [Size the container resource limits](vm-resource-limits.
 `WITH_ORCA` is read from `.env` like the variables above, but it is a **build
 argument** — `docker compose up -d` alone will not pick up a change to it. You
 need `docker compose up -d --build`.
+
+`WITH_PASEO` is the one to keep separate in your head. It looks like a sibling
+and is not: it is an environment variable listed above, because Paseo installs
+into the home volume rather than the image. It needs no `--build`.
 
 Two more are pinned in the `Dockerfile` itself rather than exposed through
 compose: `ORCA_VERSION` (`1.4.164`) and `ZSH_COMPLETIONS_VERSION` (`0.36.0`).

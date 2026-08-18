@@ -78,6 +78,15 @@ pages:
       - docker-compose.yml
       - entrypoint.sh
 
+  - path: connect-the-paseo-apps.md
+    mode: how-to
+    adopted: true
+    documents:
+      - entrypoint.sh
+      - bootstrap-toolchain.sh
+      - docker-compose.yml
+      - .env.example
+
   - path: push-notifications.md
     mode: how-to
     adopted: true
