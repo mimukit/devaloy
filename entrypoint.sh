@@ -162,6 +162,11 @@ fi
 # and redeploying actually changes the box. The copy MERGES rather than
 # replaces, so files the repo does not ship — ~/.zshrc.local, credentials,
 # session history, skills you added by hand — are left alone.
+#
+# config/paseo is the one directory NOT seeded here. It is a single JSON file
+# that has to be merged key by key rather than copied, and the values it needs
+# come from the tailnet, which is not up yet at this point in the boot. The
+# Paseo block at the bottom of this file does it.
 seed_config() {
   src="$1"; dest="$2"
   [ -d "${src}" ] || return 0
@@ -598,6 +603,10 @@ fi
 #     (orca serve does not), and its own default is 127.0.0.1, so this widens
 #     it exactly as far as the tailnet and no further. Nothing lands on the
 #     docker bridge, unlike Orca's 6768.
+#   * IT IS CONFIGURED BY FILE, not by flags. Orca serve takes its settings on
+#     the command line and nothing else reads them. Paseo has a config file that
+#     every other `paseo` on the box reads too, so the settings live there. See
+#     the config block below.
 #
 # Runs after link-shims for the same reason Orca does: the daemon shells out to
 # `claude` and `codex`, and `su -l -s /bin/sh` gets /usr/local/bin but not mise's
@@ -610,11 +619,9 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
     if [ -n "${PASEO_IP}" ]; then
       # The web UI is a second, separate key: it serves a full browser client
       # from the daemon's own origin, and the static files load without auth.
-      # --hostnames is what stops a MagicDNS visit returning 403 — Paseo allows
-      # bare IPs and localhost by default and rejects DNS names.
-      PASEO_UI_ARGS=""
+      PASEO_WEB_UI=false
       if [ "${WITH_PASEO_WEB_UI:-false}" = "true" ]; then
-        PASEO_UI_ARGS="--web-ui --hostnames '${TS_HOSTNAME:-devaloy},.ts.net'"
+        PASEO_WEB_UI=true
         if [ -z "${PASEO_PASSWORD:-}" ]; then
           # Warn, then serve anyway. Withholding the UI would cost a working
           # surface over a configuration choice, and gating only the UI while
@@ -623,6 +630,98 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
           log "WARNING: anything that can reach ${PASEO_IP} gets a full browser"
           log "WARNING: client and an unauthenticated API. Set PASEO_PASSWORD in"
           log "WARNING: .env and redeploy, or turn the web UI back off."
+        fi
+      fi
+
+      # --- the daemon's config file (~/.paseo/config.json) ---
+      # The daemon would start from flags alone. Everything ELSE on the box
+      # would not: `paseo ls` over SSH, `paseo daemon restart` after you change
+      # something, and the MCP endpoint all read this file to find the daemon,
+      # and Paseo's own default is 127.0.0.1:6767. Flags fix the one process
+      # started here and leave every other caller talking to nothing. So the
+      # settings live in the file and the start command below carries none.
+      #
+      # The tailnet address is the reason this is written at boot rather than
+      # shipped: the IP is assigned by the tailnet and is not knowable at build
+      # time. It also runs HERE rather than in the managed-dotfiles block near
+      # the top of this file, which is where every other config/ directory is
+      # seeded, because it needs PASEO_IP and `tailscale up` has not run yet up
+      # there.
+      #
+      # Three layers, each overriding the one before:
+      #
+      #   1. the file already in the home volume — what the Paseo app itself
+      #      wrote, and what you edited on the box
+      #   2. config/paseo/config.json from the repo
+      #   3. the values derived here from the container environment
+      #
+      # jq's `*` merges objects recursively and REPLACES arrays whole, and that
+      # split is the whole design. A terminal profile you create in the app
+      # lands under a key the repo does not ship, so it survives a redeploy. An
+      # array the repo does ship, like cors.allowedOrigins, is reset from the
+      # repo on every boot, so the repo really is the source of truth for it.
+      #
+      # daemon.hostnames is set unconditionally, including when the web UI is
+      # off, and that is safe: Paseo's check allows localhost, *.localhost and
+      # every IP address BEFORE it consults this list, so the list only ever
+      # adds names. It cannot cost the phone its connection to a bare IP. The
+      # check also gates the WebSocket upgrade rather than only the web UI, so
+      # setting it with the UI off is what lets a client reach the daemon at
+      # its MagicDNS name instead of collecting a 403.
+      #
+      # Writing it conditionally is what would bite: the merge keeps keys it is
+      # not given, so a boot with the UI off would inherit the hostnames from a
+      # boot with it on, and turning the key off would not take effect.
+      #
+      # PASEO_PASSWORD stays OUT of this file and in ~/.devaloy_secrets, which
+      # the start command below sources. daemon.auth.password takes a bcrypt
+      # hash and nothing else; the environment variable takes the plaintext and
+      # the daemon hashes it at startup. Writing the plaintext here would fail
+      # the schema, and hashing it here would put a credential in a file the
+      # app rewrites.
+      PASEO_CONFIG="${DEV_HOME}/.paseo/config.json"
+      # `jq -c .` on a file that is missing, truncated or half-written exits
+      # non-zero and the fallback takes over; the type test catches the rest,
+      # because a file holding `null` parses fine and then cannot be merged.
+      PASEO_CUR="$(jq -c 'if type == "object" then . else {} end' \
+        "${PASEO_CONFIG}" 2>/dev/null || printf '{}')"
+      PASEO_REPO="$(jq -c 'if type == "object" then . else {} end' \
+        "${CONFIG_SRC}/paseo/config.json" 2>/dev/null || printf '{}')"
+      PASEO_MERGED="$(jq -nc \
+        --argjson cur "${PASEO_CUR}" \
+        --argjson repo "${PASEO_REPO}" \
+        --arg listen "${PASEO_IP}:${PASEO_PORT}" \
+        --arg hostnames "${TS_HOSTNAME:-devaloy},.ts.net" \
+        --argjson webui "${PASEO_WEB_UI}" \
+        '$cur * $repo * {
+           daemon: { listen: $listen, hostnames: ($hostnames | split(",")) },
+           features: { webUi: { enabled: $webui } }
+         }' 2>/dev/null || true)"
+
+      # Every step here ends in `|| true` or sits inside the `if` condition, so
+      # `set -e` cannot take the entrypoint down over a config file. The whole
+      # Paseo block is non-fatal by design — the same reason the Orca block
+      # warns rather than exits — and aborting here would stop a container that
+      # is otherwise up and reachable over SSH.
+      PASEO_START_ARGS=""
+      mkdir -p "${DEV_HOME}/.paseo" 2>/dev/null || true
+      chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.paseo" 2>/dev/null || true
+      if [ -n "${PASEO_MERGED}" ] &&
+         printf '%s\n' "${PASEO_MERGED}" | jq . > "${PASEO_CONFIG}.tmp" 2>/dev/null &&
+         mv "${PASEO_CONFIG}.tmp" "${PASEO_CONFIG}"; then
+        chown "${DEV_USER}:${DEV_USER}" "${PASEO_CONFIG}" 2>/dev/null || true
+        log "Paseo config written to ~/.paseo/config.json (listen ${PASEO_IP}:${PASEO_PORT})"
+      else
+        # Fall back to the flags this block used before the config file existed.
+        # The daemon comes up on the right address either way; what is lost is
+        # `paseo` on the box finding it, so the warning says which half broke.
+        rm -f "${PASEO_CONFIG}.tmp" 2>/dev/null || true
+        log "WARNING: could not write ~/.paseo/config.json. Starting the daemon"
+        log "WARNING: from flags instead — it will bind the right address, but"
+        log "WARNING: 'paseo ls' on the box needs --host ${PASEO_IP}:${PASEO_PORT}."
+        PASEO_START_ARGS="--no-relay --listen '${PASEO_IP}:${PASEO_PORT}'"
+        if [ "${PASEO_WEB_UI}" = "true" ]; then
+          PASEO_START_ARGS="${PASEO_START_ARGS} --web-ui --hostnames '${TS_HOSTNAME:-devaloy},.ts.net'"
         fi
       fi
 
@@ -660,10 +759,15 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         # whole shell BEFORE the `||` is ever considered. Written the other way,
         # such a box never starts the daemon and this loop warns every 10s
         # forever.
+        #
+        # PASEO_START_ARGS is EMPTY on a healthy boot. The listen address, the
+        # relay switch, the web UI and the hostnames all come from
+        # ~/.paseo/config.json, so a `paseo daemon restart` you run over SSH
+        # brings the daemon back exactly as this line starts it. The variable
+        # only fills in when the config write above failed.
         while true; do
           as_dev "if [ -f '${SECRETS_SNIPPET}' ]; then . '${SECRETS_SNIPPET}'; fi; \
-            paseo daemon start --foreground --no-relay \
-              --listen '${PASEO_IP}:${PASEO_PORT}' ${PASEO_UI_ARGS}" || true
+            paseo daemon start --foreground ${PASEO_START_ARGS}" || true
           log "WARNING: the Paseo daemon exited — restarting in 10s"
           sleep 10
         done

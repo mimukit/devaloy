@@ -1,0 +1,17 @@
+{
+  "$schema": "https://paseo.sh/schemas/paseo.config.v1.json",
+  "version": 1,
+  "daemon": {
+    "relay": {
+      "enabled": false
+    },
+    "cors": {
+      "allowedOrigins": [
+        "https://app.paseo.sh"
+      ]
+    }
+  },
+  "worktrees": {
+    "root": "~/worktrees/"
+  }
+}

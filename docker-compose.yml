@@ -134,8 +134,10 @@ services:
       # --build needed.
       #
       # Turning it back off stops the daemon on the next boot. It does not
-      # uninstall the CLI and it does not touch ~/.paseo, so re-enabling costs
-      # nothing. See the README.
+      # uninstall the CLI and it stops rewriting ~/.paseo/config.json rather
+      # than deleting it, so re-enabling costs nothing. The daemon's settings
+      # live in that file, merged each boot from config/paseo/config.json plus
+      # the tailnet address. See the README.
       - WITH_PASEO=${WITH_PASEO:-false}
       # Serves Paseo's bundled web client from the daemon's own origin, so a
       # browser on the tailnet needs no app install. Separate key because the
