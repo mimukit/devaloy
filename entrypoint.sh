@@ -773,8 +773,20 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         # ~/.paseo/config.json, so a `paseo daemon restart` you run over SSH
         # brings the daemon back exactly as this line starts it. The variable
         # only fills in when the config write above failed.
+        #
+        # SHELL is exported for the same reason the Orca block sets it: su
+        # exports whatever it was given with -s, so as_dev hands the daemon
+        # SHELL=/bin/sh. Paseo opens a terminal from `env.SHELL || "/bin/sh"`
+        # and never reads /etc/passwd, so without this line every pane from
+        # cmd+t in the app lands in sh instead of the dev user's login shell.
+        # There is no shell key in ~/.paseo/config.json, so this cannot move to
+        # the config block above. It is EXPORTED rather than written as a
+        # command prefix because the `if` that follows is a compound command,
+        # which takes no assignment prefix. The -s /bin/sh itself has to stay —
+        # see as_dev.
         while true; do
-          as_dev "if [ -f '${SECRETS_SNIPPET}' ]; then . '${SECRETS_SNIPPET}'; fi; \
+          as_dev "export SHELL=/usr/bin/zsh; \
+            if [ -f '${SECRETS_SNIPPET}' ]; then . '${SECRETS_SNIPPET}'; fi; \
             paseo daemon start --foreground ${PASEO_START_ARGS}" || true
           log "WARNING: the Paseo daemon exited — restarting in 10s"
           sleep 10
