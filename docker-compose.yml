@@ -151,9 +151,14 @@ services:
       # and clearing it here plus a redeploy is what revokes it.
       - PASEO_PASSWORD=${PASEO_PASSWORD:-}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
+      # Only add one whose tool name is a real mise registry entry. mise treats
+      # any MISE_<TOOL>_VERSION in the container environment as a declaration of
+      # a tool called <TOOL>, so a name it does not know breaks every mise call
+      # in every shell on the box. There is deliberately no Paseo entry here:
+      # `paseo` is not a registry name (the package is npm:@getpaseo/cli), and
+      # the CLI now tracks latest with no variable.
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
       - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
-      - MISE_PASEO_VERSION=${MISE_PASEO_VERSION:-}
     volumes:
       - home:/home/dev
       # Node identity lives here. Lose it and the box rejoins as a new machine.

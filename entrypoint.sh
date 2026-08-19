@@ -275,11 +275,19 @@ fi
 # Deliberately NOT fatal: a network blip on first boot must not take the box
 # down. The revision marker is only written on success, so a later boot (or
 # `devaloy-update`) retries cleanly.
+#
+# Only forward a MISE_<TOOL>_VERSION whose <TOOL> is a real mise registry entry.
+# mise reads every one of these out of its own environment as a tool
+# declaration, so forwarding one for a tool it does not know makes every mise
+# call in the child fail. That is what a MISE_PASEO_VERSION did here: Paseo
+# ships as npm:@getpaseo/cli and there is no `paseo` in the registry, so the
+# bootstrap died at `mise use` and never wrote its marker. `node` and `herdr`
+# are registry entries, which is why those two are safe. Paseo now tracks latest
+# with no variable at all — see the comment in bootstrap-toolchain.sh.
 log "Checking the mise toolchain"
 if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
     MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
     WITH_PASEO='${WITH_PASEO:-false}' \
-    MISE_PASEO_VERSION='${MISE_PASEO_VERSION:-}' \
     /usr/local/bin/bootstrap-toolchain.sh"; then
   log "Toolchain ready"
 else

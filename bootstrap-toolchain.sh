@@ -73,10 +73,18 @@ MISE_NODE_VERSION="${MISE_NODE_VERSION:-24}"
 # marker above, so an ordinary redeploy can't swap it under a live session. Set
 # MISE_HERDR_VERSION in compose to pin it.
 MISE_HERDR_VERSION="${MISE_HERDR_VERSION:-latest}"
-# Paseo ships often, and the marker above already stops a redeploy swapping it
-# under a live session, so it tracks latest like herdr. Set MISE_PASEO_VERSION
-# in compose to pin it.
-MISE_PASEO_VERSION="${MISE_PASEO_VERSION:-latest}"
+# Paseo has NO pin variable, on purpose, and the reason is a name collision
+# rather than a policy call. mise reads any MISE_<TOOL>_VERSION in its
+# environment as "add tool <TOOL> at this version", so a MISE_PASEO_VERSION
+# here declared a tool literally named `paseo`. There is no `paseo` in mise's
+# registry — the package is npm:@getpaseo/cli — so every mise call below warned
+# and `mise use` exited 1, which under `set -e` killed this script before the
+# marker, the skills install and the herdr integrations. herdr and node are safe
+# from the same trap only because `herdr` and `node` ARE registry entries.
+#
+# So Paseo always tracks latest. That is what the flag was defaulted to anyway,
+# and the revision marker above still stops a redeploy swapping it under a live
+# session. To hold a version, edit the pin on the `mise use` line below.
 
 echo "installing toolset ${MARKER_VALUE} — several minutes on a cold volume"
 
@@ -121,7 +129,7 @@ mise use -g npm:skills@latest
 # tool out from under a live session is worse than leaving a dormant command on
 # PATH.
 if [ "${WITH_PASEO}" = "true" ]; then
-  mise use -g "npm:@getpaseo/cli@${MISE_PASEO_VERSION}"
+  mise use -g npm:@getpaseo/cli@latest
 fi
 # --- OPTIONAL: the Paseo daemon. END ------------------------------------------
 
