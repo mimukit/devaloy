@@ -510,9 +510,13 @@ the hosted web client reach a daemon it is not served from.
   on the next boot. It does not uninstall `paseo` and it does not rewrite
   `~/.paseo/config.json`, so your paired clients and settings are still there
   when you turn it back on. A `paseo` with no daemon behind it does nothing.
-- **Upgrading is `devaloy-update`,** unlike Orca. Paseo tracks `latest` through
-  mise like `claude` and `codex` do. Pin it with `MISE_PASEO_VERSION` if you
-  want it to hold still.
+- **Upgrading is `devaloy-update`,** unlike Orca. Paseo always tracks `latest`
+  through mise, like `claude` and `codex` do. There is no environment variable
+  to pin it. `MISE_PASEO_VERSION` would look like the obvious name, but mise
+  reads any `MISE_<TOOL>_VERSION` as a request for a tool called `<TOOL>`, and
+  `paseo` is not in its registry (the package is `npm:@getpaseo/cli`), so
+  setting one breaks every `mise` command on the box. Edit the pin in
+  `bootstrap-toolchain.sh` if you need Paseo to hold still.
 - **Workspace service previews do not work.** Paseo can proxy a workspace's dev
   server, but it routes by hostnames like `web-feature-x-myapp.localhost`, and
   those do not resolve from a phone on the tailnet. Agents, terminals, diffs and
