@@ -87,11 +87,17 @@ redeploy, and every key in the table above does not.
 |---|---|---|
 | `MISE_NODE_VERSION` | `24` | Node **major**, not mise's floating `lts` alias — that alias rolls across majors. |
 | `MISE_HERDR_VERSION` | `latest` | Pin herdr. |
-| `MISE_PASEO_VERSION` | `latest` | Pin `@getpaseo/cli`. Only read when `WITH_PASEO=true`. |
 
 Everything else in the toolchain (`pnpm`, `gh`, `turbo`, `lazygit`, `claude`,
-`codex`, `skills`) tracks `latest` and is pinned by editing
+`codex`, `skills`, `@getpaseo/cli`) tracks `latest` and is pinned by editing
 `bootstrap-toolchain.sh`, not by a variable.
+
+Do not add a variable here whose tool name is not a real mise registry entry.
+mise reads every `MISE_<TOOL>_VERSION` in its environment as a declaration of a
+tool called `<TOOL>`, so an unknown name makes every `mise` command on the box
+fail. `MISE_PASEO_VERSION` did exactly that: Paseo ships as
+`npm:@getpaseo/cli`, there is no `paseo` in the registry, and the toolchain
+bootstrap died at `mise use` on every boot.
 
 ### Resource ceilings
 
