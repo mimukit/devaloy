@@ -100,6 +100,19 @@ Stop anything you started before ending a turn — dev servers, test watchers, a
 stray `pnpm dev`. Nothing cleans up after you here, and a background job
 outlives your SSH session while still holding its port.
 
+## Docker
+
+This box may or may not have a Docker daemon — it depends on how the image was built. Check with `docker info >/dev/null 2>&1` before assuming either way. If it fails, the box was built without `WITH_DOCKER=true`; say so rather than trying to install Docker, which needs an image rebuild you cannot do from in here.
+
+When it is there, it is a **real daemon inside this container**, not the host's. Project stacks run here, so bind mounts resolve against this filesystem and published ports land on the tailnet. Four rules:
+
+- **Use it for a project's own development stack**, which is the case it was built for.
+- **Never pass `--privileged`**, `--cap-add SYS_ADMIN` or `--pid=host` to a nested container.
+- **Never bind mount a path from outside `/home/dev`**, and never mount a Docker socket into one.
+- **Never edit `/var/lib/docker` by hand.** Use `docker` commands, and `devaloy-prune` when the disk is full.
+
+`docker` needs no `sudo`. The daemon's log is `/var/log/dockerd.log`.
+
 ## Skills
 
 Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from

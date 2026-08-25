@@ -103,6 +103,25 @@ Stop anything you started before ending a turn — dev servers, test watchers,
 process and no Stop hook cleaning up after you, and a background job outlives
 your SSH session: it keeps holding its port until someone logs in and kills it.
 
+## Docker
+
+This box may or may not have a Docker daemon — it depends on how the image was built. Check before you assume either way:
+
+```sh
+docker info >/dev/null 2>&1 && echo "daemon up"
+```
+
+If that prints nothing, the box was built without `WITH_DOCKER=true`. Say so rather than trying to install Docker or start a daemon; both need an image rebuild you cannot do from inside the container.
+
+When it is there, it is a **real daemon inside this container**, not the host's. Project stacks run here, so a bind mount resolves against this filesystem and a published port lands on the tailnet. That is the whole reason it exists, and it also means the usual host-socket habits are wrong here. Four rules:
+
+- **Use it for a project's own development stack.** `docker compose up -d` in a repo you cloned. That is the case this was built for.
+- **Never pass `--privileged`**, and never grant `--cap-add SYS_ADMIN` or `--pid=host` to a nested container. The devaloy container earns its own authority from the outside; a container you start inside it has no reason to ask for more.
+- **Never bind mount a path from outside `/home/dev`.** Mounting `/`, `/etc`, `/var/run/docker.sock` or the parent's own paths defeats the boundary this arrangement is built on.
+- **Never edit `/var/lib/docker` by hand.** It is a named volume the daemon owns. Use `docker` commands, and `devaloy-prune` when the disk is full.
+
+`docker` needs no `sudo`. The daemon's own log is `/var/log/dockerd.log`, which is where to look when a stack will not start.
+
 ## Skills
 
 Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from
