@@ -69,6 +69,22 @@ pages:
       - devaloy-prune
       - .env.example
 
+  - path: update-the-toolchain.md
+    mode: how-to
+    documents:
+      - bootstrap-toolchain.sh
+      - devaloy-update
+      - link-shims
+      - Dockerfile
+      - config/zsh/zshrc
+
+  - path: migrate-to-a-new-host.md
+    mode: how-to
+    documents:
+      - docker-compose.yml
+      - entrypoint.sh
+      - .env.example
+
   - path: prepare-a-host-for-sysbox.md
     mode: how-to
     documents:

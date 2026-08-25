@@ -26,6 +26,10 @@ it when it stops answering.
   `WITH_DOCKER=true` daemon, where repos go, and how to reach a port.
 - [Lock down the host firewall](lock-down-the-host-firewall.md) — the other
   host-side script, and the two guards that stop it locking you out.
+- [Update the toolchain](update-the-toolchain.md) — which command updates what:
+  `devaloy-update`, `skmi`, or an edit to `bootstrap-toolchain.sh`.
+- [Migrate the box to a new host](migrate-to-a-new-host.md) — re-enroll fresh,
+  or move the `home` and `tailscale-state` volumes across.
 - [Turn on phone push notifications](push-notifications.md) — one ntfy push per
   agent session when it blocks or finishes.
 - [Pair the Orca apps](pair-the-orca-apps.md) — the optional `WITH_ORCA=true`
@@ -50,4 +54,4 @@ walks only the required path.
 Agent instructions live in `config/claude/CLAUDE.md` and `config/codex/AGENTS.md`
 and are written for the agents running on the box, not for readers.
 
-_Verified against `main`@`b6bc42b` on 2026-08-25._
+_Verified against `main`@`a1f2d83` on 2026-08-25._
