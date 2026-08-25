@@ -6,6 +6,16 @@ devaloy runs its own Docker daemon inside the container, and a daemon inside a c
 
 Installing it is not hard. Installing it **without breaking the sites already on the host** takes four steps in a fixed order, and one of them is a maintenance window.
 
+## The short path: a fresh VPS
+
+On a host that serves nothing yet, `scripts/setup-sysbox-host.sh` runs the whole procedure in one shot: it checks the kernel, picks free `10.x` ranges, writes the two daemon.json keys, restarts Docker, installs the Sysbox deb, and verifies the result.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/setup-sysbox-host.sh | sudo bash -s -- --yes
+```
+
+It refuses to guess ranges that collide with anything already on the host, and it warns and prompts when it finds running containers. On a host with live sites, skip it and follow the steps below instead; the restart in the middle is a maintenance window, and you want to choose when it happens.
+
 ## What the installer does if you let it
 
 The Sysbox deb sets two keys in the host's `/etc/docker/daemon.json` and restarts Docker to apply them:
