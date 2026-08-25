@@ -34,13 +34,14 @@ down and `restart: unless-stopped` brings it back.
 3. **Write `~/.config/agent-push.env`** if `NTFY_TOPIC` is set, same lifecycle.
 4. **Sync `config/`** into `/home/dev` — see [Config as code](#config-as-code).
 5. **Start `tailscaled` and `tailscale up --ssh`.**
-6. **Run `bootstrap-toolchain.sh`** as the `dev` user.
-7. **Run `link-shims`** to mirror mise's shims into `/usr/local/bin`.
-8. **Authenticate `gh`**, then set the git identity, then install the signing key.
-9. **Start `orca serve`**, only if the binary is present.
-10. **`wait` on `tailscaled`.**
+6. **Start `dockerd`**, only when `WITH_DOCKER=true` and the engine is in the image.
+7. **Run `bootstrap-toolchain.sh`** as the `dev` user.
+8. **Run `link-shims`** to mirror mise's shims into `/usr/local/bin`.
+9. **Authenticate `gh`**, then set the git identity, then install the signing key.
+10. **Start `orca serve`**, only if the binary is present.
+11. **`wait` on `tailscaled`.**
 
-Two orderings in there matter more than they look.
+Three orderings in there matter more than they look.
 
 **The tailnet comes up before the toolchain installs.** A cold volume takes
 minutes to provision, and there is no sshd fallback. Doing it this way means the
@@ -52,6 +53,15 @@ you locked out.
 through `su -l -s /bin/sh`, which does not get mise's shims on `PATH` — only
 `/usr/local/bin`, which is exactly what `link-shims` populates. Start it any
 earlier and agents launched from an Orca client die with `spawn codex ENOENT`.
+
+**`dockerd` starts early, and that is the opposite call.** It sits between
+`tailscale up` and the toolchain bootstrap, because it needs nothing from mise
+and starting it there lets a cold volume pull project images while node is still
+installing. It goes *after* `tailscale up` for a different reason: `dockerd`
+writes iptables rules into the same network namespace `tailscaled` uses, so if
+the two ever conflict you want that to show up as a broken project stack on a
+box you can still log into, rather than as a box that never answers. The wait on
+its socket is bounded at 30 seconds and nothing downstream depends on it.
 
 ### What is allowed to fail
 
@@ -68,12 +78,18 @@ was. The failure modes are enumerated in
 
 | Layer | Lifetime | Holds |
 |---|---|---|
-| The image | Rebuilt on `up --build` | `zsh`, `git`, `python3`, `vim`, `tmux`, `build-essential`, `bubblewrap`, `tailscale`, optionally Orca |
+| The image | Rebuilt on `up --build` | `zsh`, `git`, `python3`, `vim`, `tmux`, `build-essential`, `bubblewrap`, `tailscale`, optionally Orca, optionally Docker Engine |
 | `home` volume → `/home/dev` | Survives redeploys, dies with `down -v` | Repos, shell history, mise + the whole toolchain, agent credentials, skills |
 | `tailscale-state` volume | Same | The node identity |
+| `docker-data` volume → `/var/lib/docker` | Same | The nested daemon's images, containers and volumes. Only used when built `WITH_DOCKER=true`. |
 
-Losing the last one means the box rejoins the tailnet as a new machine, under a
-new name, with the policy file no longer matching it.
+Losing `tailscale-state` means the box rejoins the tailnet as a new machine,
+under a new name, with the policy file no longer matching it.
+
+`docker-data` is the one layer that is **pure cache**. Everything in it is
+re-pullable or re-buildable, it is the largest thing on the box, and deleting it
+reclaims that space without touching a single repo. Do not back it up; do back
+up nothing else either, which is the point of the next paragraph.
 
 The first one is why anything you `apt install` by hand is gone at the next
 rebuild. A tool worth having belongs in the `Dockerfile`, or in
@@ -181,6 +197,19 @@ Three trades are worth knowing before running this anywhere sensitive:
   never engages. With it off, the host kernel is the only thing between a
   container process and the host — so run this on a host you would treat as
   disposable.
+- **Docker, when built in, changes the container's authority.** `WITH_DOCKER=true`
+  needs one of two keys, and they are not equivalent. `DEVALOY_RUNTIME=sysbox-runc`
+  maps this container's root onto an unprivileged host user, so the nested
+  daemon runs with no privileged flag and the host is no more exposed than
+  before. `DEVALOY_PRIVILEGED=true` is all-or-nothing: every host device, so an
+  agent here can mount the host disk. Use the first on any shared host and the
+  second only on a machine you would treat as disposable. Under `sysbox-runc`
+  two neighbouring keys stop meaning what their comments say: `cap_add:
+  NET_ADMIN` is subsumed, because Sysbox gives container root the full
+  capability set inside its own user namespace, and `seccomp=unconfined` is
+  ignored, because Sysbox keeps its own filter on regardless. Neither costs
+  anything — measured during the [Sysbox spike](../qa/qa-docker-runtime-sysbox-spike-2026-08-25.md),
+  bubblewrap's user namespace works under both runtimes.
 - **There is no delete guard.** An earlier revision routed every agent `rm`
   through a confirmation hook; it was removed because a permission prompt on
   every delete is exactly what stalls a session nobody is watching. What replaces
@@ -215,6 +244,32 @@ Upgrading Orca is also a rebuild: it is pinned by `ARG ORCA_VERSION` in the
 `Dockerfile` and installed as a system package, which is a genuine break from how
 every other tool on this box upgrades. Details are in
 [Pairing the Orca apps](pair-the-orca-apps.md).
+
+## The optional Docker runtime
+
+`WITH_DOCKER` is a **build argument**, like `WITH_ORCA` and unlike `WITH_PASEO`,
+so flipping it requires `docker compose up -d --build`. It is off by default and
+costs about 460 MB of image.
+
+When present, the entrypoint supervises `dockerd` in an unbounded restart loop
+and logs to `/var/log/dockerd.log` rather than to the container log. The daemon
+reads `/etc/docker/daemon.json`, which the entrypoint copies from
+`config/docker/daemon.json` — its own copy line, because the ordinary config
+sync targets `/home/dev` and `dockerd` reads `/etc/docker`. That file pins the
+nested bridge into `10.x`; the reasoning is in `config/docker/README.md`, and
+the short version is that both Docker's defaults and Dokploy's allocations come
+out of `172.16/12`, so an unpinned nested daemon can collide with the container's
+own `eth0`.
+
+Two things follow from the daemon being *inside* the container, and they are the
+whole reason it is there rather than on the host. A project's bind mount
+resolves against `/home/dev`, where the repo actually is. A published port binds
+inside this container's network namespace, so it is reachable over the tailnet
+and not from the VPS public interfaces.
+
+`docker-data` is what makes stacks survive a redeploy, and only for containers
+whose compose file sets a `restart:` policy. The boot log prints whatever came
+back.
 
 ## See also
 

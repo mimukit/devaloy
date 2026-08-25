@@ -38,6 +38,21 @@ echo tun | sudo tee /etc/modules-load.d/tun.conf
 `SYS_MODULE` is deliberately not granted to the container, so it cannot load
 the module itself — see the README for why.
 
+### Sysbox, only if you want Docker on the box
+
+Skip this unless you plan to set `WITH_DOCKER=true` and run project stacks on
+devaloy. It is the one prerequisite that touches the rest of the host.
+
+A Dokploy host serves live sites, which rules out `DEVALOY_PRIVILEGED=true` — a
+privileged container gets every host device, so an agent on devaloy could mount
+the host disk and reach the neighbours. The answer is Sysbox, which replaces
+`runc` and lets the nested daemon run with no privilege at all.
+
+The install is not a one-liner, because it needs **one Docker restart that
+bounces every container on this host**, and because it picks network ranges for
+you unless you set them first. [Prepare a host for Sysbox](prepare-a-host-for-sysbox.md)
+walks it, starting from a `--check` that writes nothing.
+
 ### Tailnet policy file and auth key
 
 Do these in the Tailscale admin console before deploying; they are unchanged by
@@ -140,6 +155,19 @@ there is no browser on the box to complete `/login` with.
 `TS_HOSTNAME`, `TS_ACCEPT_DNS`, `MISE_NODE_VERSION` and `MISE_HERDR_VERSION`
 are optional overrides and can go here too.
 
+For Docker on the box, add both of these and redeploy **with a rebuild**:
+
+```sh
+WITH_DOCKER=true
+DEVALOY_RUNTIME=sysbox-runc
+```
+
+`WITH_DOCKER` is a build argument, so a plain Deploy reuses the old image and
+the entrypoint logs a warning saying exactly that. Use **Preview Compose** to
+confirm both keys survived interpolation before you deploy — Compose Type must
+be **Docker Compose**, since Swarm ignores `runtime`, `privileged`, `devices`
+and `cap_add` alike.
+
 Treat this tab as the secret store: the auth key is non-expiring and never
 belongs in git. `.env` is gitignored in this repo for the same reason.
 
@@ -236,6 +264,7 @@ typed. That slug is the volume prefix:
 |---|---|---|
 | `<appName>_home` | `/home/dev` — repos, toolchain, agent credentials, GitHub token | Re-clone and re-provision |
 | `<appName>_tailscale-state` | The node's identity | The box rejoins as a *new* machine and needs a fresh auth key |
+| `<appName>_docker-data` | `/var/lib/docker` — the nested daemon's images and containers, only used with `WITH_DOCKER=true` | Project stacks re-pull and rebuild. Nothing else. |
 
 Confirm the real names before you write any script against them:
 
@@ -243,9 +272,14 @@ Confirm the real names before you write any script against them:
 docker volume ls | grep _home
 ```
 
-Both are Docker named volumes, so the **Volume Backups** tab works on them. It
-is worth enabling on the `tailscale-state` one — it is tiny, and it is the
+All three are Docker named volumes, so the **Volume Backups** tab works on them.
+It is worth enabling on the `tailscale-state` one — it is tiny, and it is the
 difference between a redeploy and a re-enrollment.
+
+**Do not enable backups on `docker-data`.** It is pure cache: it is the largest
+volume on the box, and everything in it is re-pullable or re-buildable by the
+project's own compose file. Backing it up costs real storage and buys nothing.
+It is also the volume to delete first when the host runs out of disk.
 
 **Deleting the service in Dokploy can delete these volumes.** Read the
 confirmation dialog. The README's backup contract still applies regardless:
@@ -276,6 +310,10 @@ no ports and needs no host firewall rule to stay private.
 | Node reachable, `dev` login rejected | `users` list in the policy rule omits `dev` | Add `"users": ["dev"]` |
 | `gh auth login` refuses to run | `GITHUB_TOKEN` is set — expected, not a fault | Clear it in the Environment tab and redeploy to use the interactive flow |
 | Session vanished after a deploy | The deploy recreated the container | Expected. Turn Autodeploy off or set Watch Paths (§5) |
+| `WITH_DOCKER=true but /usr/bin/dockerd is not in this image` in the log | `WITH_DOCKER` is a **build** argument and this deploy reused the old image | Redeploy with a rebuild. In Dokploy that is the **Rebuild** toggle, not a plain Deploy |
+| `dockerd did not come up within 30s` in the log | The container has no authority over its own namespaces | Set `DEVALOY_RUNTIME=sysbox-runc` (shared host) or `DEVALOY_PRIVILEGED=true` (a host you own alone), then redeploy. The daemon's own reason is at the end of `/var/log/dockerd.log` |
+| `unknown runtime specified sysbox-runc` on deploy | Sysbox is not installed on the host | [Prepare a host for Sysbox](prepare-a-host-for-sysbox.md) |
+| A project stack's containers cannot resolve each other | The nested subnet collides with the host's | Confirm `docker exec devaloy docker network inspect <net>` shows `10.202.x`; if not, `config/docker/daemon.json` did not reach `/etc/docker/daemon.json` |
 
 ## Sources
 

@@ -59,6 +59,7 @@ From the image, available the moment you can log in:
 | Agent sandbox | `bubblewrap` (`bwrap`), what Codex confines its shell with |
 | Optional | the Orca runtime (`orca-ide`), only when built with `WITH_ORCA=true` — see [(Optional) the Orca apps](#optional-the-orca-apps) |
 | Optional | the Paseo daemon (`paseo`), only when run with `WITH_PASEO=true` — see [(Optional) the Paseo apps](#optional-the-paseo-apps). Installed from `mise`, not the image. |
+| Optional | Docker Engine and Compose (`docker`, `docker compose`, `docker buildx`), only when built with `WITH_DOCKER=true` — see [(Optional) Docker and Compose](#optional-docker-and-compose) |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `lazygit`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
@@ -110,6 +111,12 @@ Leaving the filter on means the agent sandbox silently never engages, which is
 the worse of the two risks on a box whose whole job is running agents. With it
 off, the host kernel is the only thing between a container process and the
 host, so run this on a VPS you're willing to treat as disposable.
+
+There is one more host prerequisite, and only if you want Docker on the box.
+`WITH_DOCKER=true` needs either Sysbox installed on the host or the container
+run privileged — see [(Optional) Docker and Compose](#optional-docker-and-compose)
+for which, and [Prepare a host for Sysbox](docs/wiki/prepare-a-host-for-sysbox.md)
+for the procedure. Skip this if you are not running project stacks here.
 
 ### 2. Tailnet policy file
 
@@ -416,11 +423,17 @@ WITH_PASEO=true
 docker compose up -d
 ```
 
-**No `--build` here.** That is the one thing to keep straight between the two
-keys, because they look alike and are not. `WITH_ORCA` decides what goes into
-the image; `WITH_PASEO` decides what `bootstrap-toolchain.sh` installs into the
-home volume and whether the entrypoint starts a daemon. A plain `up -d` picks it
-up.
+**No `--build` here.** That is the one thing to keep straight across the three
+optional keys, because they look alike and are not:
+
+| Key | What it decides | Needs `--build`? |
+|---|---|---|
+| `WITH_ORCA` | what goes into the image | **Yes** |
+| `WITH_DOCKER` | what goes into the image | **Yes** |
+| `WITH_PASEO` | what `bootstrap-toolchain.sh` installs into the home volume, and whether the entrypoint starts a daemon | No |
+
+A plain `up -d` picks up `WITH_PASEO` and silently ignores a change to either of
+the other two, which is the single easiest thing to get wrong here.
 
 The first boot after you flip it re-runs the toolchain bootstrap, because the
 revision marker records the key alongside the revision. That is quick: the boot
@@ -521,6 +534,102 @@ the hosted web client reach a daemon it is not served from.
   server, but it routes by hostnames like `web-feature-x-myapp.localhost`, and
   those do not resolve from a phone on the tailnet. Agents, terminals, diffs and
   git are unaffected. This is a DNS limit, not a Paseo one.
+
+## (Optional) Docker and Compose
+
+Most projects worth opening on this box carry a `docker-compose.yml` and need it
+to start their development stack. `WITH_DOCKER` puts a real Docker Engine in the
+image and starts the daemon **inside** the container:
+
+```sh
+# in .env
+WITH_DOCKER=true
+DEVALOY_RUNTIME=sysbox-runc   # or DEVALOY_PRIVILEGED=true — read below first
+```
+
+```sh
+docker compose up -d --build
+```
+
+**`--build` is not optional**, for the same reason as `WITH_ORCA`.
+
+Then it is what you already know:
+
+```sh
+cd ~/projects/myapp
+docker compose up -d
+curl localhost:3000            # from your SSH session
+```
+
+and `http://devaloy:3000` from a phone with Tailscale connected.
+
+### Why the daemon is nested, not the host's
+
+Mounting the host's `/var/run/docker.sock` is the usual shortcut and it does not
+work here. Three reasons, and the first one alone is fatal:
+
+- **Bind mounts resolve on the wrong machine.** Your repos live in the `home`
+  volume at `/home/dev`. A project that says `./:/app` would have the *host*
+  daemon look for `/home/dev/myapp` on the VPS filesystem, where it does not
+  exist. Every project breaks on its first bind mount.
+- **Published ports land on the internet.** A nested `3000:3000` binds inside
+  this container's network namespace, reachable over the tailnet and nowhere
+  else. Through the host socket it binds the VPS public interfaces, which puts a
+  development database on the open internet.
+- **The socket is host root.** An agent here has passwordless sudo, so
+  `docker run -v /:/host` would read and write every file on the VPS, including
+  whatever else that machine is serving.
+
+### Pick a shape: `sysbox-runc` or `privileged`
+
+A daemon inside a container needs authority over its own namespaces, and exactly
+one of two keys grants it. Which one you pick is a property of the **host**.
+
+**`DEVALOY_RUNTIME=sysbox-runc`, for a shared host.** [Sysbox](https://github.com/nestybox/sysbox)
+replaces `runc`, maps this container's root onto an unprivileged host user, and
+runs the nested daemon with no privileged flag and no socket mount. This is the
+right answer anywhere the host has neighbours, including any Dokploy VPS that
+also serves live sites. It needs a one-time setup on the host, including one
+Docker restart that bounces every container on the machine — walked through in
+[Prepare a host for Sysbox](docs/wiki/prepare-a-host-for-sysbox.md).
+
+**`DEVALOY_PRIVILEGED=true`, for a host you own alone.** Simpler, and much more
+dangerous. `privileged` is all-or-nothing: it hands this container every host
+device, so an agent in here can mount the host's disk and rewrite anything on
+it. Set it only on a machine you would treat as disposable, and never on one
+with neighbours.
+
+Do not set both. Sysbox refuses a privileged container, so the combination fails
+at start rather than quietly picking one.
+
+### What to know before you turn it on
+
+- **The image grows by about 460 MB.** Measured on `arm64`: 918 MB without it,
+  1.38 GB with. (Those absolute numbers come from a Docker 29 host and read
+  higher than the 683 MB quoted for the Orca comparison above, which was
+  measured earlier; the ~460 MB delta is the part that transfers.)
+- **Nested images live in their own volume,** `docker-data`, mounted at
+  `/var/lib/docker`. Deleting it reclaims every gigabyte of project images
+  without touching a single repo. Do **not** turn on Dokploy volume backups for
+  it — it is pure cache, it is the largest thing on the box, and everything in
+  it is re-pullable.
+- **Stacks come back after a redeploy** if their compose file sets a `restart:`
+  policy, because `docker-data` survives. The boot log lists whatever restarted,
+  so a stack you started three weeks ago is a line you read on the way in.
+- **Nothing prunes images for you.** Build cache is reaped automatically by the
+  builder GC; images are not, because an agent may be halfway through a build.
+  Run `devaloy-prune` when the disk fills, or `devaloy-prune --all` to also take
+  images no container is running.
+- **Published ports bind `0.0.0.0`,** so they are reachable from the Docker host
+  as well as the tailnet. This is the same call the compose file already records
+  for Orca's port 6768: whoever holds the Docker host already holds its socket.
+  Narrowing to the tailnet address would break `curl localhost:3000`, which is
+  how most people test.
+- **The daemon's log is `/var/log/dockerd.log`,** not the container log. `dockerd`
+  is noisy at info level and would bury the entrypoint's own output.
+- **Turning it back off needs a rebuild**, like `WITH_ORCA`. `WITH_DOCKER=false`
+  plus `up -d --build` removes the engine; the `docker-data` volume stays until
+  you remove it by hand.
 
 ## Updating the toolchain
 

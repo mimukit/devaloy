@@ -20,6 +20,10 @@ it when it stops answering.
   `DEVALOY_*` ceilings, and what to set them to.
 - [The host resource guard](host-resource-guard.md) — earlyoom, swappiness, log
   rotation and a prune timer, on the host rather than on devaloy.
+- [Prepare a host for Sysbox](prepare-a-host-for-sysbox.md) — the host-side
+  prerequisite for running Docker on the box without `privileged`.
+- [Run a project stack on devaloy](run-a-project-stack.md) — the optional
+  `WITH_DOCKER=true` daemon, where repos go, and how to reach a port.
 - [Lock down the host firewall](lock-down-the-host-firewall.md) — the other
   host-side script, and the two guards that stop it locking you out.
 - [Turn on phone push notifications](push-notifications.md) — one ntfy push per

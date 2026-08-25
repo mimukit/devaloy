@@ -112,15 +112,29 @@ All off by default. See [Size the container resource limits](vm-resource-limits.
 | `DEVALOY_CPU_SHARES` | `1024` | `cpu_shares` |
 | `DEVALOY_PIDS_LIMIT` | `-1` (unlimited) | `pids_limit` |
 
+### Nested Docker
+
+Both grant the container authority over its own namespaces, which is what a
+nested `dockerd` needs. Set **one**, never both. See
+[Prepare a host for Sysbox](prepare-a-host-for-sysbox.md).
+
+| Variable | Default | Compose key | Effect |
+|---|---|---|---|
+| `DEVALOY_RUNTIME` | `runc` | `runtime` | Set to `sysbox-runc` on a shared host. Needs Sysbox installed there first. No privilege is granted. |
+| `DEVALOY_PRIVILEGED` | `false` | `privileged` | All-or-nothing: every host device, so an agent here can mount the host disk. Only on a host you own alone. |
+
+`WITH_DOCKER` is the third key and it is a build argument, listed below.
+
 ## Build arguments
 
 | Argument | Default | Effect |
 |---|---|---|
 | `WITH_ORCA` | `false` | Builds in the `orca serve` runtime. Takes the image from 683 MB to 1.6 GB on arm64. |
+| `WITH_DOCKER` | `false` | Builds in Docker Engine, CLI, Compose and buildx, and adds `dev` to the `docker` group. About +460 MB on arm64 (918 MB to 1.38 GB, measured with Docker 29). Needs `DEVALOY_RUNTIME` or `DEVALOY_PRIVILEGED` set as well, or the daemon will not start. |
 
-`WITH_ORCA` is read from `.env` like the variables above, but it is a **build
-argument** — `docker compose up -d` alone will not pick up a change to it. You
-need `docker compose up -d --build`.
+Both are read from `.env` like the variables above, but they are **build
+arguments** — `docker compose up -d` alone will not pick up a change to either.
+You need `docker compose up -d --build`.
 
 `WITH_PASEO` is the one to keep separate in your head. It looks like a sibling
 and is not: it is an environment variable listed above, because Paseo installs
@@ -140,6 +154,7 @@ Run as the `dev` user unless noted.
 | `bootstrap-toolchain.sh` | Installs the toolchain, but **skips itself** if the home volume already records the current `TOOLSET_REVISION`. |
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |
+| `devaloy-prune` | Reclaims disk from the nested Docker daemon. Only on a `WITH_DOCKER=true` build. Takes `--all` (also images no container is running) and `--age <duration>` (default `168h`). Never touches a running container, and never runs on a timer. |
 
 Any argument to `bootstrap-toolchain.sh` other than `--force` exits `2` without
 installing anything.
@@ -191,6 +206,9 @@ your SSH session came from a tailnet address.
 | `--apply` | Install and configure everything. Needs root. |
 | `--restart-docker` | With `--apply`, also restart dockerd. **Bounces every container on the host.** |
 | `--yes`, `-y` | Skip the confirmation prompt |
+| `--sysbox` | Switch to Sysbox mode: report the host's subnets and daemon.json, and on `--apply` write only `bip` and `default-address-pools`. Never installs Sysbox, never removes a container. |
+| `--bip CIDR` | With `--sysbox --apply`. The Docker default bridge address. **Required, no default.** |
+| `--pool BASE/PREFIX/SIZE` | With `--sysbox --apply`. The pool user-defined networks come from. **Required, no default.** |
 | `-h`, `--help` | Usage |
 
 | Variable | Default |
@@ -201,6 +219,9 @@ your SSH session came from a tailnet address.
 | `PRUNE_KEEP_HOURS` | `168` |
 | `EARLYOOM_AVOID` | `^(sshd\|dockerd\|containerd\|tailscaled\|traefik\|mariadbd\|mysqld)$` |
 | `EARLYOOM_PREFER` | `^(apache2\|node\|npm\|pnpm\|turbo\|esbuild)$` |
+| `SYSBOX_BIP` | empty (same as `--bip`) |
+| `SYSBOX_POOL` | empty (same as `--pool`) |
+| `SYSBOX_VERSION` | `0.7.1` |
 
 ## Managed files
 
@@ -251,6 +272,9 @@ that signed yesterday does not fail every commit today.
 | `/usr/local/bin` | The `link-shims` mirror. Outside the volume, so it is rebuilt each boot. |
 | `/opt/devaloy/config` | The image's copy of `config/`, the source for the sync |
 | `/var/lib/tailscale` | The `tailscale-state` volume. Node identity. |
+| `/var/lib/docker` | The `docker-data` volume. The nested daemon's images and containers. |
+| `/etc/docker/daemon.json` | The nested daemon's config, copied from `config/docker/daemon.json` each boot. Its own copy line, because the config sync targets `/home/dev`. |
+| `/var/log/dockerd.log` | The nested daemon's output. Kept out of the container log, which `dockerd` would bury at info level. |
 
 ## Ports
 
@@ -258,6 +282,7 @@ that signed yesterday does not fail every commit today.
 |---|---|---|
 | 22 | Tailnet address only, inside the container's network namespace | Always. Not changeable — Tailscale SSH assumes 22. |
 | 6768 | `0.0.0.0` inside the container | Only on a `WITH_ORCA=true` build |
+| whatever a project stack publishes | `0.0.0.0` inside the container | Only on a `WITH_DOCKER=true` build. Reachable at `http://<tailnet-name>:<port>` and, like 6768, from the Docker host. |
 
 There is no `ports:` key in `docker-compose.yml`, so nothing is published to the
 Docker host or the internet. The exception worth knowing: `orca serve` binds
@@ -271,7 +296,10 @@ network.
 |---|---|---|
 | `home` | `/home/dev` | Repos, toolchain, credentials, history, skills |
 | `tailscale-state` | `/var/lib/tailscale` | Node identity |
+| `docker-data` | `/var/lib/docker` | The nested daemon's images, containers and volumes. Only used on a `WITH_DOCKER=true` build, but always declared. |
 
-`docker compose down` keeps both. `docker compose down -v` destroys both.
+`docker compose down` keeps all three. `docker compose down -v` destroys all
+three. `docker-data` is pure cache and is the one safe to delete on purpose when
+the disk fills.
 
 _Verified against `main`@`3c56b41` on 2026-08-09._

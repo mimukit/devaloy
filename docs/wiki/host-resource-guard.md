@@ -12,6 +12,14 @@ This covers what those cannot reach.
 | Log rotation | Stops `json-file` logs from filling the disk |
 | Prune timer | Stops Docker's build cache from filling the disk |
 
+It carries a second, separate mode. `--sysbox` prepares the same host to run
+devaloy with a nested Docker daemon, and it shares this file for one reason:
+both modes write `/etc/docker/daemon.json`, and two scripts merging the same
+file is how one of them quietly drops the other's keys. One writer, one merge
+path. That mode has its own page —
+[Prepare a host for Sysbox](prepare-a-host-for-sysbox.md) — and nothing below
+applies to it.
+
 Like `host-firewall-lockdown.sh`, this runs on the **host**, not inside the
 container. `scripts/` is excluded from the Docker build context, so the file is
 not in the image and nothing runs it for you. It needs `apt`, `systemd`, and
@@ -159,6 +167,8 @@ touches volumes, so no site data is involved either way.
 
 ## See also
 
+- [Prepare a host for Sysbox](prepare-a-host-for-sysbox.md) for the `--sysbox`
+  mode of this same script.
 - [reading-docker-stats.md](reading-docker-stats.md) for the columns this
   script's report is derived from.
 - `scripts/host-firewall-lockdown.sh`, the other host-side script, covered in
