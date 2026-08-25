@@ -12,6 +12,18 @@ services:
         # a change to it. You need `--build`. There is deliberately no runtime
         # toggle; see the README.
         WITH_ORCA: ${WITH_ORCA:-false}
+        # Builds Docker Engine and Compose into the image, so a project's own
+        # docker-compose.yml can start its development stack on this box. OFF by
+        # default.
+        #
+        # Also a BUILD arg, for the same reason as WITH_ORCA above: it decides
+        # what goes into the image, so `docker compose up -d` alone will NOT
+        # pick up a change. You need `--build`.
+        #
+        # This one key is not enough on its own. The daemon needs authority over
+        # its own namespaces, which is what DEVALOY_RUNTIME or DEVALOY_PRIVILEGED
+        # further down grant — see the comment on those two.
+        WITH_DOCKER: ${WITH_DOCKER:-false}
     container_name: devaloy
     hostname: devaloy
     init: true
@@ -52,7 +64,41 @@ services:
       # container, so the host kernel is the only thing left between an agent
       # and an escape. Accepted because the alternative is an unsandboxed
       # agent on a box that already has passwordless sudo.
+      #
+      # UNDER sysbox-runc THIS KEY IS IGNORED, and it stays here anyway. Sysbox
+      # installs its own seccomp notification filter and keeps it on whatever
+      # this says (measured: `Seccomp: 2` in /proc/self/status under
+      # sysbox-runc, `Seccomp: 0` under runc). That costs nothing, because
+      # Sysbox's filter traps and emulates rather than denying — bubblewrap's
+      # user namespace works under it, which is the thing this key was added
+      # for. The key still does real work in the runc shape, which is the one
+      # DEVALOY_RUNTIME leaves as the default.
       - seccomp=unconfined
+    # --- the two keys that make WITH_DOCKER's nested daemon actually run ---
+    # A dockerd inside this container needs authority over its own namespaces.
+    # Exactly one of the two below grants it, and which one you pick is a
+    # property of the HOST, not of this box.
+    #
+    # DEVALOY_PRIVILEGED=true is the simple answer and the dangerous one. It is
+    # all-or-nothing: there is no partial privileged, and it hands this
+    # container every host device. An agent in here can `mount /dev/vda1` and
+    # read and write the host's whole disk. Set it ONLY on a host you own alone
+    # and would treat as disposable. On a machine with neighbours it means any
+    # agent on this box can reach their data.
+    #
+    # DEVALOY_RUNTIME=sysbox-runc is the answer for a shared host. Sysbox
+    # replaces runc, maps this container's root onto an unprivileged host user,
+    # and runs the nested daemon with no privilege and no socket mount. Install
+    # it on the host first — `scripts/host-resource-guard.sh --sysbox --check`
+    # tells you what that needs, and the wiki page walks the restart window.
+    #
+    # Do not set both. Sysbox refuses a privileged container outright, so the
+    # combination fails at start rather than silently picking one.
+    #
+    # Both default to the shape devaloy has always had: plain runc, no
+    # privilege. With WITH_DOCKER unset they change nothing at all.
+    privileged: ${DEVALOY_PRIVILEGED:-false}
+    runtime: ${DEVALOY_RUNTIME:-runc}
     # Keeps tailscaled off the OOM killer's list — losing it severs the only
     # route you'd use to recover the box. Interactive shells raise themselves
     # back to 0 (see entrypoint.sh), so a runaway build is the preferred victim.
@@ -159,12 +205,33 @@ services:
       # the CLI now tracks latest with no variable.
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
       - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
+      # Read by entrypoint.sh to decide whether to start the nested daemon. The
+      # build arg at the top of this file is what puts dockerd in the image;
+      # this is what turns it on. Both come from the same .env key, so there is
+      # one thing to set — but only a rebuild moves the first one.
+      - WITH_DOCKER=${WITH_DOCKER:-false}
     volumes:
       - home:/home/dev
       # Node identity lives here. Lose it and the box rejoins as a new machine.
       - tailscale-state:/var/lib/tailscale
+      # The nested daemon's image layers, containers and volumes. Its own volume
+      # rather than the container's writable layer, for two reasons: image
+      # layers do not belong in a layer that a rebuild throws away, and a
+      # `docker volume rm devaloy_docker-data` on the host is then how you take
+      # back every gigabyte of project images without touching a single repo.
+      #
+      # It is declared unconditionally, like the other two. An empty named
+      # volume on a box built WITH_DOCKER=false costs nothing.
+      #
+      # Do NOT turn on Dokploy's volume backups for this one. It is pure cache:
+      # everything in it is re-pullable or re-buildable, it is the largest thing
+      # on the box, and backing it up buys nothing a `docker compose up` does
+      # not. The `home` volume is the one worth protecting, and even there the
+      # real backup is pushing to a remote.
+      - docker-data:/var/lib/docker
     restart: unless-stopped
 
 volumes:
   home:
   tailscale-state:
+  docker-data:

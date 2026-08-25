@@ -1,10 +1,15 @@
-# The build context is only entrypoint.sh, the three /usr/local/bin scripts and
+# The build context is only entrypoint.sh, the four /usr/local/bin scripts and
 # config/. Everything else is dead weight sent to the daemon on every build —
 # and worse, a change to any of it busts the context hash.
+#
+# This list is a whitelist, so a new file COPYed by the Dockerfile has to be
+# added here too. Miss it and the build fails at the COPY with "not found",
+# which reads like a typo in the Dockerfile rather than an omission here.
 *
 !entrypoint.sh
 !bootstrap-toolchain.sh
 !devaloy-update
+!devaloy-prune
 !link-shims
 !config
 !config/**

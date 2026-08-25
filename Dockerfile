@@ -37,6 +37,27 @@ RUN mkdir -p /out/usr/share/keyrings /out/etc/apt/sources.list.d \
     && curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
         -o /out/etc/apt/sources.list.d/tailscale.list
 
+# Docker's apt repo, for the optional nested daemon (see WITH_DOCKER below).
+#
+# Note where this lands: /out/docker, NOT the /out/usr/share/keyrings and
+# /out/etc/apt/sources.list.d directories above. Those two are COPYed
+# unconditionally into the final image, so putting the Docker repo there would
+# add a keyring and a third-party repo to the *default* build — and make every
+# `apt-get update` on a box that never asked for Docker reach
+# download.docker.com. Keeping it in its own directory means the WITH_DOCKER
+# block below can bind-mount it, exactly as the Orca deb is bind-mounted, and a
+# default build carries no trace of it.
+#
+# The architecture comes from dpkg rather than being hardcoded, same as the Orca
+# fetch below. Both stages are the same platform, so this resolves correctly on
+# an ARM VPS.
+RUN mkdir -p /out/docker \
+    && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        -o /out/docker/docker.asc \
+    && chmod a+r /out/docker/docker.asc \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" \
+        > /out/docker/docker.list
+
 # The Orca .deb, for the optional `orca serve` runtime (see WITH_ORCA below).
 # Upstream ships amd64 and arm64, so this stays ARM-VPS-compatible; the arch is
 # read from dpkg rather than hardcoded. Pinned deliberately — Orca has no
@@ -202,10 +223,74 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     fi
 # --- OPTIONAL: Orca headless runtime. END ---
 
+# ---------------------------------------------------------------------------
+# OPTIONAL: nested Docker Engine and Compose (WITH_DOCKER). BEGIN
+#
+# Most projects you open on this box carry a docker-compose.yml and need it to
+# start their development stack. This block puts a real Docker Engine in the
+# image; entrypoint.sh starts the daemon inside the container, so the stacks run
+# *here*, in devaloy's own filesystem and network namespace.
+#
+# THE HOST SOCKET IS NOT AN OPTION, and the reason is not squeamishness. A
+# project compose file that says `./:/app` resolves that path on whichever
+# machine owns the daemon: with the host socket that is the VPS, where
+# /home/dev/proj does not exist, so every project breaks on its first bind
+# mount. Published ports land on the VPS public interfaces rather than inside
+# this container. And the socket is host root, on a box with passwordless sudo
+# and AI agents, sharing a machine with live sites.
+#
+# The daemon needs the container's root to be root over its own namespaces. Two
+# shapes give it that, and compose selects between them (see docker-compose.yml):
+#
+#   DEVALOY_PRIVILEGED=true       for a host you own alone. All host devices.
+#   DEVALOY_RUNTIME=sysbox-runc   for a shared host. No privilege at all.
+#
+# OFF BY DEFAULT, like WITH_ORCA and for the same reason: it is an opt-in
+# capability, not part of devaloy's baseline. It is a BUILD arg, so
+# `docker compose up -d` alone will not pick up a change to it. You need
+# `--build`.
+#
+# Placed here, above the COPY lines below, so editing entrypoint.sh or config/
+# never rebuilds this package install.
+# ---------------------------------------------------------------------------
+ARG WITH_DOCKER=false
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,from=fetch,source=/out/docker,target=/tmp/docker-apt \
+    if [ "${WITH_DOCKER}" = "true" ]; then \
+        cp /tmp/docker-apt/docker.asc /usr/share/keyrings/docker.asc \
+        && cp /tmp/docker-apt/docker.list /etc/apt/sources.list.d/docker.list \
+        # The repo stays in the image rather than being removed afterwards, so
+        # `apt-get upgrade` on the box moves Docker the way it moves tailscale.
+        && apt-get update && apt-get install -y --no-install-recommends \
+            # docker-ce is the daemon, docker-ce-cli the client, containerd.io
+            # the runtime underneath both. The two plugins are separate packages
+            # and neither is pulled in by the others: without docker-compose-
+            # plugin there is no `docker compose` at all, which is the entire
+            # point of this block.
+            docker-ce \
+            docker-ce-cli \
+            containerd.io \
+            docker-buildx-plugin \
+            docker-compose-plugin \
+        # The `docker` group does not exist until docker-ce lands, so this
+        # cannot move up to the useradd line near the top of this stage. Without
+        # it every docker call on the box needs sudo.
+        && usermod -aG docker dev \
+        # Assert what the entrypoint will reach for, the way the Orca block
+        # asserts its own. All three run without a daemon, so they are safe in a
+        # build: the first is the binary entrypoint.sh supervises, and the other
+        # two are the plugins apt would happily leave out.
+        && [ -x /usr/bin/dockerd ] \
+        && docker compose version \
+        && docker buildx version; \
+    fi
+# --- OPTIONAL: nested Docker Engine and Compose. END ---
+
 # No sshd, no authorized_keys, no host keys: Tailscale SSH is the only way in,
 # and it authenticates from tailnet identity plus the tailnet policy file.
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
-COPY --chmod=755 bootstrap-toolchain.sh devaloy-update link-shims /usr/local/bin/
+COPY --chmod=755 bootstrap-toolchain.sh devaloy-update devaloy-prune link-shims /usr/local/bin/
 
 # Claude Code and Codex are not installed here. mise's registry covers both and
 # fetches the same upstream artifacts their own installers do, so they live in

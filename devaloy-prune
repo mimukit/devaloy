@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Reclaim disk from the nested Docker daemon, by hand.
+#
+# Only useful on a box built with WITH_DOCKER=true. Project stacks accumulate
+# build cache and old image layers in the docker-data volume, and nothing on
+# this box reaps them for you.
+#
+# THIS IS DELIBERATELY NOT ON A TIMER, and the host is not a precedent. The
+# Docker host runs a docker-prune.timer (see scripts/host-resource-guard.sh)
+# because a host runs services, whose images are pinned by the containers using
+# them. This box runs an agent that may be halfway through a multi-stage build,
+# whose intermediate images are pinned by nothing at all. Build cache is safe to
+# reap automatically and does get reaped automatically, by the builder GC in
+# config/docker/daemon.json. Images are not, which is why removing them is a
+# command you type.
+#
+# Usage: devaloy-prune [--all] [--age <duration>]
+#   --all          also remove images no container uses, not just dangling ones
+#   --age <dur>    only touch things older than this. Default 168h (7 days).
+set -euo pipefail
+
+AGE="168h"
+ALL=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --all) ALL=1; shift ;;
+    --age) AGE="${2:?--age needs a duration, e.g. 72h}"; shift 2 ;;
+    -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "devaloy-prune: unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+
+if ! docker info >/dev/null 2>&1; then
+  echo "devaloy-prune: no Docker daemon reachable." >&2
+  echo "devaloy-prune: this box needs WITH_DOCKER=true and a rebuild; if it has" >&2
+  echo "devaloy-prune: that, read the end of /var/log/dockerd.log." >&2
+  exit 1
+fi
+
+echo "devaloy-prune: disk before"
+docker system df
+
+# Build cache first, because it is both the biggest share of the waste and the
+# only part that is free to lose — a discarded layer costs a rebuild, never a
+# pull.
+echo
+echo "devaloy-prune: pruning build cache older than ${AGE}"
+docker builder prune --force --filter "until=${AGE}"
+
+# Neither of these can touch an image a running container uses: Docker refuses,
+# so a stack you left up is safe by construction rather than by a check here.
+# --all is still the wider blade — it takes images nothing is running, which on
+# this box includes the base image of a stack you stopped yesterday.
+echo
+if [ "${ALL}" -eq 1 ]; then
+  echo "devaloy-prune: removing unused images older than ${AGE} (--all)"
+  docker image prune --all --force --filter "until=${AGE}"
+else
+  echo "devaloy-prune: removing dangling images older than ${AGE}"
+  echo "devaloy-prune: (pass --all to also take images no container is running)"
+  docker image prune --force --filter "until=${AGE}"
+fi
+
+echo
+echo "devaloy-prune: disk after"
+docker system df

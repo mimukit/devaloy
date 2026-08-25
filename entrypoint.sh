@@ -163,10 +163,12 @@ fi
 # replaces, so files the repo does not ship — ~/.zshrc.local, credentials,
 # session history, skills you added by hand — are left alone.
 #
-# config/paseo is the one directory NOT seeded here. It is a single JSON file
-# that has to be merged key by key rather than copied, and the values it needs
-# come from the tailnet, which is not up yet at this point in the boot. The
-# Paseo block at the bottom of this file does it.
+# Two directories under config/ are NOT seeded here, for different reasons.
+# config/paseo is a single JSON file that has to be merged key by key rather
+# than copied, and the values it needs come from the tailnet, which is not up
+# yet at this point in the boot; the Paseo block at the bottom of this file does
+# it. config/docker does not belong in /home/dev at all — dockerd reads
+# /etc/docker, so the Docker block further down copies it there instead.
 seed_config() {
   src="$1"; dest="$2"
   [ -d "${src}" ] || return 0
@@ -263,6 +265,116 @@ else
   fi
   log "WARNING: recover from the Docker host with:"
   log "WARNING:   docker compose exec devaloy tailscale up --ssh"
+fi
+
+# --- nested Docker daemon (only when WITH_DOCKER=true) ---
+# A real dockerd, inside this container, so a project's own docker-compose.yml
+# starts its stack HERE: bind mounts resolve against /home/dev, published ports
+# land in this container's network namespace, and `http://devaloy:3000` reaches
+# them over the tailnet. The host socket would give none of that — see the
+# WITH_DOCKER block in the Dockerfile for why it is a permanent non-goal.
+#
+# ORDERING. Read this before moving the block, because it sits between two
+# things that both have a claim on it.
+#
+# It starts AFTER `tailscale up`. dockerd writes iptables rules into the same
+# network namespace tailscaled is using, so if the two ever conflict you want to
+# find out on a box you can still log into. Bring the tailnet up first and a
+# rule clash shows as a broken project stack; start dockerd first and it shows
+# as a box that never answers.
+#
+# It starts BEFORE the mise bootstrap, which is the opposite of Orca and Paseo.
+# Those two run last because they shell out through `su -l -s /bin/sh` and need
+# link-shims to have put `claude` and `codex` in /usr/local/bin first. dockerd
+# needs nothing from mise, so starting it up here lets a cold volume pull
+# project images while mise is still installing node.
+#
+# Nothing below this point waits on Docker. The socket wait is bounded, and a
+# daemon that never comes up costs you project stacks and nothing else.
+DOCKERD_BIN="/usr/bin/dockerd"
+DOCKERD_LOG="/var/log/dockerd.log"
+DOCKER_SOCK="/var/run/docker.sock"
+
+if [ "${WITH_DOCKER:-false}" = "true" ]; then
+  if [ ! -x "${DOCKERD_BIN}" ]; then
+    # The one failure mode worth a loud warning, because the key looks like it
+    # was set and nothing happened. WITH_DOCKER is a BUILD argument: it decides
+    # what goes into the image, so setting it in the environment alone changes
+    # nothing. Same trap as WITH_ORCA, and the opposite of WITH_PASEO.
+    log "WARNING: WITH_DOCKER=true but ${DOCKERD_BIN} is not in this image."
+    log "WARNING: WITH_DOCKER is a BUILD argument — 'docker compose up -d' cannot"
+    log "WARNING: add it. Redeploy with --build, or in Dokploy tick Rebuild."
+  else
+    # The shipped daemon config. This needs its own copy line: the config sync
+    # further up targets /home/dev, and dockerd reads /etc/docker. JSON takes no
+    # comments, so what it carries and why is in config/docker/README.md — the
+    # short version is that it pins the nested bridge into 10.x, away from the
+    # 172.16/12 space the outer host allocates from.
+    mkdir -p /etc/docker
+    if [ -f "${CONFIG_SRC}/docker/daemon.json" ]; then
+      cp "${CONFIG_SRC}/docker/daemon.json" /etc/docker/daemon.json
+    else
+      log "WARNING: ${CONFIG_SRC}/docker/daemon.json is missing — starting dockerd"
+      log "WARNING: on its defaults. Expect a 172.17.0.0/16 bridge, which can"
+      log "WARNING: collide with this container's own network."
+    fi
+
+    (
+      # Explicit, NOT inherited, for the same reason as the Orca block below.
+      # The container starts at -500 to keep tailscaled off the OOM killer's
+      # list; leaving that inherited would make dockerd exactly as protected as
+      # the only route back into the box. The ladder we want is: runaway build
+      # (0) dies first, then dockerd and Orca (-250), then tailscaled (-500).
+      echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
+
+      # Unbounded restart loop with a sleep, copied from the Orca block. The
+      # sleep is what stops a crash-loop spinning hot on a daemon that cannot
+      # start at all — a missing runtime, say, which no amount of retrying will
+      # fix but which must not also cost you the CPU.
+      #
+      # Output goes to its own file rather than this log. dockerd is noisy at
+      # info level and the entrypoint log is the only view of a `tailscale up`
+      # failure; interleaving the two buries the line you need at 3am.
+      while true; do
+        "${DOCKERD_BIN}" >> "${DOCKERD_LOG}" 2>&1 || true
+        echo "[entrypoint] WARNING: dockerd exited — restarting in 10s" >> "${DOCKERD_LOG}"
+        sleep 10
+      done
+    ) &
+
+    # Bounded, and generous: on a working box the socket appears in about a
+    # second. Thirty is here to absorb a slow first boot, not to wait out a
+    # daemon that is never coming.
+    for _ in $(seq 1 30); do
+      [ -S "${DOCKER_SOCK}" ] && break
+      sleep 1
+    done
+
+    if [ -S "${DOCKER_SOCK}" ]; then
+      log "Docker daemon ready — logs in ${DOCKERD_LOG}"
+      # Anything with a restart policy comes back with the daemon, because
+      # /var/lib/docker is a named volume that survives a redeploy. Print the
+      # set once, so a stack you started three weeks ago is a line you read on
+      # the way in rather than a surprise when a port is already bound.
+      _running="$(docker ps --format '{{.Names}} ({{.Image}})' 2>/dev/null || true)"
+      if [ -n "${_running}" ]; then
+        log "Nested containers restarted with the daemon:"
+        printf '%s\n' "${_running}" | while IFS= read -r _line; do
+          log "  ${_line}"
+        done
+      fi
+      unset _running
+    else
+      # The other failure mode: the engine is in the image and the daemon still
+      # will not start. That is almost always the container lacking authority
+      # over its own namespaces, which is what the two runtime keys grant.
+      log "WARNING: dockerd did not come up within 30s — project stacks will not run."
+      log "WARNING: this container needs authority over its own namespaces. Set"
+      log "WARNING: DEVALOY_RUNTIME=sysbox-runc (shared host) or"
+      log "WARNING: DEVALOY_PRIVILEGED=true (a host you own alone), then redeploy."
+      log "WARNING: the daemon's own reason is at the end of ${DOCKERD_LOG}."
+    fi
+  fi
 fi
 
 # --- mise bootstrap + pinned toolchain (runs as dev) ---
