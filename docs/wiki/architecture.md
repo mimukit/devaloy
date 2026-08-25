@@ -39,7 +39,8 @@ down and `restart: unless-stopped` brings it back.
 8. **Run `link-shims`** to mirror mise's shims into `/usr/local/bin`.
 9. **Authenticate `gh`**, then set the git identity, then install the signing key.
 10. **Start `orca serve`**, only if the binary is present.
-11. **`wait` on `tailscaled`.**
+11. **Start the Paseo daemon** under a supervision loop, only when `WITH_PASEO=true`.
+12. **`wait` on `tailscaled`.**
 
 Three orderings in there matter more than they look.
 
@@ -154,6 +155,11 @@ config/
   bin/                 -> ~/.local/bin/  (agent-push — shared by both agents)
 ```
 
+Two config directories deliberately stay out of this sync: the entrypoint copies
+`config/docker/daemon.json` to `/etc/docker/daemon.json` and merges
+`config/paseo/config.json` into `~/.paseo/config.json` itself, because neither
+target lives under the plain `/home/dev` copy the sync performs.
+
 **The repo wins.** Every shipped file is copied over its counterpart on each
 boot, so editing one here and redeploying changes the box, and editing one *on*
 the box does not survive.
@@ -220,11 +226,11 @@ Three trades are worth knowing before running this anywhere sensitive:
 
 Compose sets the container to `oom_score_adj: -500`, keeping `tailscaled` off the
 kernel's kill list — losing it severs the only route back in. `oom_score_adj` is
-inherited, so two processes raise themselves back up: interactive shells to `0`,
-and the Orca server to `-250`.
+inherited, so four processes raise themselves back up: interactive shells to `0`,
+and the Orca server, `dockerd`, and the Paseo supervisor to `-250`.
 
-The resulting kill order is a runaway build first, then Orca, then `tailscaled`
-last. Raising an inherited value is unprivileged; only lowering needs
+The resulting kill order is a runaway build first, then Orca, `dockerd`, and
+Paseo, then `tailscaled` last. Raising an inherited value is unprivileged; only lowering needs
 `CAP_SYS_RESOURCE`, which is why this works without extra capabilities. It is
 also what makes a memory limit safe to set aggressively — see
 [Size the container resource limits](vm-resource-limits.md).
@@ -277,4 +283,4 @@ back.
   everything above.
 - [Getting started](getting-started.md) — the same system from the outside.
 
-_Verified against `main`@`3c56b41` on 2026-08-09._
+_Verified against `main`@`b6bc42b` on 2026-08-25._

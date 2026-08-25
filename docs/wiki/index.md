@@ -50,4 +50,4 @@ walks only the required path.
 Agent instructions live in `config/claude/CLAUDE.md` and `config/codex/AGENTS.md`
 and are written for the agents running on the box, not for readers.
 
-_Verified against `main`@`3c56b41` on 2026-08-09._
+_Verified against `main`@`b6bc42b` on 2026-08-25._

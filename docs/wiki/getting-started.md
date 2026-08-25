@@ -143,4 +143,4 @@ backup.
   blocks for permission.
 - Read the [Architecture](architecture.md) page before changing anything.
 
-_Verified against `main`@`3c56b41` on 2026-08-09._
+_Verified against `main`@`b6bc42b` on 2026-08-25._

@@ -302,4 +302,4 @@ network.
 three. `docker-data` is pure cache and is the one safe to delete on purpose when
 the disk fills.
 
-_Verified against `main`@`3c56b41` on 2026-08-09._
+_Verified against `main`@`b6bc42b` on 2026-08-25._

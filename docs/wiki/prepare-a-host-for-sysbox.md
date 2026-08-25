@@ -128,3 +128,5 @@ Three keys in `docker-compose.yml` behave differently under `sysbox-runc`, and n
 - [The host resource guard](host-resource-guard.md) — the other mode of the same script, and the reason there is only one writer for `/etc/docker/daemon.json`.
 - [Run a project stack on devaloy](run-a-project-stack.md) — what to do once this is done.
 - [Deploy with Dokploy](deploy-with-dokploy.md) — where the two environment keys go.
+
+_Verified against `main`@`b6bc42b` on 2026-08-25._

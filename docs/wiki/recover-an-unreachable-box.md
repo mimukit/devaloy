@@ -43,7 +43,7 @@ docker compose exec devaloy tailscale status
 | Node reachable, SSH refused | No matching rule in the tailnet policy file | [Fix the policy file](#ssh-is-refused) |
 | Node reachable, `dev` login rejected | Policy rule's `users` list omits `dev` | Add `"users": ["dev"]` |
 | Reachable, but `pnpm`/`gh`/`claude` are missing | Toolchain bootstrap failed | [Re-run the bootstrap](#the-toolchain-never-installed) |
-| `ssh devaloy '<cmd>'` cannot find a tool an interactive shell finds | `link-shims` did not run | `sudo devaloy-update` — see below |
+| `ssh devaloy '<cmd>'` cannot find a tool an interactive shell finds | `link-shims` did not run | `devaloy-update` as `dev` — see below |
 
 ## The host is missing `tun`
 
@@ -175,15 +175,17 @@ non-interactive sessions until the mirror is refreshed.
 
 ## Last resort: recreate the container
 
-`/home/dev` and the Tailscale node identity are both named volumes, so
-recreating the container keeps your repos, credentials and node key:
+`/home/dev`, the Tailscale node identity, and the nested Docker daemon's data
+are all named volumes, so recreating the container keeps your repos,
+credentials, node key, and nested images:
 
 ```sh
 docker compose down && docker compose up -d --build
 ```
 
 **Never `docker compose down -v` to fix a connectivity problem.** That deletes
-both volumes: every clone, every credential, and the node identity, so the box
+all three volumes: every clone, every credential, the nested Docker data, and
+the node identity, so the box
 rejoins the tailnet as a brand new machine. Unpushed work is gone — there is no
 backup job and no snapshot on this stack.
 
@@ -207,4 +209,4 @@ backup job and no snapshot on this stack.
 - [Deploy with Dokploy](deploy-with-dokploy.md#troubleshooting) — the same
   failures as they appear through a Dokploy panel.
 
-_Verified against `main`@`3c56b41` on 2026-08-09._
+_Verified against `main`@`b6bc42b` on 2026-08-25._

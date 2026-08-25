@@ -133,4 +133,4 @@ to stock defaults.
   — why not to run this one there.
 - [Architecture](architecture.md) — why devaloy needs no firewall rule of its own.
 
-_Verified against `main`@`acdf72e` on 2026-08-09._
+_Verified against `main`@`b6bc42b` on 2026-08-25._

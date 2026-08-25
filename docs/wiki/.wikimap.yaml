@@ -59,6 +59,24 @@ pages:
       - devaloy-update
       - link-shims
 
+  - path: run-a-project-stack.md
+    mode: how-to
+    documents:
+      - Dockerfile
+      - docker-compose.yml
+      - entrypoint.sh
+      - config/docker/daemon.json
+      - devaloy-prune
+      - .env.example
+
+  - path: prepare-a-host-for-sysbox.md
+    mode: how-to
+    documents:
+      - scripts/setup-sysbox-host.sh
+      - scripts/host-resource-guard.sh
+      - config/docker/daemon.json
+      - config/docker/README.md
+
   # --- adopted: written by a human, mapped but never claim-checked ---
 
   - path: deploy-with-dokploy.md

@@ -104,3 +104,5 @@ Two failures have their own entries in [Deploy with Dokploy → Troubleshooting]
 - [Prepare a host for Sysbox](prepare-a-host-for-sysbox.md) — the host-side prerequisite.
 - [Architecture → The optional Docker runtime](architecture.md#the-optional-docker-runtime) — why the daemon starts where it does in the boot order.
 - [Reference](reference.md) — the three environment keys and `devaloy-prune`.
+
+_Verified against `main`@`b6bc42b` on 2026-08-25._

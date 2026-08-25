@@ -2,7 +2,8 @@
 
 devaloy ships with **every resource ceiling off**. A hardcoded number in
 `docker-compose.yml` would bake in a host-size assumption, so all six knobs read
-from `.env` and default to Docker's "unlimited". That is the right default for a
+from `.env`. Five default to Docker's "unlimited"; `DEVALOY_CPU_SHARES` defaults
+to the neutral weight `1024`. That is the right default for a
 box on its own hardware and the wrong one the moment devaloy shares a host with
 anything you care about.
 
@@ -131,10 +132,11 @@ scripts/host-resource-guard.sh --check
 The container starts at `oom_score_adj: -500`, which keeps `tailscaled` off the
 OOM killer's list — losing it severs the only route you would use to recover the
 box. Every interactive shell raises itself back to `0` on startup, and the
-optional Orca server sits at `-250`.
+optional Orca server, `dockerd`, and the Paseo supervisor sit at `-250`.
 
 So the kill order inside devaloy is deliberate: a runaway build or agent session
-dies first, then Orca, and `tailscaled` last. **You stay connected while the
+dies first, then Orca, `dockerd`, and the Paseo supervisor, and `tailscaled`
+last. **You stay connected while the
 thing that caused the problem is the thing that dies.** That ordering is why a
 `mem_limit` is safe to set aggressively.
 
@@ -158,4 +160,4 @@ is on.
 - [Deploy with Dokploy](deploy-with-dokploy.md) — where these variables go when
   Dokploy owns the `.env`.
 
-_Verified against `main`@`3c56b41` on 2026-08-09._
+_Verified against `main`@`b6bc42b` on 2026-08-25._
