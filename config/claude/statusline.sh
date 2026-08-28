@@ -141,30 +141,40 @@ if [ -n "$CTX_TOKENS" ]; then
     SEG_CTX="${SEG_CTX} ${LABEL}($(fmt_tokens "$CTX_TOKENS"))${RESET}"
 fi
 
-# Build base line
-LINE="${SEG_MODEL}${BAR_SEP}${SEG_CTX}"
-
-# 7-day rate limit segment (only when data present)
-if [ -n "$SEVEN_D" ]; then
-    SD_PCT=$(clamp_pct "$SEVEN_D")
-    SD_COLOR=$(pick_color "$SD_PCT")
-    LINE="${LINE}${BAR_SEP}${LABEL}7d${RESET} ${SD_COLOR}${SD_PCT}%${RESET}"
-    SD_RESET=$(fmt_reset "$SEVEN_D_RESET" "%b %d")
-    if [ -n "$SD_RESET" ]; then
-        LINE="${LINE} ${LABEL}(${SD_RESET})${RESET}"
-    fi
-fi
-
 # 5-hour rate limit segment (only when data present)
+SEG_5H=""
 if [ -n "$FIVE_H" ]; then
     FH_PCT=$(clamp_pct "$FIVE_H")
     FH_COLOR=$(pick_color "$FH_PCT")
-    LINE="${LINE}${BAR_SEP}${LABEL}5h${RESET} ${FH_COLOR}${FH_PCT}%${RESET}"
+    SEG_5H="${LABEL}5h${RESET} ${FH_COLOR}${FH_PCT}%${RESET}"
     FH_RESET=$(fmt_reset "$FIVE_H_RESET")
     if [ -n "$FH_RESET" ]; then
-        LINE="${LINE} ${LABEL}(${FH_RESET})${RESET}"
+        SEG_5H="${SEG_5H} ${LABEL}(${FH_RESET})${RESET}"
     fi
 fi
+
+# 7-day rate limit segment (only when data present)
+SEG_7D=""
+if [ -n "$SEVEN_D" ]; then
+    SD_PCT=$(clamp_pct "$SEVEN_D")
+    SD_COLOR=$(pick_color "$SD_PCT")
+    SEG_7D="${LABEL}7d${RESET} ${SD_COLOR}${SD_PCT}%${RESET}"
+    SD_RESET=$(fmt_reset "$SEVEN_D_RESET" "%b %d")
+    if [ -n "$SD_RESET" ]; then
+        SEG_7D="${SEG_7D} ${LABEL}(${SD_RESET})${RESET}"
+    fi
+fi
+
+# Join the present segments in order: 5h, 7d, ctx, model
+LINE=""
+for seg in "$SEG_5H" "$SEG_7D" "$SEG_CTX" "$SEG_MODEL"; do
+    [ -z "$seg" ] && continue
+    if [ -z "$LINE" ]; then
+        LINE="$seg"
+    else
+        LINE="${LINE}${BAR_SEP}${seg}"
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # 7. Print — printf to honour ANSI escape sequences
