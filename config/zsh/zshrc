@@ -124,6 +124,7 @@ alias h='herdr'
 
 # node — the toolchain is pnpm, so these are `pnpm run` rather than a runner
 # like `nr` that isn't installed.
+alias ni='pnpm install'
 alias nd='pnpm run dev'
 alias nb='pnpm run build'
 alias ns='pnpm run start'
