@@ -63,7 +63,7 @@ esac
 # See entrypoint.sh, which exports this into every shell for the same reason.
 # Repeated here because the boot path runs this script under `su -l -s /bin/sh`,
 # which sources neither .zshenv nor .bashrc.
-export MISE_MINIMUM_RELEASE_AGE_EXCLUDES="claude,codex"
+export MISE_MINIMUM_RELEASE_AGE=0
 
 # Node is pinned to an LTS *major*, not mise's floating `lts` alias — that
 # alias rolls across majors, which is exactly the unannounced jump a dev box

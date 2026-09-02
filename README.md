@@ -652,16 +652,19 @@ It also reinstalls the agent skills, so it doubles as the publish loop — see
 toolchain visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`,
 `rsync`, git-over-ssh). Run it after any `npm i -g`.
 
-### Why the agent CLIs opt out of mise's release delay
+### Why mise's release delay is off
 
 mise holds back any release younger than 24 hours (`minimum_release_age`) as a
-supply-chain cooling-off period. Claude Code and Codex ship most days and check
-their own release channel, which has no such delay — so mise's "latest" sat
-permanently one release behind what the CLI itself considered current, and
-`claude` nagged *"Update available! Run: `mise upgrade claude`"* with no version
-of that command able to satisfy it. `MISE_MINIMUM_RELEASE_AGE_EXCLUDES` exempts
-those two tools and nothing else, in `entrypoint.sh` (every shell) and
-`bootstrap-toolchain.sh` (the boot path, which sources no shell config).
+supply-chain cooling-off period. Every tool in this toolchain tracks latest, so
+the window only meant `mise upgrade` printed a warning about the release it had
+just refused to install, then reported everything up to date. The agent CLIs
+made it worse: they ship most days and check their own release channel, which
+has no delay, so `claude` nagged *"Update available! Run: `mise upgrade
+claude`"* with no version of that command able to satisfy it.
+`MISE_MINIMUM_RELEASE_AGE=0` turns the window off for every tool, set in
+`entrypoint.sh` (every shell) and `bootstrap-toolchain.sh` (the boot path,
+which sources no shell config). Set it to a duration such as `24h` in either
+file to bring the delay back.
 
 ## Config as code
 
