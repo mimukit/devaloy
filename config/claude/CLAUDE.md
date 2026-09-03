@@ -158,3 +158,11 @@ non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh).
 If `GITHUB_TOKEN` is set in the environment, `gh` and `git push` over HTTPS are
 already authenticated. Do not run `gh auth login` — it will refuse while that
 variable is set, which is expected, not a fault to work around.
+
+## Permission mode
+
+This box runs in `bypassPermissions` mode, the mode the `--dangerously-skip-permissions` flag also selects. It skips every permission prompt. `permissions.defaultMode` in `~/.claude/settings.json` sets it, so every session on the box starts that way, not one repo only.
+
+The reason is `afkkit`. An unattended overnight run must not stop for a prompt. An allowlist always leaves a gap that pauses the run at 03:00; bypass mode leaves none. The container is disposable and has no other tenants, so the prompt buys nothing here.
+
+The `deny` list in the same file still applies. Bypass mode removes the prompt, not the deny rules, and it does not relax the rules under "Deleting".
