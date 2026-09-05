@@ -98,7 +98,14 @@ alias c='clear'
 alias cc='clear; tmux clear-history 2>/dev/null; clear'
 alias e='exit'
 alias x='exit'
-alias v='vim'
+# Neovim with the LazyVim config in ~/.config/nvim. It comes from mise, so it is
+# absent until the toolchain bootstrap runs — the guard keeps `v` on vim from
+# the apt list until then, rather than leaving it broken on a cold volume.
+if command -v nvim >/dev/null; then
+    alias v='nvim'
+else
+    alias v='vim'
+fi
 
 alias g='git'
 alias gs='git status --short --branch'
