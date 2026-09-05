@@ -313,6 +313,26 @@ herdr
 Detach and reconnect from a different device — the session picks up where you
 left off.
 
+## (Optional) a second box on one host
+
+One key separates two devaloy stacks on the same server: `DEVALOY_NAME`. It defaults to `devaloy`, so an existing box changes nothing and keeps the volumes it already has.
+
+```sh
+DEVALOY_NAME=devaloy-two
+```
+
+That one value drives the container name, the shell hostname, the compose project name (and so the `home`, `tailscale-state` and `docker-data` volume prefixes), and the `TS_HOSTNAME` default. The two stacks then share no Docker name and no data, and the second is reachable at `ssh dev@devaloy-two`.
+
+The container name is the one that actually fails without this. It is global to the Docker daemon and Compose does not prefix it with the project name, so a second stack dies on `the container name "/devaloy" is already in use`.
+
+Three things to get right on the second box:
+
+- Give it a **reusable** auth key, or a second key of its own. A one-shot `TS_AUTHKEY` that the first box already spent will not join the second.
+- Run the second stack from its own checkout directory, or pass `-p` yourself. Two `docker compose up` runs in one directory still share a project.
+- Set `DEVALOY_MEM_LIMIT` and `DEVALOY_CPUS` on both. Two unbounded agent boxes on one server will take the host's memory between them.
+
+Under Dokploy, set `DEVALOY_NAME` in the Environment tab. Dokploy already gives each app its own volume prefix via `-p`, so there the key is doing the container name, the hostname and the tailnet node.
+
 ## (Optional) phone push notifications
 
 Because you are not sitting in front of this box, nothing tells you when an agent

@@ -1,3 +1,19 @@
+# The compose project name, which is also the prefix on every named volume at
+# the bottom of this file (`${DEVALOY_NAME}_home`, `${DEVALOY_NAME}_docker-data`
+# …). It defaults to `devaloy`, which is what a checkout in a `devaloy/`
+# directory already got from the directory name — so an existing box keeps its
+# existing volumes and there is nothing to migrate.
+#
+# Set DEVALOY_NAME to run a SECOND devaloy on one host. It is the single key
+# that separates the two: container name, shell hostname, tailnet node name and
+# volume prefix all derive from it, so two stacks share no name and no data.
+#
+# Dokploy overrides this. It always runs compose with an explicit `-p <appname>`
+# and a `-p` flag beats this key, so under Dokploy the volume prefix stays the
+# app name (already unique per app) and DEVALOY_NAME governs only the container
+# name, the hostname and the tailnet node.
+name: ${DEVALOY_NAME:-devaloy}
+
 services:
   devaloy:
     build:
@@ -24,8 +40,21 @@ services:
         # its own namespaces, which is what DEVALOY_RUNTIME or DEVALOY_PRIVILEGED
         # further down grant — see the comment on those two.
         WITH_DOCKER: ${WITH_DOCKER:-false}
-    container_name: devaloy
-    hostname: devaloy
+    # A container name is global to the Docker daemon, and compose does NOT
+    # prefix it with the project name the way it prefixes volumes. Two stacks
+    # that both hardcode `devaloy` collide on it, and the second one fails to
+    # create with "the container name /devaloy is already in use". Driving it
+    # from DEVALOY_NAME is what lets a second devaloy exist on one host.
+    #
+    # The default keeps every `docker exec -it devaloy …` command in the README
+    # and the wiki working unchanged. On a second stack, substitute the name you
+    # set: `docker exec -it devaloy-two …`.
+    container_name: ${DEVALOY_NAME:-devaloy}
+    # Cosmetic next to the line above — a hostname lives in the container's own
+    # UTS namespace, so a duplicate is legal and errors on nothing. It is driven
+    # from the same key anyway, because the shell prompt is how you tell which
+    # of two boxes you are typing into.
+    hostname: ${DEVALOY_NAME:-devaloy}
     init: true
     # Nothing is published. There is no `ports:` key on purpose, so nothing here
     # is reachable from the internet or from the Docker host's own network
@@ -134,7 +163,17 @@ services:
     pids_limit: ${DEVALOY_PIDS_LIMIT:--1}
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
-      - TS_HOSTNAME=${TS_HOSTNAME:-devaloy}
+      # The tailnet node name, and the host part of `ssh dev@<name>`. It falls
+      # through to DEVALOY_NAME so one key names the box everywhere, and setting
+      # TS_HOSTNAME explicitly still wins for a box whose tailnet name already
+      # differs from its container name.
+      #
+      # This one is global to the TAILNET, not to the host, so it needs a
+      # distinct value even for two devaloy boxes on two different servers.
+      # Reusing a name does not error: Tailscale silently joins the second node
+      # as `<name>-1`, and your SSH alias then points at whichever one it
+      # registered first.
+      - TS_HOSTNAME=${TS_HOSTNAME:-${DEVALOY_NAME:-devaloy}}
       # Tailscale rewriting /etc/resolv.conf inside a container clobbers
       # Docker's resolver. Only turn this on if you need MagicDNS *from* the
       # box.
@@ -217,7 +256,8 @@ services:
       # The nested daemon's image layers, containers and volumes. Its own volume
       # rather than the container's writable layer, for two reasons: image
       # layers do not belong in a layer that a rebuild throws away, and a
-      # `docker volume rm devaloy_docker-data` on the host is then how you take
+      # `docker volume rm ${DEVALOY_NAME}_docker-data` on the host is then how
+      # you take
       # back every gigabyte of project images without touching a single repo.
       #
       # It is declared unconditionally, like the other two. An empty named

@@ -9,12 +9,18 @@ repo defines in one place. For what any of it is *for*, see
 All are set in `.env` beside `docker-compose.yml`, and every one is optional
 except `TS_AUTHKEY` on a first boot.
 
+### Identity
+
+| Variable | Default | Effect |
+|---|---|---|
+| `DEVALOY_NAME` | `devaloy` | Names the box everywhere it can collide: `container_name`, `hostname`, the compose project name (so the `home`, `tailscale-state` and `docker-data` volume prefixes), and the `TS_HOSTNAME` default. Set it to run a second devaloy on one host. Under Dokploy the volume prefix comes from the app name via `-p` instead, and this key governs the rest. |
+
 ### Tailscale
 
 | Variable | Default | Effect |
 |---|---|---|
 | `TS_AUTHKEY` | empty | Auth key for joining the tailnet. Must be **reusable, non-expiring and untagged**. Optional on a redeploy — the node identity is already in the `tailscale-state` volume. |
-| `TS_HOSTNAME` | `devaloy` | Node name on the tailnet, and the name given to the signing key registered on GitHub. |
+| `TS_HOSTNAME` | `DEVALOY_NAME` (`devaloy`) | Node name on the tailnet, and the name given to the signing key registered on GitHub. Set it only when the tailnet name must differ from the container name; otherwise let `DEVALOY_NAME` drive it. The name is global to the tailnet, so two boxes that share one join as `<name>` and `<name>-1`. |
 | `TS_ACCEPT_DNS` | `false` | `true` passes `--accept-dns=true`. Letting Tailscale rewrite `/etc/resolv.conf` inside a container clobbers Docker's resolver — turn it on only if you need MagicDNS resolution *from* the box. |
 
 ### Credentials

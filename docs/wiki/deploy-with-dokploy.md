@@ -121,10 +121,7 @@ same project.
 
 Two things it does *not* do:
 
-- It does not rename the container. `container_name: devaloy` is fixed, so the
-  §6 break-glass `docker exec -it devaloy …` commands are unaffected — but it
-  also means you cannot run two devaloy stacks on one host; the second will
-  collide on that name regardless of isolation.
+- It does not rename the container. That comes from `DEVALOY_NAME`, which defaults to `devaloy`, so the §6 break-glass `docker exec -it devaloy …` commands are unaffected. A container name is global to the daemon and compose never prefixes it, so a second devaloy stack on the same host needs `DEVALOY_NAME` set to something else in its Environment tab — isolation alone will not separate the two.
 - It does not change the volume names. Those come from the app name via `-p`,
   which is already unique (§7).
 

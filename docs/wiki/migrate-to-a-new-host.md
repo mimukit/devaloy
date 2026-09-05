@@ -32,7 +32,7 @@ Two volumes carry the state worth moving: `home` (repos, toolchain, credentials,
 docker compose down
 ```
 
-2. Find the real volume names. Compose prefixes them with the project name — `devaloy_home` for a checkout in a directory named `devaloy`, something else under Dokploy — so confirm rather than guess:
+2. Find the real volume names. Compose prefixes them with the project name, which is `DEVALOY_NAME` and defaults to `devaloy` — so `devaloy_home` on a stock box, the app name under Dokploy, and your own value on a second box. Confirm rather than guess:
 
 ```sh
 docker volume ls | grep -E 'home|tailscale'
