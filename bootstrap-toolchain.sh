@@ -24,7 +24,7 @@ set -euo pipefail
 # re-resolving skills mid-session, but it is NOT how a newly authored skill
 # reaches the box. That is `devaloy-update` (or `skmi`), which runs --force and
 # skips the gate entirely — so publishing a skill needs no edit here.
-TOOLSET_REVISION=5
+TOOLSET_REVISION=6
 
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
 
@@ -101,6 +101,14 @@ mise use -g npm:turbo@latest
 # A full-screen git UI is the difference between reviewing a diff over a phone
 # tether and giving up on it.
 mise use -g lazygit@latest
+# Neovim, for the LazyVim config installed further down. Noble ships 0.9.5 and
+# LazyVim needs >= 0.11.2, so this comes from mise rather than the apt list in
+# the Dockerfile. Its search binaries (ripgrep, fd, unzip) DO come from apt —
+# they are system packages with no version demand behind them.
+mise use -g neovim@latest
+# The tree-sitter CLI, which `:checkhealth lazyvim` reports as an error without.
+# nvim-treesitter needs it to build a grammar that ships no prebuilt parser.
+mise use -g tree-sitter@latest
 mise use -g "herdr@${MISE_HERDR_VERSION}"
 # The AI agents. mise's registry entries fetch the same upstream artifacts their
 # own installers do — Claude Code's binary checksummed against the release
@@ -179,6 +187,40 @@ export PATH="${HOME}/.local/share/mise/shims:${PATH}"
 
 echo "installing agent skills from mimukit/skills"
 skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y
+
+# --- LazyVim ----------------------------------------------------------------
+# The LazyVim starter, cloned into the home volume rather than vendored into
+# config/. Two reasons. The starter is meant to be edited — it IS your config,
+# not a template this repo owns — so a boot-time copy from config/ would
+# overwrite your own lua/config and lua/plugins on every redeploy, which is what
+# entrypoint.sh does to the zsh and agent files. And ~/.config/nvim persists, so
+# a clone survives a redeploy anyway.
+#
+# Guarded on the directory, not on the revision marker: --force must not blow
+# away a config you have changed. To start over, delete ~/.config/nvim (plus the
+# ~/.local/share/nvim, ~/.local/state/nvim and ~/.cache/nvim state directories)
+# and run devaloy-update.
+#
+# Non-fatal, like the herdr block below and unlike the skills install. A box
+# with no editor config still has vim from the apt list, and it is not worth
+# costing the volume its revision marker.
+if [ ! -d "${HOME}/.config/nvim" ]; then
+  echo "installing the LazyVim starter into ~/.config/nvim"
+  if git clone --depth 1 https://github.com/LazyVim/starter "${HOME}/.config/nvim"; then
+    # The starter's own git history is the starter's, not yours. Upstream's
+    # install steps delete it so the directory is free to become your repo.
+    rm -rf "${HOME}/.config/nvim/.git"
+    # Resolve the plugins now instead of on your first `nvim`. Over a phone
+    # tether, a cold Lazy sync in the foreground is a minute of a blank screen.
+    if ! nvim --headless "+Lazy! sync" +qa 2>&1 | tail -5; then
+      echo "WARNING: the first Lazy sync failed — run it again inside nvim." >&2
+    fi
+  else
+    echo "WARNING: the LazyVim starter clone failed. Re-run devaloy-update." >&2
+  fi
+else
+  echo "~/.config/nvim exists, leaving it alone"
+fi
 
 # --- herdr agent-state integrations -----------------------------------------
 # What makes a herdr pane show working/idle instead of nothing. herdr installs

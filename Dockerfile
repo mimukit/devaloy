@@ -135,6 +135,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         btop \
         bat \
         jq \
+        # LazyVim's search stack. Neovim itself comes from mise (see
+        # bootstrap-toolchain.sh); these are the binaries its pickers shell out
+        # to, plus the unzip that Mason's installers expect on PATH.
+        ripgrep \
+        fd-find \
+        fzf \
+        unzip \
         zsh \
         # Sourced from /usr/share by config/zsh/zshrc. Distro packages rather
         # than a plugin manager: the point is that a cold boot clones nothing.
@@ -155,7 +162,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     # Ubuntu ships bat as `batcat` to avoid a name clash with bacula-console.
     # Link it in /usr/bin, not /usr/local/bin — link-shims owns the latter and
     # will overwrite a symlink it finds there.
-    && ln -s /usr/bin/batcat /usr/bin/bat
+    # Ubuntu ships fd as `fdfind` for the same reason (clash with fdclone).
+    # LazyVim looks for `fd` first and falls back to `fdfind`, but plenty of
+    # plugins only know the short name.
+    && ln -s /usr/bin/batcat /usr/bin/bat \
+    && ln -s /usr/bin/fdfind /usr/bin/fd
 
 COPY --from=fetch /out/usr/share/zsh-completions/ /usr/share/zsh-completions/
 
