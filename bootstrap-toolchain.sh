@@ -28,21 +28,27 @@ TOOLSET_REVISION=6
 
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
 
-# The optional Paseo daemon (see the block further down). Read up here because
-# the marker has to know about it: a revision number alone cannot express an
+# The optional tools (see the blocks further down). Read up here because the
+# marker has to know about them: a revision number alone cannot express an
 # optional tool, so a volume already at revision N would skip this script
 # forever and WITH_PASEO=true would never install anything. Same class of bug as
 # the one described above, where claude and codex arrived on a volume whose
 # marker already said "done".
 #
-# So the marker records the FLAG as well as the revision — `5` or `5+paseo` —
-# and flipping the key invalidates it. Re-running is close to free: the boot
-# path below runs `mise install`, never `mise upgrade`, so every tool already on
-# the volume stays exactly where it is.
+# So the marker records each FLAG as well as the revision, in a fixed order —
+# `5`, `5+paseo`, `5+browser` or `5+paseo+browser` — and flipping either key
+# invalidates it. A volume that already reads `5+paseo` still matches, so adding
+# a flag here never re-runs a box that did not ask for it. Re-running is close
+# to free: the boot path below runs `mise install`, never `mise upgrade`, so
+# every tool already on the volume stays exactly where it is.
 WITH_PASEO="${WITH_PASEO:-false}"
+WITH_BROWSER="${WITH_BROWSER:-false}"
 MARKER_VALUE="${TOOLSET_REVISION}"
 if [ "${WITH_PASEO}" = "true" ]; then
-  MARKER_VALUE="${TOOLSET_REVISION}+paseo"
+  MARKER_VALUE="${MARKER_VALUE}+paseo"
+fi
+if [ "${WITH_BROWSER}" = "true" ]; then
+  MARKER_VALUE="${MARKER_VALUE}+browser"
 fi
 
 FORCE=0
@@ -141,6 +147,27 @@ if [ "${WITH_PASEO}" = "true" ]; then
 fi
 # --- OPTIONAL: the Paseo daemon. END ------------------------------------------
 
+# --- OPTIONAL: headless browser capture (WITH_BROWSER). BEGIN -----------------
+# The npm half of the feature; the Dockerfile block of the same name holds the
+# shared libraries. `playwright-cli` is a plain npm package, so it lands in the
+# home volume like Paseo does, and the same key that built the libraries into
+# the image is what turns this on. Turning it back off uninstalls nothing, for
+# the same reason as Paseo. The browser download is further down, after
+# `mise install` has put the CLI on the shims path.
+#
+# PINNED, unlike Paseo, and not by choice. Releases 0.1.0 through 0.1.18 carry
+# npm provenance from GitHub Actions; 0.1.19 (2026-09-01) was published by hand
+# from Microsoft's npm account with none. mise's npm backend treats that as a
+# trust downgrade and refuses `@latest` outright. This is the newest release
+# with provenance. Move the pin by hand once a later release carries it again
+# (`npm view @playwright/cli@<v> dist.attestations`), rather than adding a
+# trust-policy exclusion or shelling out to npm, which would waive the check
+# for every release that follows.
+if [ "${WITH_BROWSER}" = "true" ]; then
+  mise use -g npm:@playwright/cli@0.1.18
+fi
+# --- OPTIONAL: headless browser capture. END ----------------------------------
+
 mise install
 
 # `mise install` does NOT move a tool that is already installed, even one pinned
@@ -220,6 +247,35 @@ if [ ! -d "${HOME}/.config/nvim" ]; then
   fi
 else
   echo "~/.config/nvim exists, leaving it alone"
+fi
+
+# --- the Chromium binary (only when WITH_BROWSER=true) -----------------------
+# Here rather than in the WITH_BROWSER block above because it needs the CLI
+# that `mise install` has only just put on the shims path. `install-browser` is
+# Playwright's own `install` command under an alias, and its behaviour is why
+# there is no guard around it and no prune after it:
+#
+#   - It returns at once when the build it wants is already on the volume, so
+#     an ordinary redeploy costs nothing. A hand-written "skip if the directory
+#     exists" would be wrong: each @playwright/cli release wants its own Chromium
+#     revision, so after a devaloy-update the directory exists AND a download is
+#     needed.
+#   - It removes builds that no installed Playwright links to, so the volume
+#     does not grow by one Chromium per update.
+#
+# `chromium` is both builds, Chrome for Testing and the headless shell, and
+# both are needed: with PLAYWRIGHT_MCP_BROWSER=chromium (see entrypoint.sh)
+# Playwright launches the full build even headless, so `--only-shell` would
+# leave a browser that cannot start. Measured on arm64: 982 MB in
+# ~/.cache/ms-playwright (642 MB Chromium, 337 MB headless shell, 3 MB
+# Playwright's ffmpeg), 330 s on a cold volume, 1 s when already present. It is
+# the home volume, so it survives a redeploy.
+#
+# Fatal, like the skills install above: a half-downloaded browser must not
+# write the marker below, and the next boot retries.
+if [ "${WITH_BROWSER}" = "true" ]; then
+  echo "installing the Playwright Chromium build"
+  playwright-cli install-browser chromium
 fi
 
 # --- herdr agent-state integrations -----------------------------------------

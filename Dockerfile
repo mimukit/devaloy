@@ -298,6 +298,64 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     fi
 # --- OPTIONAL: nested Docker Engine and Compose. END ---
 
+# ---------------------------------------------------------------------------
+# OPTIONAL: headless browser capture (WITH_BROWSER). BEGIN
+#
+# The system half of `playwright-cli`: the shared libraries a headless Chromium
+# needs to start on a minimal noble base, plus ffmpeg. The browser itself is NOT
+# here. Playwright's Chromium is a per-release download that lands in
+# ~/.cache/ms-playwright, which is the home volume, so bootstrap-toolchain.sh
+# installs it next to the npm package that drives it. That is the same split
+# WITH_DOCKER makes between the engine (image) and its data (volume): the part
+# apt owns lives in the image, the part that moves with a `devaloy-update` lives
+# where an update can reach it.
+#
+# One contiguous block, deliberately not folded into the apt list above, for the
+# same two reasons as the Orca block: removing it later is deleting one unit,
+# and flipping WITH_BROWSER does not invalidate the main apt layer.
+#
+# The library set is what `playwright install-deps chromium` resolves on noble,
+# listed by hand so a build never runs an installer script as root. ffmpeg is
+# here for GIF conversion: Playwright ships its own ffmpeg build for video
+# recording, but that build only records, and a webm from `video-stop` needs
+# a real ffmpeg to become a GIF.
+#
+# No assertion at the end, unlike the Orca and Docker blocks, and that is not
+# an oversight: there is no binary in the image to `ldd`. The first launch on
+# the box is the check, and entrypoint.sh warns when this block is missing from
+# an image that the key says should carry it.
+#
+# OFF BY DEFAULT, like WITH_ORCA and WITH_DOCKER: an opt-in capability, not
+# part of devaloy's baseline. Measured on arm64 it takes the image from 660 MB
+# to 1.09 GB; ffmpeg's dependency tree is most of that. It is a BUILD arg, so
+# `docker compose up -d` alone will not pick up a change to it. You need
+# `--build`. The same key is also read at runtime, by the bootstrap and the
+# entrypoint — see compose.
+# ---------------------------------------------------------------------------
+ARG WITH_BROWSER=false
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    if [ "${WITH_BROWSER}" = "true" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends \
+            libnss3 \
+            libnspr4 \
+            libatk1.0-0t64 \
+            libatk-bridge2.0-0t64 \
+            libcups2t64 \
+            libdrm2 \
+            libxkbcommon0 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
+            libgbm1 \
+            libpango-1.0-0 \
+            libcairo2 \
+            libasound2t64 \
+            ffmpeg; \
+    fi
+# --- OPTIONAL: headless browser capture. END ---
+
 # No sshd, no authorized_keys, no host keys: Tailscale SSH is the only way in,
 # and it authenticates from tailnet identity plus the tailnet policy file.
 COPY --chmod=755 entrypoint.sh /entrypoint.sh

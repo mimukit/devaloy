@@ -40,6 +40,22 @@ services:
         # its own namespaces, which is what DEVALOY_RUNTIME or DEVALOY_PRIVILEGED
         # further down grant — see the comment on those two.
         WITH_DOCKER: ${WITH_DOCKER:-false}
+        # Builds the shared libraries a headless Chromium needs into the image,
+        # so an agent on the box can render a page with `playwright-cli` and
+        # screenshot it to /tmp. OFF by default: it takes the image from 660 MB
+        # to 1.09 GB on arm64, and the bootstrap then adds a 982 MB Chromium to
+        # the home volume.
+        #
+        # A BUILD arg like the two above, and for the same reason: it decides
+        # what goes into the image, so `docker compose up -d` alone will NOT
+        # pick up a change. You need `--build`.
+        #
+        # The same key is ALSO an environment variable further down. The build
+        # arg puts the libraries in the image; the runtime key makes the
+        # bootstrap install the CLI and the browser into the home volume, and
+        # makes the entrypoint export the browser defaults. One thing to set in
+        # .env, two readers, like WITH_DOCKER.
+        WITH_BROWSER: ${WITH_BROWSER:-false}
     # A container name is global to the Docker daemon, and compose does NOT
     # prefix it with the project name the way it prefixes volumes. Two stacks
     # that both hardcode `devaloy` collide on it, and the second one fails to
@@ -161,6 +177,14 @@ services:
     # someone's live site and this is a dev box.
     cpu_shares: ${DEVALOY_CPU_SHARES:-1024}
     pids_limit: ${DEVALOY_PIDS_LIMIT:--1}
+    # /dev/shm. Docker's default is 64 MB, and a headless Chromium exhausts that
+    # on a heavy page and crashes the tab. Playwright's Docker guide answers with
+    # `--ipc=host`, which would hand this container the HOST's IPC namespace;
+    # a bigger shm fixes the same crash without that. The trade: /dev/shm is a
+    # tmpfs, so it costs nothing until written to, and what is written counts
+    # against DEVALOY_MEM_LIMIT above. Set whether WITH_BROWSER is on or off,
+    # because an unwritten tmpfs is free either way.
+    shm_size: ${DEVALOY_SHM_SIZE:-512m}
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY:-}
       # The tailnet node name, and the host part of `ssh dev@<name>`. It falls
@@ -249,6 +273,13 @@ services:
       # this is what turns it on. Both come from the same .env key, so there is
       # one thing to set — but only a rebuild moves the first one.
       - WITH_DOCKER=${WITH_DOCKER:-false}
+      # The runtime half of the build arg at the top of this file. Read by
+      # bootstrap-toolchain.sh, which installs `playwright-cli` and the Chromium
+      # build into the home volume, and by entrypoint.sh, which exports the
+      # three PLAYWRIGHT_MCP_* defaults into every shell and warns when the
+      # image was built without the libraries. Same one-key-two-readers shape
+      # as WITH_DOCKER: only a rebuild moves the build arg.
+      - WITH_BROWSER=${WITH_BROWSER:-false}
     volumes:
       - home:/home/dev
       # Node identity lives here. Lose it and the box rejoins as a new machine.

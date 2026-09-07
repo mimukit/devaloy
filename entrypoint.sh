@@ -61,6 +61,44 @@ export MISE_MINIMUM_RELEASE_AGE=0
 # connected. Raising is unprivileged; only lowering needs CAP_SYS_RESOURCE.
 echo 0 > /proc/self/oom_score_adj 2>/dev/null || true
 EOF
+
+# --- browser defaults (only when WITH_BROWSER=true) ---
+# Appended after the heredoc above rather than inside it, because that heredoc
+# is quoted and this block is conditional. Three defaults, each one correcting
+# what `playwright-cli` would otherwise do on this box, read from the source of
+# @playwright/cli 0.1.19 (playwright-core 1.63):
+#
+#   PLAYWRIGHT_MCP_BROWSER=chromium    A bare `playwright-cli open` launches
+#                                      Google Chrome, which this image does not
+#                                      carry. `chromium` selects the Chrome for
+#                                      Testing build the bootstrap downloaded.
+#   PLAYWRIGHT_MCP_SANDBOX=true        On Linux, for the bundled Chromium,
+#                                      Playwright sets chromiumSandbox=false by
+#                                      default and pushes --no-sandbox onto the
+#                                      launch. This keeps Chromium's own sandbox
+#                                      ON. It works because compose already sets
+#                                      seccomp=unconfined for Codex's bubblewrap,
+#                                      the same user-namespace permission the
+#                                      sandbox needs — the same fact the Orca
+#                                      block below relies on.
+#   PLAYWRIGHT_MCP_OUTPUT_DIR          A bare `screenshot` writes to
+#                                      .playwright-cli/ under the cwd, which is
+#                                      a repo in the home volume. /tmp is shared
+#                                      with the Paseo daemon in this container,
+#                                      so the printed path is what Paseo opens,
+#                                      and the files die with the container.
+#
+# Nothing here needs the libraries or the browser to be present, so it is
+# written before the toolchain check rather than after it.
+if [ "${WITH_BROWSER:-false}" = "true" ]; then
+  cat >> "${ENV_SNIPPET}" <<'EOF'
+
+# Browser capture defaults (WITH_BROWSER=true) — see entrypoint.sh for why each.
+export PLAYWRIGHT_MCP_BROWSER=chromium
+export PLAYWRIGHT_MCP_SANDBOX=true
+export PLAYWRIGHT_MCP_OUTPUT_DIR=/tmp/playwright-cli
+EOF
+fi
 chown "${DEV_USER}:${DEV_USER}" "${ENV_SNIPPET}"
 
 if ! grep -qF '.devaloy_env' "${DEV_HOME}/.bashrc" 2>/dev/null; then
@@ -395,10 +433,24 @@ fi
 # bootstrap died at `mise use` and never wrote its marker. `node` and `herdr`
 # are registry entries, which is why those two are safe. Paseo now tracks latest
 # with no variable at all — see the comment in bootstrap-toolchain.sh.
+# WITH_BROWSER is the one key here that is ALSO a build argument. The bootstrap
+# below installs the CLI and the browser into the home volume on this key alone,
+# but Chromium cannot start without the libraries the Dockerfile block puts in
+# the image — so a box that set the key without --build gets a working
+# `playwright-cli` and a browser that dies on a missing .so. Same trap as
+# WITH_DOCKER, and warned about the same way. libnss3 is the probe because it is
+# the first library Chromium loads and it is in no other block of the image.
+if [ "${WITH_BROWSER:-false}" = "true" ] && ! dpkg -s libnss3 >/dev/null 2>&1; then
+  log "WARNING: WITH_BROWSER=true but the Chromium libraries are not in this image."
+  log "WARNING: WITH_BROWSER is also a BUILD argument — 'docker compose up -d' cannot"
+  log "WARNING: add them. Redeploy with --build, or in Dokploy tick Rebuild."
+fi
+
 log "Checking the mise toolchain"
 if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
     MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
     WITH_PASEO='${WITH_PASEO:-false}' \
+    WITH_BROWSER='${WITH_BROWSER:-false}' \
     /usr/local/bin/bootstrap-toolchain.sh"; then
   log "Toolchain ready"
 else
