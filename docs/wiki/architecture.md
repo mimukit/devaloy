@@ -79,10 +79,11 @@ was. The failure modes are enumerated in
 
 | Layer | Lifetime | Holds |
 |---|---|---|
-| The image | Rebuilt on `up --build` | `zsh`, `git`, `python3`, `vim`, `tmux`, `build-essential`, `bubblewrap`, `tailscale`, optionally Orca, optionally Docker Engine |
-| `home` volume → `/home/dev` | Survives redeploys, dies with `down -v` | Repos, shell history, mise + the whole toolchain, agent credentials, skills |
+| The image | Rebuilt on `up --build` | `zsh`, `git`, `python3`, `vim`, `tmux`, `build-essential`, `bubblewrap`, `tailscale`, optionally Orca, optionally Docker Engine, optionally the Chromium runtime libraries and `ffmpeg` |
+| `home` volume → `/home/dev` | Survives redeploys, dies with `down -v` | Repos, shell history, mise + the whole toolchain, agent credentials, skills, and on a `WITH_BROWSER=true` box the Chromium builds under `~/.cache/ms-playwright` |
 | `tailscale-state` volume | Same | The node identity |
 | `docker-data` volume → `/var/lib/docker` | Same | The nested daemon's images, containers and volumes. Only used when built `WITH_DOCKER=true`. |
+| `/tmp` | Dies with the container | Browser screenshots, under `/tmp/playwright-cli`. Deliberately not a volume: the Paseo daemon in this same container reads the path directly, and a capture has no life beyond the session that took it. |
 
 Losing `tailscale-state` means the box rejoins the tailnet as a new machine,
 under a new name, with the policy file no longer matching it.
@@ -277,10 +278,50 @@ and not from the VPS public interfaces.
 whose compose file sets a `restart:` policy. The boot log prints whatever came
 back.
 
+## The optional browser capture
+
+`WITH_BROWSER` is read twice, and that split is the design. As a **build
+argument** it puts the shared libraries a headless Chromium needs, plus
+`ffmpeg`, in the image: about 430 MB on arm64. As a **runtime variable** it
+makes the bootstrap install `playwright-cli` and download a Chromium into
+`~/.cache/ms-playwright`, in the home volume, and makes the entrypoint export
+three defaults into `~/.devaloy_env`. The image carries what apt owns; the
+volume carries what a `devaloy-update` moves. A box that sets the key without
+`--build` gets a warning in the boot log, the way `WITH_DOCKER` does.
+
+The browser is 982 MB on the volume, both the Chrome for Testing build and the
+headless shell, because with the bundled Chromium selected Playwright launches
+the full build even headless. The download runs once: Playwright's installer
+returns in about a second when the build it wants is present, and it removes
+builds that no installed release links to, so the volume does not grow by one
+Chromium per CLI update. There is no guard or prune of devaloy's own.
+
+The three exports exist because `playwright-cli` gets every default wrong for
+this box. It launches Google Chrome unless told `chromium`. On Linux it launches
+the bundled Chromium with `--no-sandbox` unless `PLAYWRIGHT_MCP_SANDBOX=true`;
+measured on the box, 8 Chromium processes carry the flag without the export and
+0 with it, and the capture succeeds either way. The sandbox works for the same
+reason Orca's does: compose sets `seccomp=unconfined` for Codex's bubblewrap,
+which is the user-namespace permission Chromium's sandbox needs (`Seccomp: 0`
+in `/proc/self/status` under runc). And it writes screenshots under the current
+directory unless `PLAYWRIGHT_MCP_OUTPUT_DIR` says `/tmp/playwright-cli`.
+
+`shm_size` is the one compose change that is not gated on the key. Docker's
+64 MB `/dev/shm` crashes a Chromium tab on a heavy page; Playwright's Docker
+guide answers with `--ipc=host`, which would share the host's IPC namespace,
+and a 512 MB tmpfs answers it without that. An unwritten tmpfs is free, so the
+default applies to every box.
+
+The CLI is pinned rather than tracking latest, and not by choice: `mise`'s npm
+backend refuses `@playwright/cli` 0.1.19 as a trust downgrade, because every
+release before it carried npm provenance and that one does not. The pin is the
+newest release that does. Waiving the check would waive it for every release
+after, so the pin moves by hand instead.
+
 ## See also
 
 - [Reference](reference.md) — the concrete variables, commands and paths behind
   everything above.
 - [Getting started](getting-started.md) — the same system from the outside.
 
-_Verified against `main`@`b6bc42b` on 2026-08-25._
+_Verified against `main`@`d2e6886` plus the uncommitted browser-capture change on 2026-09-07._

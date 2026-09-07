@@ -60,6 +60,7 @@ From the image, available the moment you can log in:
 | Optional | the Orca runtime (`orca-ide`), only when built with `WITH_ORCA=true` — see [(Optional) the Orca apps](#optional-the-orca-apps) |
 | Optional | the Paseo daemon (`paseo`), only when run with `WITH_PASEO=true` — see [(Optional) the Paseo apps](#optional-the-paseo-apps). Installed from `mise`, not the image. |
 | Optional | Docker Engine and Compose (`docker`, `docker compose`, `docker buildx`), only when built with `WITH_DOCKER=true` — see [(Optional) Docker and Compose](#optional-docker-and-compose) |
+| Optional | headless browser capture (`playwright-cli` and a Chromium), only when built and run with `WITH_BROWSER=true` — see [(Optional) headless browser capture](#optional-headless-browser-capture). Libraries from the image, the CLI and the browser from `mise` into the home volume. |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `lazygit`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
@@ -650,6 +651,72 @@ at start rather than quietly picking one.
 - **Turning it back off needs a rebuild**, like `WITH_ORCA`. `WITH_DOCKER=false`
   plus `up -d --build` removes the engine; the `docker-data` volume stays until
   you remove it by hand.
+
+## (Optional) headless browser capture
+
+An agent on the box can render a page, screenshot it, and hand you the path.
+`WITH_BROWSER` is the key, and it is read twice: as a **build argument** that
+puts Chromium's shared libraries and `ffmpeg` in the image, and as a runtime
+variable that makes the boot bootstrap install `playwright-cli` and a Chromium
+into the home volume.
+
+```sh
+# in .env
+WITH_BROWSER=true
+```
+
+```sh
+docker compose up -d --build
+```
+
+**`--build` is not optional**, for the same reason as `WITH_ORCA`. Set the key
+without it and the boot log says so: the CLI installs, the browser downloads,
+and Chromium dies on a missing library the moment it starts.
+
+The first boot after that downloads a 982 MB Chromium into
+`~/.cache/ms-playwright`. It survives a redeploy, and a later boot skips it in
+about a second. Then, from any shell on the box:
+
+```sh
+playwright-cli open https://example.com
+playwright-cli screenshot
+playwright-cli close
+```
+
+`screenshot` prints the path it wrote, under `/tmp/playwright-cli/`. Paseo runs
+in this same container and opens that path directly, so the path is the whole
+hand-off: nothing is pushed anywhere and no port is published. `/tmp` is not a
+volume, so screenshots die with the container.
+
+`close` matters. `open` starts a background daemon that keeps Chromium alive
+between commands, and a session an agent forgets holds a few hundred MB until
+something closes it. `playwright-cli close-all` ends every session at once.
+There is no idle reaper: a forgotten browser sits at `oom_score_adj` 0 like any
+other shell child, so under a memory ceiling it dies before tailscaled does.
+
+### What to know before you turn it on
+
+- **The image grows by about 430 MB.** Measured on `arm64`: 660 MB without it,
+  1.09 GB with. Most of that is `ffmpeg`, which is in the image so a webm from
+  `playwright-cli video-stop` can become a GIF; Playwright's own ffmpeg build
+  only records.
+- **Three defaults are exported into every shell** when the key is on, and each
+  one corrects what `playwright-cli` would otherwise do here. The CLI launches
+  Google Chrome by default, which the image does not carry, so
+  `PLAYWRIGHT_MCP_BROWSER=chromium` points it at the bundled build. Playwright
+  turns Chromium's sandbox **off** by default for that build on Linux, so
+  `PLAYWRIGHT_MCP_SANDBOX=true` turns it back on; the sandbox works because the
+  compose file already sets `seccomp=unconfined` for Codex's bubblewrap.
+  Screenshots default to `.playwright-cli/` under the current directory, which
+  is a repo in the home volume, so `PLAYWRIGHT_MCP_OUTPUT_DIR=/tmp/playwright-cli`
+  moves them out.
+- **The CLI is pinned**, not tracking latest like Paseo. `@playwright/cli`
+  0.1.19 was published without npm provenance, and `mise` refuses that as a
+  trust downgrade from the releases before it. The pin in
+  `bootstrap-toolchain.sh` is the newest release with provenance; move it by
+  hand when a later one carries it again.
+- **Turning it back off needs a rebuild**, like `WITH_ORCA`. The CLI and the
+  browser stay in the home volume; only the exports and the warning go away.
 
 ## Updating the toolchain
 

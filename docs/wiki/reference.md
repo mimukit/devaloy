@@ -117,6 +117,13 @@ All off by default. See [Size the container resource limits](vm-resource-limits.
 | `DEVALOY_CPUS` | `0` (unlimited) | `cpus` |
 | `DEVALOY_CPU_SHARES` | `1024` | `cpu_shares` |
 | `DEVALOY_PIDS_LIMIT` | `-1` (unlimited) | `pids_limit` |
+| `DEVALOY_SHM_SIZE` | `512m` | `shm_size` |
+
+`DEVALOY_SHM_SIZE` is the one with a real default. Docker's own is 64 MB, and a
+headless Chromium crashes at that on a heavy page; Playwright's advice is
+`--ipc=host`, which would share the host's IPC namespace, and a bigger tmpfs
+fixes the same crash without it. It costs nothing until written to, and then
+counts against `DEVALOY_MEM_LIMIT`. Set whether `WITH_BROWSER` is on or off.
 
 ### Nested Docker
 
@@ -131,16 +138,35 @@ nested `dockerd` needs. Set **one**, never both. See
 
 `WITH_DOCKER` is the third key and it is a build argument, listed below.
 
+### Browser capture
+
+| Variable | Default | Effect |
+|---|---|---|
+| `WITH_BROWSER` | `false` | The runtime half of the build argument of the same name. Makes the bootstrap install `playwright-cli` (pinned, see below) and download a Chromium into `~/.cache/ms-playwright`, and makes the entrypoint export the three `PLAYWRIGHT_MCP_*` defaults into `~/.devaloy_env`. Warns at boot when the image was built without the libraries. |
+
+Flipping it re-runs the toolchain bootstrap, because the revision marker
+records the flag the way it records `WITH_PASEO`.
+
+The three exports, only present when the key is on:
+
+| Export | Value | Why |
+|---|---|---|
+| `PLAYWRIGHT_MCP_BROWSER` | `chromium` | The CLI defaults to Google Chrome, which the image does not carry. |
+| `PLAYWRIGHT_MCP_SANDBOX` | `true` | Playwright launches the bundled Chromium with `--no-sandbox` on Linux unless told otherwise. Measured: 8 Chromium processes carry the flag without this export, 0 with it. |
+| `PLAYWRIGHT_MCP_OUTPUT_DIR` | `/tmp/playwright-cli` | A bare `screenshot` would otherwise write into `.playwright-cli/` under the current directory. |
+
 ## Build arguments
 
 | Argument | Default | Effect |
 |---|---|---|
 | `WITH_ORCA` | `false` | Builds in the `orca serve` runtime. Takes the image from 683 MB to 1.6 GB on arm64. |
 | `WITH_DOCKER` | `false` | Builds in Docker Engine, CLI, Compose and buildx, and adds `dev` to the `docker` group. About +460 MB on arm64 (918 MB to 1.38 GB, measured with Docker 29). Needs `DEVALOY_RUNTIME` or `DEVALOY_PRIVILEGED` set as well, or the daemon will not start. |
+| `WITH_BROWSER` | `false` | Builds in the shared libraries a headless Chromium needs, plus `ffmpeg`. About +430 MB on arm64 (660 MB to 1.09 GB, measured with Docker 29). The browser itself is not in the image: the same key, read at runtime, makes the bootstrap download it into the home volume (982 MB, measured). |
 
-Both are read from `.env` like the variables above, but they are **build
-arguments** — `docker compose up -d` alone will not pick up a change to either.
-You need `docker compose up -d --build`.
+All three are read from `.env` like the variables above, but they are **build
+arguments** — `docker compose up -d` alone will not pick up a change to any of
+them. You need `docker compose up -d --build`. `WITH_BROWSER` is also read at
+runtime, and is listed above for that half.
 
 `WITH_PASEO` is the one to keep separate in your head. It looks like a sibling
 and is not: it is an environment variable listed above, because Paseo installs
@@ -161,6 +187,7 @@ Run as the `dev` user unless noted.
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |
 | `devaloy-prune` | Reclaims disk from the nested Docker daemon. Only on a `WITH_DOCKER=true` build. Takes `--all` (also images no container is running) and `--age <duration>` (default `168h`). Never touches a running container, and never runs on a timer. |
+| `playwright-cli` | Drives a headless Chromium. Only with `WITH_BROWSER=true`. `open <url>`, `screenshot` (prints a path under `/tmp/playwright-cli/`), `close`; `close-all` ends every session. Pinned to `@playwright/cli` 0.1.18 in `bootstrap-toolchain.sh`, the newest release with npm provenance. |
 
 Any argument to `bootstrap-toolchain.sh` other than `--force` exits `2` without
 installing anything.
@@ -236,7 +263,7 @@ on the box is pointless — the change is gone at the next redeploy.
 
 | Path | Mode | Contents |
 |---|---|---|
-| `~/.devaloy_env` | default | `PATH`, the mise release-age exclusion, sources `~/.devaloy_secrets`, resets `oom_score_adj` |
+| `~/.devaloy_env` | default | `PATH`, the mise release-age exclusion, sources `~/.devaloy_secrets`, resets `oom_score_adj`; plus the three `PLAYWRIGHT_MCP_*` exports when `WITH_BROWSER=true` |
 | `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` — only written when set |
 | `~/.config/agent-push.env` | **600** | `PUSH_NTFY_*` — only written when `NTFY_TOPIC` is set |
 | `~/.zshrc` | default | Copied from `config/zsh/zshrc` |
@@ -274,7 +301,9 @@ that signed yesterday does not fail every commit today.
 | Path | Notes |
 |---|---|
 | `~/.local/share/mise/shims` | Where the toolchain actually lives |
-| `~/.local/share/mise/.devaloy-bootstrapped` | The `TOOLSET_REVISION` marker. Written last, and only on success. |
+| `~/.local/share/mise/.devaloy-bootstrapped` | The `TOOLSET_REVISION` marker, with `+paseo` and `+browser` appended for the flags that were on. Written last, and only on success. |
+| `~/.cache/ms-playwright` | The Chromium builds `playwright-cli` launches. Only with `WITH_BROWSER=true`. In the home volume, so it survives a redeploy; Playwright's installer removes builds no installed release links to. |
+| `/tmp/playwright-cli` | Where a bare `playwright-cli screenshot` writes. Created by Playwright on first use. Not a volume: gone with the container. |
 | `/usr/local/bin` | The `link-shims` mirror. Outside the volume, so it is rebuilt each boot. |
 | `/opt/devaloy/config` | The image's copy of `config/`, the source for the sync |
 | `/var/lib/tailscale` | The `tailscale-state` volume. Node identity. |
@@ -308,4 +337,4 @@ network.
 three. `docker-data` is pure cache and is the one safe to delete on purpose when
 the disk fills.
 
-_Verified against `main`@`b6bc42b` on 2026-08-25._
+_Verified against `main`@`d2e6886` plus the uncommitted browser-capture change on 2026-09-07._
