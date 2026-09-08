@@ -215,7 +215,7 @@ if [ -d "${CONFIG_SRC}" ]; then
   as_dev "cp -f '${CONFIG_SRC}/zsh/zshrc' '${DEV_HOME}/.zshrc'"
   seed_config "${CONFIG_SRC}/claude" "${DEV_HOME}/.claude"
   seed_config "${CONFIG_SRC}/codex"  "${DEV_HOME}/.codex"
-  # Shared agent scripts (agent-push). ~/.local/bin rather than either agent's
+  # Shared agent scripts (agent-push, usage). ~/.local/bin rather than either agent's
   # directory, because both agents run the same script — the hook entries in
   # settings.json and hooks.json both point here. This directory is already on
   # PATH via .devaloy_env, and mise owns it too, so the merge copy matters: a

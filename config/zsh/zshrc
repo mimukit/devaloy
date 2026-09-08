@@ -138,6 +138,8 @@ alias clc='claude --model "claude-opus-5[1m]"'
 alias clcy='claude --allow-dangerously-skip-permissions'
 alias cx='codex'
 alias h='herdr'
+# Claude Code rate limits at a glance. `usage` is seeded from config/bin.
+alias u='usage'
 
 # node — the toolchain is pnpm, so these are `pnpm run` rather than a runner
 # like `nr` that isn't installed.

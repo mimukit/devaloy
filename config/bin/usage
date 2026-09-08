@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# Print the Claude Code 5-hour and 7-day usage limits on the terminal.
+#
+# Source: the `cachedUsageUtilization` block in ~/.claude.json. Claude Code
+# writes that block while a session runs; there is no CLI or API call here, so
+# the numbers are as fresh as the last session. The age of the cache is always
+# printed, so a stale reading is visible rather than silent.
+#
+# Usage:
+#   usage          coloured one-screen report
+#   usage --line   one line, same format as the status line
+#   usage --json   the raw utilization block
+
+set -u
+
+CONFIG="${CLAUDE_CONFIG_FILE:-$HOME/.claude.json}"
+MODE="report"
+
+case "${1:-}" in
+    --line) MODE="line" ;;
+    --json) MODE="json" ;;
+    -h|--help)
+        sed -n '2,12p' "$0" | cut -c3-
+        exit 0
+        ;;
+    "") ;;
+    *)
+        echo "usage: usage [--line|--json]" >&2
+        exit 2
+        ;;
+esac
+
+if [ ! -r "$CONFIG" ]; then
+    echo "usage: cannot read $CONFIG" >&2
+    exit 1
+fi
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "usage: jq is required" >&2
+    exit 1
+fi
+
+if [ "$MODE" = "json" ]; then
+    jq '.cachedUsageUtilization' "$CONFIG"
+    exit 0
+fi
+
+read -r FETCHED_MS FIVE_PCT FIVE_RESET SEVEN_PCT SEVEN_RESET TIER <<EOF
+$(jq -r '
+    .cachedUsageUtilization as $c
+    | [ ($c.fetchedAtMs // 0),
+        ($c.utilization.five_hour.utilization // "-"),
+        ($c.utilization.five_hour.resets_at // "-"),
+        ($c.utilization.seven_day.utilization // "-"),
+        ($c.utilization.seven_day.resets_at // "-"),
+        (.oauthAccount.organizationRateLimitTier // "-") ]
+    | @tsv' "$CONFIG" | tr '\t' ' ')
+EOF
+
+if [ "$FIVE_PCT" = "-" ]; then
+    echo "usage: no cached usage in $CONFIG — start a Claude Code session once" >&2
+    exit 1
+fi
+
+# --- colours: Catppuccin Mocha, same ramp as the status line -----------------
+RESET="\033[0m"
+GREEN="\033[38;2;166;227;161m"
+LAVENDER="\033[38;2;180;190;254m"
+PEACH="\033[38;2;250;179;135m"
+PINK="\033[38;2;243;139;168m"
+LABEL="\033[38;2;147;153;178m"
+SEP="\033[38;2;88;91;112m"
+
+if [ ! -t 1 ]; then
+    RESET="" GREEN="" LAVENDER="" PEACH="" PINK="" LABEL="" SEP=""
+fi
+
+pick_color() {
+    if   [ "$1" -ge 80 ]; then printf '%b' "$PINK"
+    elif [ "$1" -ge 70 ]; then printf '%b' "$PEACH"
+    elif [ "$1" -ge 60 ]; then printf '%b' "$LAVENDER"
+    else                       printf '%b' "$GREEN"
+    fi
+}
+
+# --- time helpers ------------------------------------------------------------
+now=$(date +%s)
+
+epoch_of() { date -d "$1" +%s 2>/dev/null; }
+
+# "3h 12m" until the reset, or "now" when the window already turned over.
+time_left() {
+    local target="$1" secs
+    secs=$(epoch_of "$target") || return
+    [ -z "$secs" ] && return
+    local d=$(( secs - now ))
+    if [ "$d" -le 0 ]; then echo "due"; return; fi
+    local h=$(( d / 3600 )) m=$(( (d % 3600) / 60 ))
+    if [ "$h" -gt 0 ]; then echo "${h}h ${m}m"; else echo "${m}m"; fi
+}
+
+bar() {
+    local pct="$1" width=24 filled i out=""
+    filled=$(( pct * width / 100 ))
+    for (( i = 0; i < width; i++ )); do
+        if [ "$i" -lt "$filled" ]; then out="${out}█"; else out="${out}░"; fi
+    done
+    printf '%s' "$out"
+}
+
+FIVE_PCT=${FIVE_PCT%.*}
+SEVEN_PCT=${SEVEN_PCT%.*}
+FIVE_LEFT=$(time_left "$FIVE_RESET")
+SEVEN_LEFT=$(time_left "$SEVEN_RESET")
+FIVE_AT=$(date -d "$FIVE_RESET" +"%H:%M" 2>/dev/null)
+SEVEN_AT=$(date -d "$SEVEN_RESET" +"%a %d %b %H:%M" 2>/dev/null)
+
+AGE_MIN=$(( (now - FETCHED_MS / 1000) / 60 ))
+if [ "$AGE_MIN" -lt 1 ]; then AGE="just now"
+elif [ "$AGE_MIN" -lt 60 ]; then AGE="${AGE_MIN}m ago"
+else AGE="$(( AGE_MIN / 60 ))h $(( AGE_MIN % 60 ))m ago"
+fi
+
+if [ "$MODE" = "line" ]; then
+    printf '%b5h%b %b%s%%%b %b(%s)%b%b | %b%b7d%b %b%s%%%b %b(%s)%b\n' \
+        "$LABEL" "$RESET" "$(pick_color "$FIVE_PCT")" "$FIVE_PCT" "$RESET" \
+        "$LABEL" "$FIVE_LEFT" "$RESET" \
+        "$SEP" "$RESET" \
+        "$LABEL" "$RESET" "$(pick_color "$SEVEN_PCT")" "$SEVEN_PCT" "$RESET" \
+        "$LABEL" "$SEVEN_LEFT" "$RESET"
+    exit 0
+fi
+
+printf '\n'
+printf '  %b5 hour%b   %b%s%b %b%3s%%%b   %bresets %s (in %s)%b\n' \
+    "$LABEL" "$RESET" \
+    "$(pick_color "$FIVE_PCT")" "$(bar "$FIVE_PCT")" "$RESET" \
+    "$(pick_color "$FIVE_PCT")" "$FIVE_PCT" "$RESET" \
+    "$LABEL" "$FIVE_AT" "$FIVE_LEFT" "$RESET"
+printf '  %b7 day%b    %b%s%b %b%3s%%%b   %bresets %s (in %s)%b\n' \
+    "$LABEL" "$RESET" \
+    "$(pick_color "$SEVEN_PCT")" "$(bar "$SEVEN_PCT")" "$RESET" \
+    "$(pick_color "$SEVEN_PCT")" "$SEVEN_PCT" "$RESET" \
+    "$LABEL" "$SEVEN_AT" "$SEVEN_LEFT" "$RESET"
+printf '\n  %b%s · read %s%b\n\n' "$SEP" "$TIER" "$AGE" "$RESET"
