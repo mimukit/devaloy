@@ -1,6 +1,6 @@
 # Update the toolchain
 
-Every tool on the box — node, pnpm, gh, turbo, lazygit, herdr, claude, codex, the skills CLI — is installed by `bootstrap-toolchain.sh` through mise, into the home volume. Which command updates it depends on what kind of change you are making, and picking the wrong one is how a tool ends up half-installed: visible in your shell but missing from `ssh devaloy '<cmd>'`, or upgraded on your laptop's copy of the repo but never on the box.
+Every tool on the box — node, pnpm, gh, turbo, lazygit, herdr, claude, codex, command-code, the skills CLI — is installed by `bootstrap-toolchain.sh` through mise, into the home volume. Which command updates it depends on what kind of change you are making, and picking the wrong one is how a tool ends up half-installed: visible in your shell but missing from `ssh devaloy '<cmd>'`, or upgraded on your laptop's copy of the repo but never on the box.
 
 | You want to | Run |
 |---|---|
@@ -11,7 +11,7 @@ Every tool on the box — node, pnpm, gh, turbo, lazygit, herdr, claude, codex, 
 
 ## Upgrade what tracks `latest`
 
-Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, herdr, claude, codex, skills, and Paseo when `WITH_PASEO=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy-update` is what runs it:
+Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, herdr, claude, codex, command-code, skills, and Paseo when `WITH_PASEO=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy-update` is what runs it:
 
 ```sh
 devaloy-update

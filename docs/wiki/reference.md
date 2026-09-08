@@ -95,7 +95,7 @@ redeploy, and every key in the table above does not.
 | `MISE_HERDR_VERSION` | `latest` | Pin herdr. |
 
 Everything else in the toolchain (`pnpm`, `gh`, `turbo`, `lazygit`, `claude`,
-`codex`, `skills`, `@getpaseo/cli`) tracks `latest` and is pinned by editing
+`codex`, `command-code`, `skills`, `@getpaseo/cli`) tracks `latest` and is pinned by editing
 `bootstrap-toolchain.sh`, not by a variable.
 
 Do not add a variable here whose tool name is not a real mise registry entry.

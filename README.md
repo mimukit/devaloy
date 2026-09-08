@@ -67,7 +67,8 @@ From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `config/nvim/`, and what `v` and `$EDITOR` point at — see
 [The editor config](docs/wiki/reference.md#the-editor-config)), `herdr`, plus
 [Claude Code](https://claude.com/claude-code)
-(`claude`) and [Codex](https://github.com/openai/codex) (`codex`) — and
+(`claude`), [Codex](https://github.com/openai/codex) (`codex`) and
+`command-code` — and
 [`skills`](https://www.skills.sh), which then installs the agent skills both
 CLIs share. See [Agent skills](#agent-skills).
 

@@ -104,7 +104,7 @@ to a remote is the backup, and unpushed work on the box is work that can be lost
 
 The image ships the OS-level tools. Everything a dev session actually reaches
 for — `node`, `pnpm`, `gh`, `turbo`, `lazygit`, `herdr`, `claude`, `codex`,
-`skills` — comes from **mise**, into the home volume, on first boot.
+`command-code`, `skills` — comes from **mise**, into the home volume, on first boot.
 
 That placement is the point: an upgrade persists across a redeploy instead of
 dying with the image. The agent CLIs come from mise's registry rather than their

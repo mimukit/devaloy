@@ -122,7 +122,7 @@ up where you left off. This is what makes the box usable from a phone.
 
 A container with `zsh`, `git`, `python3`, `vim`, `tmux`, `bat`, `htop`/`btop`
 and `build-essential` from the image, plus `node`, `pnpm`, `gh`, `turbo`,
-`lazygit`, `herdr`, `claude`, `codex` and `skills` installed into
+`lazygit`, `herdr`, `claude`, `codex`, `command-code` and `skills` installed into
 `/home/dev` by `mise`.
 
 `/home/dev` is a named volume, so clones, shell history and tool credentials
