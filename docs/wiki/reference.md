@@ -186,6 +186,7 @@ Run as the `dev` user unless noted.
 | `bootstrap-toolchain.sh` | Installs the toolchain, but **skips itself** if the home volume already records the current `TOOLSET_REVISION`. |
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |
+| `devaloy-nvim-sync` | Copies the repo's LazyVim config from `/opt/devaloy/config/nvim` over `~/.config/nvim`, then runs a headless `Lazy! sync`. Moves the current directory to `~/.config/nvim.bak-<timestamp>` first, unless given `--no-backup`. Refuses to run as root. See [The editor config](#the-editor-config). |
 | `devaloy-prune` | Reclaims disk from the nested Docker daemon. Only on a `WITH_DOCKER=true` build. Takes `--all` (also images no container is running) and `--age <duration>` (default `168h`). Never touches a running container, and never runs on a timer. |
 | `playwright-cli` | Drives a headless Chromium. Only with `WITH_BROWSER=true`. `open <url>`, `screenshot` (prints a path under `/tmp/playwright-cli/`), `close`; `close-all` ends every session. Pinned to `@playwright/cli` 0.1.18 in `bootstrap-toolchain.sh`, the newest release with npm provenance. |
 
@@ -207,12 +208,32 @@ devaloy-specific, from `config/zsh/zshrc`. The file also carries the usual
 | `cx` | `codex` |
 | `h` | `herdr` |
 | `gg` | `lazygit` |
+| `v` | `nvim`, or `vim` when `nvim` is not installed yet |
 | `reload` | `exec zsh` |
 | `zsrc` | `. "$HOME/.zshrc"` |
 
 `skmi` is what picks up a **newly authored** skill. `skup` only refreshes what is
 already in the lockfile, so it will never notice one that was not installed
 before.
+
+## The editor config
+
+`v` opens Neovim with a LazyVim config, and `$EDITOR` points at the same binary, so `git commit` and `gh` open it too. Both fall back to stock `vim` when `nvim` is missing, which is only the case on a cold volume before the toolchain bootstrap has run.
+
+The config is not upstream's LazyVim starter. It is a vendored copy of `mimukit/dotfiles:dot_config/nvim`, kept in this repo at `config/nvim/` and carried into the image at `/opt/devaloy/config/nvim`. It sets tokyonight with a transparent background, `scrolloff` 20, `;` for command mode, 2-space tabs, the snacks explorer on the right showing hidden and gitignored files, and the `lang.json`, `lang.toml` and `util.dot` LazyVim extras. `lazy-lock.json` is vendored with it, so a fresh box resolves the same plugin commits as the laptop.
+
+**The seed runs once.** `bootstrap-toolchain.sh` copies `config/nvim/` into `~/.config/nvim` only when that directory does not exist. This is deliberate and it is why the copy does not go through `entrypoint.sh`, which re-copies the zsh, Claude Code and Codex files on every boot. Once seeded, `~/.config/nvim` is yours: edit it on the box and it survives every `docker compose up --build`, and `devaloy-update --force` will not touch it.
+
+To pull the repo copy back over your own, run `devaloy-nvim-sync`. It moves the current directory to `~/.config/nvim.bak-<timestamp>` and prints the path, so a sync you did not mean to run costs nothing. Use it after changing `config/nvim/` in this repo, or on a box seeded before `config/nvim/` existed and still holding the plain starter.
+
+To start over completely, delete the config and its state, then seed again:
+
+```sh
+rm -rf ~/.config/nvim ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim
+devaloy-nvim-sync --no-backup
+```
+
+**One divergence from the laptop.** The laptop config maps `<C-h/j/k/l>` to `Navigator.nvim`, which hops between Neovim splits and tmux panes with one key. That plugin is not in the spec, so the maps are dropped here rather than left to print `E492` on every press. LazyVim's own window maps take those keys instead, so split-to-split movement still works; the tmux pane hop and the terminal-mode variant do not. This is an omission on purpose, not an oversight.
 
 ## Commands on the Docker host
 

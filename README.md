@@ -63,7 +63,10 @@ From the image, available the moment you can log in:
 | Optional | headless browser capture (`playwright-cli` and a Chromium), only when built and run with `WITH_BROWSER=true` — see [(Optional) headless browser capture](#optional-headless-browser-capture). Libraries from the image, the CLI and the browser from `mise` into the home volume. |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
-`gh`, `turbo`, `lazygit`, `herdr`, plus [Claude Code](https://claude.com/claude-code)
+`gh`, `turbo`, `lazygit`, `neovim` (seeded with the LazyVim config in
+`config/nvim/`, and what `v` and `$EDITOR` point at — see
+[The editor config](docs/wiki/reference.md#the-editor-config)), `herdr`, plus
+[Claude Code](https://claude.com/claude-code)
 (`claude`) and [Codex](https://github.com/openai/codex) (`codex`) — and
 [`skills`](https://www.skills.sh), which then installs the agent skills both
 CLIs share. See [Agent skills](#agent-skills).
