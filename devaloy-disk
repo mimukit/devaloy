@@ -160,6 +160,71 @@ done < <(find "${ROOT}" -xdev -maxdepth 4 -type d -name .git 2>/dev/null | sort)
 echo "  (a linked worktree may hold uncommitted work — use gitkit's sweep to"
 echo "   remove merged ones, not this script)"
 
+# --- stale mise tool versions ---------------------------------------------
+#
+# THE BIGGEST RECLAIM ON A BOX THAT HAS BEEN UP FOR WEEKS, and the least
+# obvious. Every tool in bootstrap-toolchain.sh that tracks `latest` — claude,
+# codex, pnpm, gh — installs a NEW versioned directory on each devaloy-update
+# and keeps every older one. Nothing reaps them. Measured on the reference box:
+# 18 versions of claude at 4.8 GB and 12 of codex at 3.8 GB, with exactly one of
+# each in use.
+#
+# `mise prune` is the right tool rather than an rm loop here. It reads
+# ~/.local/state/mise/tracked-configs and tracked-stubs, keeps whatever is still
+# the latest version named in any of them, and deletes the rest along with the
+# matching ~/.cache/mise entries. The version you are running is never a
+# candidate, so this cannot leave the box without a toolchain.
+#
+# Reported by default because the size is the argument for running it.
+echo
+echo "devaloy-disk: stale mise tool versions"
+
+if command -v mise >/dev/null 2>&1; then
+  MISE_INSTALLS="${ROOT}/.local/share/mise/installs"
+  if [ -d "${MISE_INSTALLS}" ]; then
+    du -sk "${MISE_INSTALLS}"/* 2>/dev/null | sort -rn | head -6 |
+      while read -r size_kb path; do
+        # The count is every installed version of that tool, including the
+        # active one, so "18 versions" reads as "17 of these are dead weight".
+        versions="$(find "${path}" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)"
+        printf '  %6s MiB  %-20s %s version(s) installed\n' \
+          "$((size_kb / 1024))" "$(basename "${path}")" "${versions}"
+      done
+  fi
+
+  if [ "${APPLY}" -eq 1 ]; then
+    echo "devaloy-disk: pruning unused versions"
+    mise prune || true
+  else
+    echo "devaloy-disk: would run: mise prune"
+    echo "devaloy-disk: full list with 'mise prune --dry-run'"
+  fi
+else
+  echo "  mise not on PATH"
+fi
+
+# --- Paseo daemon logs ----------------------------------------------------
+#
+# The daemon writes a new timestamped log per start and rotates none of them.
+# Small next to the mise reclaim, but unbounded: on a box where devaloy-ram
+# restarts the daemon nightly, this grows a file per night forever.
+if [ -d "${ROOT}/.paseo" ]; then
+  echo
+  echo "devaloy-disk: Paseo daemon logs older than ${AGE_DAYS} days"
+  PASEO_LOGS="$(find "${ROOT}/.paseo" -maxdepth 1 -type f -name '*-daemon.log' \
+                  -mtime "+${AGE_DAYS}" 2>/dev/null | sort)"
+  if [ -z "${PASEO_LOGS}" ]; then
+    echo "  none"
+  else
+    # The live daemon.log is not matched by the glob above — it has no
+    # timestamp prefix — so the daemon never loses the file it is writing to.
+    echo "${PASEO_LOGS}" | while IFS= read -r f; do
+      printf '  %6s KiB  %s\n' "$(du -sk "${f}" 2>/dev/null | cut -f1)" "$(basename "${f}")"
+      act rm -f "${f}"
+    done
+  fi
+fi
+
 # --- caches ---------------------------------------------------------------
 #
 # Opt-in because every one of these costs a re-download on the next install, and
