@@ -75,7 +75,7 @@ When it is there, it is a **real daemon inside this container**, not the host's.
 - **Use it for a project's own development stack.** `docker compose up -d` in a repo you cloned. That is the case this was built for.
 - **Never pass `--privileged`**, and never grant `--cap-add SYS_ADMIN` or `--pid=host` to a nested container. The devaloy container earns its own authority from the outside; a container you start inside it has no reason to ask for more.
 - **Never bind mount a path from outside `/home/dev`.** Mounting `/`, `/etc`, `/var/run/docker.sock` or the parent's own paths defeats the boundary this arrangement is built on.
-- **Never edit `/var/lib/docker` by hand.** It is a named volume the daemon owns. Use `docker` commands, and `devaloy-prune` when the disk is full.
+- **Never edit `/var/lib/docker` by hand.** It is a named volume the daemon owns. Use `docker` commands, and `devaloy prune --apply` when the disk is full.
 
 `docker` needs no `sudo`. The daemon's own log is `/var/log/dockerd.log`, which is where to look when a stack will not start.
 
@@ -95,9 +95,9 @@ If that prints nothing, the box was built without `WITH_ORCA=true` and `orca-cli
 
 ## The toolchain
 
-Node, pnpm, gh, turbo and herdr come from `mise` and resolve through shims in `~/.local/share/mise/shims`. To add or upgrade one, edit `bootstrap-toolchain.sh` in the devaloy repo and run `devaloy-update` — do not install a second copy with `apt` or a raw `curl | sh`.
+Node, pnpm, gh, turbo and herdr come from `mise` and resolve through shims in `~/.local/share/mise/shims`. To add or upgrade one, edit `bootstrap-toolchain.sh` in the devaloy repo and run `devaloy update` — do not install a second copy with `apt` or a raw `curl | sh`.
 
-After any `npm i -g`, run `devaloy-update` so the new binary is visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh).
+After any `npm i -g`, run `devaloy update` so the new binary is visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh).
 
 ## GitHub
 

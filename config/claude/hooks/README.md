@@ -49,7 +49,7 @@ this repo — `bootstrap-toolchain.sh` runs `herdr integration install claude`
 (and `codex`). Vendoring it here was the obvious move and the wrong one: herdr
 versions these scripts per agent, so a copy in git freezes one version and needs
 re-copying after every herdr upgrade. Letting herdr own the file means a herdr
-upgrade fixes the integration on the next `devaloy-update`.
+upgrade fixes the integration on the next `devaloy update`.
 
 Check it with `herdr integration status`, which prints the installed version and
 path per agent. The wiring stays ours because this repo overwrites

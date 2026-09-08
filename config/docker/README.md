@@ -22,4 +22,4 @@ Pinning into `10.x` removes the question. `10.201.0.1/16` is the nested `docker0
 
 Build cache is the largest and cheapest waste on this box. Cheapest because a discarded layer costs a rebuild and never a pull, which is why this is the one thing devaloy reaps automatically. `defaultReservedSpace` is the current key name; `defaultKeepStorage` is the old one and is what most search results still show.
 
-Images are **not** pruned automatically. `devaloy-prune` is the command for that, and the reasoning for keeping it manual is in the script's own header.
+Images are **not** pruned automatically. `devaloy prune --apply` is the command for that, and the reasoning for keeping it manual is in the script's own header.

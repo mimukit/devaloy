@@ -109,7 +109,7 @@ When it is there, it is a **real daemon inside this container**, not the host's.
 - **Use it for a project's own development stack**, which is the case it was built for.
 - **Never pass `--privileged`**, `--cap-add SYS_ADMIN` or `--pid=host` to a nested container.
 - **Never bind mount a path from outside `/home/dev`**, and never mount a Docker socket into one.
-- **Never edit `/var/lib/docker` by hand.** Use `docker` commands, and `devaloy-prune` when the disk is full.
+- **Never edit `/var/lib/docker` by hand.** Use `docker` commands, and `devaloy prune --apply` when the disk is full.
 
 `docker` needs no `sudo`. The daemon's log is `/var/log/dockerd.log`.
 
@@ -136,8 +136,8 @@ start a runtime — that needs an image rebuild you cannot do from inside.
 
 Node, pnpm, gh, turbo and herdr come from `mise` and resolve through shims in
 `~/.local/share/mise/shims`. Add or upgrade one by editing
-`bootstrap-toolchain.sh` in the devaloy repo and running `devaloy-update` —
-not with `apt` or a raw `curl | sh`. Run `devaloy-update` after any `npm i -g`
+`bootstrap-toolchain.sh` in the devaloy repo and running `devaloy update` —
+not with `apt` or a raw `curl | sh`. Run `devaloy update` after any `npm i -g`
 so the binary is visible to non-interactive sessions.
 
 ## GitHub
