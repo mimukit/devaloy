@@ -165,6 +165,26 @@ if [ -n "$SEVEN_D" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------------------
+# 6b. Mirror the live rate-limit numbers into a fallback cache for `usage`.
+#     Token-authenticated sessions (CLAUDE_CODE_OAUTH_TOKEN) never populate
+#     ~/.claude.json's cachedUsageUtilization block — that only happens after
+#     an OAuth /login. This statusline gets the same rate_limits payload on
+#     every render regardless of auth method, so it is the only place left
+#     to source the numbers from. Written atomically (temp file + mv) since
+#     this script can run concurrently across panes.
+# ---------------------------------------------------------------------------
+if [ -n "$FIVE_H" ] && [ -n "$SEVEN_D" ]; then
+    CACHE_FILE="$HOME/.claude/usage-live-cache.json"
+    TMP_CACHE=$(mktemp "$HOME/.claude/.usage-live-cache.XXXXXX" 2>/dev/null)
+    if [ -n "$TMP_CACHE" ]; then
+        NOW_MS=$(( $(date +%s) * 1000 ))
+        printf '{"fetchedAtMs": %s, "utilization": {"five_hour": {"utilization": %s, "resets_at": "%s"}, "seven_day": {"utilization": %s, "resets_at": "%s"}}}\n' \
+            "$NOW_MS" "$FIVE_H" "$FIVE_H_RESET" "$SEVEN_D" "$SEVEN_D_RESET" > "$TMP_CACHE" 2>/dev/null
+        mv "$TMP_CACHE" "$CACHE_FILE" 2>/dev/null
+    fi
+fi
+
 # Join the present segments in order: 5h, 7d, ctx, model
 LINE=""
 for seg in "$SEG_5H" "$SEG_7D" "$SEG_CTX" "$SEG_MODEL"; do
