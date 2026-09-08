@@ -166,14 +166,38 @@ overrides the one before it:
 
 | Layer | Where it comes from | Example |
 |---|---|---|
-| 1 | the file already in the `home` volume | a terminal profile you created in the app |
-| 2 | `config/paseo/config.json` in the repo | `daemon.relay.enabled`, `daemon.cors.allowedOrigins`, `worktrees.root` |
+| 1 | the file already in the `home` volume | a setting you changed in the app under a key the repo does not ship |
+| 2 | `config/paseo/config.json` in the repo | `daemon.agentProfiles`, `daemon.terminalProfiles`, `daemon.relay.enabled`, `daemon.cors.allowedOrigins`, `worktrees.root` |
 | 3 | the container environment, at boot | `daemon.listen`, `daemon.hostnames`, `features.webUi.enabled` |
 
 Objects merge key by key and arrays are replaced whole. So a key the repo does
 not ship survives a redeploy, and a key it does ship is reset from the repo. If
 you want a setting to hold, put it in `config/paseo/config.json` rather than
 editing the file on the box.
+
+## Agent profiles and terminal profiles
+
+The repo ships both profile lists, so every deployment starts with the same
+named agents and their icons instead of the app defaults:
+
+| Profile | Provider | Model | Icon |
+|---|---|---|---|
+| manager | claude | `claude-opus-5` | rocket |
+| thinker | claude | `claude-fable-5-1` | sparkles |
+| worker | claude | `claude-sonnet-5` | hammer |
+| thinker cx | codex | `gpt-6-astra` | sparkles |
+| worker cx | codex | `gpt-5.6-luna` | hammer |
+
+The terminal profiles are Claude Code, Codex and Lazygit.
+
+Both lists are arrays, so the boot replaces them whole. A profile you add in
+the app is gone after the next redeploy. Add it to
+`config/paseo/config.json` instead, give it an `id` no other profile uses, and
+redeploy.
+
+Workspaces, projects and their custom icons are not in this file. They live in
+`~/.paseo/projects/`, the daemon owns them, and the `home` volume is what
+carries them across a redeploy.
 
 `PASEO_PASSWORD` is the exception and stays out of the file. `daemon.auth.password`
 takes a bcrypt hash and nothing else, so the plaintext lives in

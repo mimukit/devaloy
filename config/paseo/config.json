@@ -5,6 +5,78 @@
     "relay": {
       "enabled": false
     },
+    "terminalProfiles": [
+      {
+        "id": "claude",
+        "name": "Claude Code",
+        "command": "claude",
+        "args": [
+          "{{{prompt}}}"
+        ],
+        "icon": "claude"
+      },
+      {
+        "id": "codex",
+        "name": "Codex",
+        "command": "codex",
+        "args": [
+          "{{{prompt}}}"
+        ],
+        "icon": "codex"
+      },
+      {
+        "id": "profile_mtikz7xl_msz33ghdzl",
+        "name": "Lazygit",
+        "command": "lazygit"
+      }
+    ],
+    "agentProfiles": [
+      {
+        "id": "agent_profile_mto22nh4_z73hacu6mp",
+        "name": "manager",
+        "icon": "rocket",
+        "provider": "claude",
+        "model": "claude-opus-5",
+        "modeId": "auto",
+        "thinkingOptionId": "low"
+      },
+      {
+        "id": "agent_profile_mto24e5k_8kcrvs1cysj",
+        "name": "thinker",
+        "icon": "sparkles",
+        "provider": "claude",
+        "model": "claude-fable-5-1",
+        "modeId": "auto",
+        "thinkingOptionId": "low"
+      },
+      {
+        "id": "agent_profile_mto21cy4_zwjrrofq8m",
+        "name": "worker",
+        "icon": "hammer",
+        "provider": "claude",
+        "model": "claude-sonnet-5",
+        "modeId": "auto",
+        "thinkingOptionId": "low"
+      },
+      {
+        "id": "agent_profile_mtregnz7_tbmem0g735",
+        "name": "worker cx",
+        "icon": "hammer",
+        "provider": "codex",
+        "model": "gpt-5.6-luna",
+        "modeId": "auto-review",
+        "thinkingOptionId": "low"
+      },
+      {
+        "id": "agent_profile_mtrehn5g_vzbutkkk5rl",
+        "name": "thinker cx",
+        "icon": "sparkles",
+        "provider": "codex",
+        "model": "gpt-6-astra",
+        "modeId": "auto-review",
+        "thinkingOptionId": "low"
+      }
+    ],
     "cors": {
       "allowedOrigins": [
         "https://app.paseo.sh"

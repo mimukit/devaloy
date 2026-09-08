@@ -99,10 +99,14 @@ container.
 | `daemon.relay.enabled` | repo | `false` |
 | `daemon.cors.allowedOrigins` | repo | `["https://app.paseo.sh"]` |
 | `worktrees.root` | repo | `~/worktrees/` |
+| `daemon.agentProfiles` | repo | manager, thinker, worker, thinker cx, worker cx |
+| `daemon.terminalProfiles` | repo | Claude Code, Codex, Lazygit |
 
 Objects merge key by key and arrays are replaced whole, so a key the repo does
-not ship — terminal profiles the app created, for instance — survives a
-redeploy, and every key in the table above does not.
+not ship survives a redeploy, and every key in the table above does not. Add a
+profile in the app and the next boot drops it. Add it to
+`config/paseo/config.json` and it holds. See
+[Connect the Paseo apps](connect-the-paseo-apps.md) for the profile lists.
 
 ### Toolchain pins
 
