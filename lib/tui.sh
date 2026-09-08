@@ -14,7 +14,10 @@
 # the run and the loop routes on it.
 #
 # KEYS ARE SINGLE LETTERS, vim style, which needs --no-input. Without it fzf
-# treats every printable key as search input and `j` types a `j`.
+# treats every printable key as search input and `j` types a `j`. `/` shows the
+# input line back for a fuzzy search over the rows, and ctrl-g hides it and
+# clears the query, so the single-letter keys come back. While the input is up,
+# `enter` still picks the row and `esc` still goes back to the parent view.
 #
 # An action never renders into this list. It exits fzf and streams on the raw
 # terminal, exactly as the five scripts do today, because a five-minute
@@ -157,11 +160,11 @@ label_of() {
 
 footer_of() {
   case "$1" in
-    status) printf 'j/k move · enter open · r refresh · q quit' ;;
-    disk | ram | prune) printf 'a apply · d full report · r rescan · h back · q quit' ;;
-    doctor) printf 'r recheck · h back · q quit' ;;
-    tools) printf 'a run · h back · q quit' ;;
-    *) printf 'h back · q quit' ;;
+    status) printf 'j/k move · enter open · / search · r refresh · q quit' ;;
+    disk | ram | prune) printf 'a apply · d full report · / search · r rescan · h back · q quit' ;;
+    doctor) printf '/ search · r recheck · h back · q quit' ;;
+    tools) printf 'a run · / search · h back · q quit' ;;
+    *) printf '/ search · h back · q quit' ;;
   esac
 }
 
@@ -259,6 +262,8 @@ cmd_pick() {
         --bind="start:pos(${pos})" \
         --bind='j:down' \
         --bind='k:up' \
+        --bind='/:show-input+change-prompt(search> )' \
+        --bind='ctrl-g:hide-input+clear-query+change-prompt(> )' \
         --bind='g:first' \
         --bind='G:last' \
         --bind='ctrl-d:half-page-down' \
