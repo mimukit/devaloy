@@ -24,7 +24,7 @@ set -euo pipefail
 # re-resolving skills mid-session, but it is NOT how a newly authored skill
 # reaches the box. That is `devaloy-update` (or `skmi`), which runs --force and
 # skips the gate entirely — so publishing a skill needs no edit here.
-TOOLSET_REVISION=6
+TOOLSET_REVISION=7
 
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
 
@@ -124,6 +124,12 @@ mise use -g "herdr@${MISE_HERDR_VERSION}"
 # revision marker already stops a redeploy swapping them mid-session.
 mise use -g claude@latest
 mise use -g codex@latest
+# command-code, a third agent CLI. It has no mise registry entry, so it comes
+# through mise's npm backend as `npm:command-code` — the same route as turbo,
+# skills and Paseo. Do not run `npm i -g` for it: a global npm install lands
+# outside the shims path, so `ssh devaloy '<cmd>'` would not see it until the
+# next link-shims run. Tracks latest, like claude and codex.
+mise use -g npm:command-code@latest
 # The skills.sh CLI, which installs the agent skills below. It is a tool like
 # any other here, so it lands in the home volume and survives a redeploy.
 mise use -g npm:skills@latest
