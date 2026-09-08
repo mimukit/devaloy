@@ -152,7 +152,7 @@ ram_count() { # ram_count <type>
 # --- the view -------------------------------------------------------------
 
 rows_ram() {
-  emit "  ${BOLD}reclaimable${RESET}   ${DIM}scanned at $(now_stamp), orphan window ${RAM_ORPHAN_AGE_MIN}m${RESET}"
+  emit_head 'reclaimable' "scanned at $(now_stamp), orphan window ${RAM_ORPHAN_AGE_MIN}m"
   emit_row '🧠' 'ram now' "$(status_ram_line)"
   emit_rule
   emit_row '🪟' 'paseo daemon tree' \
@@ -161,11 +161,9 @@ rows_ram() {
     "$(ram_count orphan) process(es), $(($(ram_sum_kb orphan) / 1024)) MiB"
   emit_row '🚧' 'dev servers' \
     "$(ram_count devserver) process(es), $(($(ram_sum_kb devserver) / 1024)) MiB — NOT killed"
-  emit_rule
   if in_paseo_pane; then
-    emit "  ${YELLOW}you are inside a Paseo pane${RESET}${DIM} — a restart kills this terminal${RESET}"
+    emit_hint "${YELLOW}you are inside a Paseo pane${RESET}${DIM} — a restart kills this terminal${RESET}"
   fi
-  emit "  ${DIM}  d shows every process before you apply${RESET}"
 }
 
 # --- the report -----------------------------------------------------------

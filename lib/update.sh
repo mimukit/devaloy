@@ -41,11 +41,10 @@ do_update() {
 # nvim.sh; the view calls it from here because "update the toolchain" and
 # "re-seed the editor config" are the same errand to the person typing it.
 rows_tools() {
-  emit "  ${BOLD}toolchain${RESET}   ${DIM}toolset $(toolset_revision)${RESET}"
+  emit_head 'toolchain' "toolset $(toolset_revision)"
   emit "$(printf '  🔼  %-22s %s%s%s' 'update the toolchain' "${DIM}" 're-resolve every pin, refresh the shims' "${RESET}")" 'update'
   emit "$(printf '  📝  %-22s %s%s%s' 'sync the nvim config' "${DIM}" 'copy config/nvim over ~/.config/nvim, backed up' "${RESET}")" 'nvim'
-  emit_rule
-  emit "  ${DIM}  both take minutes and stream on the terminal${RESET}"
+  emit_hint "${DIM}both take minutes and stream on the terminal${RESET}"
 }
 
 tools_apply() { # tools_apply <row value>

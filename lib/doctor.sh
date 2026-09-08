@@ -141,18 +141,17 @@ doctor_icon() {
 rows_doctor() {
   doctor_collect
   local r state label detail
-  emit "  ${BOLD}capabilities${RESET}   ${DIM}checked at $(now_stamp)${RESET}"
+  emit_head 'capabilities' "checked at $(now_stamp)"
   for r in "${doctor_rows[@]}"; do
     state="${r%%$'\t'*}"
     label="$(printf '%s' "${r}" | cut -f2)"
     detail="$(printf '%s' "${r}" | cut -f3)"
     emit_row "$(doctor_icon "${state}")" "${label}" "${detail}"
   done
-  emit_rule
   if [ "${DOCTOR_FAILURES}" -eq 0 ]; then
-    emit "  ${GREEN}nothing broken${RESET}${DIM} — a row marked · is off by design${RESET}"
+    emit_hint "${GREEN}nothing broken${RESET}${DIM} — a row marked · is off by design${RESET}"
   else
-    emit "  ${RED}${DOCTOR_FAILURES} broken${RESET}${DIM} — built in, but not working${RESET}"
+    emit_hint "${RED}${DOCTOR_FAILURES} broken${RESET}${DIM} — built in, but not working${RESET}"
   fi
 }
 

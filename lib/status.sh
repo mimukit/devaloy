@@ -14,8 +14,11 @@ status_disk_line() {
   # `df -h` on the home volume, which is the number that matters: /home/dev is
   # the named volume, and everything outside it is thrown away on the next
   # rebuild anyway.
-  df -h "${HOME:-/home/dev}" 2>/dev/null | tail -1 |
-    awk '{printf "%s used of %s (%s), %s free", $3, $2, $5, $4}'
+  local line pct
+  line="$(df -h "${HOME:-/home/dev}" 2>/dev/null | tail -1 |
+    awk '{printf "%s used of %s (%s), %s free", $3, $2, $5, $4}')"
+  pct="$(df "${HOME:-/home/dev}" 2>/dev/null | tail -1 | awk '{print $5}')"
+  paint_pct "${pct}" "${line}"
 }
 
 status_ram_line() {
@@ -28,11 +31,11 @@ status_ram_line() {
   fi
   pct="$(mem_percent)"
   if [ -n "${pct}" ]; then
-    printf '%s of %s (%s%%)' "$(human "${cur}")" "$(human "${max}")" "${pct}"
+    paint_pct "${pct}" "$(printf '%s of %s (%s%%)' "$(human "${cur}")" "$(human "${max}")" "${pct}")"
   else
     # Worth saying rather than printing a bare number: with no mem_limit the
     # container can take the host down, and the figure alone reads as healthy.
-    printf '%s, NO mem_limit set' "$(human "${cur}")"
+    bad "$(human "${cur}"), NO mem_limit set"
   fi
 }
 
@@ -52,7 +55,7 @@ status_paseo_line() {
     # into `ssh devaloy '<cmd>'`, so its absence does not mean Paseo is off.
     # Say what was observed and let the variable qualify it.
     if [ "${WITH_PASEO:-false}" = "true" ]; then
-      printf 'DOWN — WITH_PASEO is on but no daemon is running'
+      bad 'DOWN — WITH_PASEO is on but no daemon is running'
     else
       printf 'not running'
     fi
@@ -69,7 +72,7 @@ status_docker_line() {
       if docker info >/dev/null 2>&1; then
         docker system df 2>/dev/null | awk '/^Images/ {print $4 " in images"}' | head -1
       else
-        printf 'built in, but the daemon is NOT reachable'
+        bad 'built in, but the daemon is NOT reachable'
       fi
       ;;
     false) printf 'not built with WITH_DOCKER' ;;
@@ -79,15 +82,18 @@ status_docker_line() {
 
 # --- the view -------------------------------------------------------------
 
+# Each reading links to the view that changes it, so "the disk is at 90%" and
+# "open the disk reclaim" are the same row and one keypress. Swap has no
+# reclaim of its own; it moves with the RAM, so it opens the same view.
 rows_status() {
-  emit "  ${BOLD}this box${RESET}   ${DIM}read at $(now_stamp)${RESET}"
-  emit_row '💾' 'disk (home volume)' "$(status_disk_line)"
-  emit_row '🧠' 'ram (cgroup)' "$(status_ram_line)"
-  emit_row '💤' 'swap' "$(status_swap_line)"
-  emit_row '🪟' 'paseo daemon' "$(status_paseo_line)"
-  emit_row '🐳' 'docker' "$(status_docker_line)"
-  emit_row '🔧' 'toolset' "$(toolset_revision)"
-  emit_rule
+  emit_head 'this box' "read at $(now_stamp)"
+  emit_row '💾' 'disk (home volume)' "$(status_disk_line)" disk
+  emit_row '🧠' 'ram (cgroup)' "$(status_ram_line)" ram
+  emit_row '💤' 'swap' "$(status_swap_line)" ram
+  emit_row '🪟' 'paseo daemon' "$(status_paseo_line)" ram
+  emit_row '🐳' 'docker' "$(status_docker_line)" prune
+  emit_row '🔧' 'toolset' "$(toolset_revision)" tools
+  emit_rule actions
   emit_branch '🧹' 'disk reclaim' 'node_modules, mise versions, worktrees, logs' 'disk'
   emit_branch '🔄' 'ram reclaim' 'restart Paseo, reap orphaned language servers' 'ram'
   emit_branch '🐳' 'docker reclaim' 'build cache and unused images' 'prune'

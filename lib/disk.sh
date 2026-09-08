@@ -203,7 +203,7 @@ disk_count() { # disk_count <type>
 }
 
 rows_disk() {
-  emit "  ${BOLD}reclaimable${RESET}   ${DIM}scanned at $(now_stamp), age window ${DISK_AGE_DAYS}d${RESET}"
+  emit_head 'reclaimable' "scanned at $(now_stamp), age window ${DISK_AGE_DAYS}d"
   emit_row '📦' 'node_modules' \
     "$(disk_count nm) tree(s), $(($(disk_sum_kb nm) / 1024)) MiB"
   emit_row '🔧' 'stale mise versions' \
@@ -220,7 +220,6 @@ rows_disk() {
     "$(disk_count wt) repo(s) with linked worktrees — listed, never deleted"
   emit_rule
   emit_row '💾' 'disk now' "$(status_disk_line)"
-  emit "  ${DIM}  d shows the full list before you apply${RESET}"
 }
 
 # --- the report -----------------------------------------------------------

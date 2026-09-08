@@ -62,13 +62,12 @@ prune_scan() {
 }
 
 rows_prune() {
-  emit "  ${BOLD}docker${RESET}   ${DIM}scanned at $(now_stamp), age window ${PRUNE_AGE}${RESET}"
+  emit_head 'docker' "scanned at $(now_stamp), age window ${PRUNE_AGE}"
   if ! prune_available; then
-    emit_row '🚫' 'daemon' 'not reachable'
-    emit_rule
+    emit_row '🚫' 'daemon' "$(bad 'not reachable')"
     case "$(build_flag WITH_DOCKER)" in
-      false) emit "  ${DIM}  this box was not built with WITH_DOCKER${RESET}" ;;
-      *) emit "  ${DIM}  read the end of /var/log/dockerd.log${RESET}" ;;
+      false) emit_hint "${DIM}this box was not built with WITH_DOCKER${RESET}" ;;
+      *) emit_hint "${DIM}read the end of /var/log/dockerd.log${RESET}" ;;
     esac
     return 0
   fi
@@ -77,11 +76,10 @@ rows_prune() {
     [ -n "${type}" ] || continue
     emit_row '🐳' "${type}" "${count}, ${size} — ${reclaim} reclaimable"
   done <"$(target_file prune)"
-  emit_rule
   if [ "${PRUNE_ALL}" -eq 1 ]; then
-    emit "  ${YELLOW}--all${RESET}${DIM} — takes images no container is running${RESET}"
+    emit_hint "${YELLOW}--all${RESET}${DIM} — takes images no container is running${RESET}"
   else
-    emit "  ${DIM}  dangling images only; devaloy prune --all takes more${RESET}"
+    emit_hint "${DIM}dangling images only; devaloy prune --all takes more${RESET}"
   fi
 }
 

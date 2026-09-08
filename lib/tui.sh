@@ -40,22 +40,66 @@ fzf_version_ok() {
 
 # --- row helpers ----------------------------------------------------------
 #
-# Four tab-delimited fields: what you see, the value a detail view needs, the
-# view `enter` descends into, and the view `d` opens. fzf shows field 1 only.
-emit() { # emit <label> [value] [target view] [detail view]
-  printf '%s\t%s\t%s\t%s\n' "$1" "${2:-}" "${3:-}" "${4:-}"
+# Four tab-delimited fields: what you see, the value an apply needs, the view
+# `enter` descends into, and the kind of line. fzf shows field 1 only.
+#
+# The kind decides where the line is drawn. A `row` is a list entry the cursor
+# can rest on. A `head` is the view's title and goes to fzf's --header, above
+# the list, where the cursor cannot land on it: a title that takes the cursor
+# on open and answers `l` with "nothing to open" reads as a broken first row.
+# A `hint` is advice about the view and goes to the footer, above the key
+# line, for the same reason.
+emit() { # emit <label> [value] [target view] [kind]
+  printf '%s\t%s\t%s\t%s\n' "$1" "${2:-}" "${3:-}" "${4:-row}"
 }
 
-emit_row() { # emit_row <icon> <label> <value>
-  emit "$(printf '  %s  %-22s %s' "$1" "$2" "$3")"
+emit_head() { # emit_head <title> [stamp]
+  # Two leading spaces line the title up with the icon column below it.
+  emit "  ${BOLD}$1${RESET}${2:+   ${DIM}$2${RESET}}" '' '' head
+}
+
+emit_hint() { # emit_hint <text...>   already-coloured text is kept as is
+  emit "$*" '' '' hint
+}
+
+emit_row() { # emit_row <icon> <label> <value> [target view]
+  emit "$(printf '  %s  %-22s %s' "$1" "$2" "$3")" '' "${4:-}"
 }
 
 emit_branch() { # emit_branch <icon> <label> <blurb> <view>
   emit "$(printf '  %s  %-22s %s%s%s' "$1" "$2" "${DIM}" "$3" "${RESET}")" '' "$4"
 }
 
-emit_rule() {
-  emit "${DIM}  ────────────────────────────────────────────────${RESET}"
+# A rule between two groups, with a name for the group below it when the groups
+# are different kinds of thing (readings above, actions below).
+emit_rule() { # emit_rule [group name]
+  local line='────────────────────────────────────────────────'
+  if [ -n "${1:-}" ]; then
+    emit "${DIM}  ── $1 ${line:0:$((44 - ${#1}))}${RESET}"
+  else
+    emit "${DIM}  ${line}${RESET}"
+  fi
+}
+
+# --- colour by reading ----------------------------------------------------
+#
+# The status screen is read at a glance, and a glance cannot tell 64% from
+# 94% in the same grey. Two thresholds, the same on every gauge: yellow says
+# open the reclaim view soon, red says do it now.
+paint_pct() { # paint_pct <percent> <text>
+  local pct="${1%\%}" colour=''
+  case "${pct}" in
+    '' | *[!0-9]*) ;;
+    *)
+      [ "${pct}" -ge 70 ] && colour="${YELLOW}"
+      [ "${pct}" -ge 90 ] && colour="${RED}"
+      ;;
+  esac
+  printf '%s%s%s' "${colour}" "$2" "${colour:+${RESET}}"
+}
+
+bad() { # bad <text>   a reading that needs a hand, in red
+  printf '%s%s%s' "${RED}" "$1" "${RESET}"
 }
 
 # --- running an action on the raw terminal --------------------------------
@@ -113,11 +157,11 @@ label_of() {
 
 footer_of() {
   case "$1" in
-    status) printf '  j/k move · l open · r refresh · q quit' ;;
-    disk | ram | prune) printf '  a apply · d full report · r rescan · h back' ;;
-    doctor) printf '  r recheck · h back · q quit' ;;
-    tools) printf '  a run · h back · q quit' ;;
-    *) printf '  h back · q quit' ;;
+    status) printf 'j/k move · enter open · r refresh · q quit' ;;
+    disk | ram | prune) printf 'a apply · d full report · r rescan · h back · q quit' ;;
+    doctor) printf 'r recheck · h back · q quit' ;;
+    tools) printf 'a run · h back · q quit' ;;
+    *) printf 'h back · q quit' ;;
   esac
 }
 
@@ -169,7 +213,7 @@ cmd_pick() {
   fzf_version_ok || die "the TUI needs fzf 0.${FZF_FLOOR_MINOR} or later (this box has $(fzf --version 2>/dev/null | awk '{print $1}' || echo none)). Run devaloy-update, then try again. Every verb still works from the command line: devaloy --help"
 
   local view=status pos=1 back_pos=1 note='' scan apply detail
-  local out key line value target idx rc up
+  local out key line value target idx rc up rows head hints footer
 
   while true; do
     scan="$(scan_of "${view}")"
@@ -180,9 +224,19 @@ cmd_pick() {
       "${scan}"
     fi
 
+    # Split the view into the three places it draws: the title above the list,
+    # the rows, and the hints below them. A note from the last key goes in
+    # front of the key line rather than in place of it, so the keys stay
+    # visible while the note is up.
+    rows="$(cmd_view "${view}")"
+    head="$(printf '%s\n' "${rows}" | awk -F'\t' '$4 == "head" { print $1 }')"
+    hints="$(printf '%s\n' "${rows}" | awk -F'\t' '$4 == "hint" { print $1 }')"
+    footer="${hints:+${hints}
+}${DIM}${note:+${note} · }${RESET}$(footer_of "${view}")"
+
     rc=0
-    out="$(cmd_view "${view}" |
-      awk -F'\t' -v OFS='\t' '{ print $1, $2, $3, $4, NR }' |
+    out="$(printf '%s\n' "${rows}" |
+      awk -F'\t' -v OFS='\t' '$4 == "row" { print $1, $2, $3, $4, ++n }' |
       fzf \
         --delimiter=$'\t' \
         --with-nth=1 \
@@ -198,7 +252,8 @@ cmd_pick() {
         --border=rounded \
         --border-label="$(label_of "${view}")" \
         --border-label-pos=3 \
-        --footer="${note:-$(footer_of "${view}")}" \
+        --header="${head}" \
+        --footer="${footer}" \
         --pointer='▸' \
         --expect='enter,l,a,d,h,esc,r,q' \
         --bind="start:pos(${pos})" \
@@ -241,7 +296,7 @@ cmd_pick() {
           view="${target}"
           pos=1
         else
-          note='  nothing to open on that row'
+          note='nothing to open on that row'
           pos="${idx}"
         fi
         ;;
@@ -257,7 +312,7 @@ cmd_pick() {
           # action" half of the status contract.
           rm -f "$(rundir)"/*.targets 2>/dev/null || true
         else
-          note='  nothing to apply in this view'
+          note='nothing to apply in this view'
         fi
         ;;
 
@@ -266,14 +321,14 @@ cmd_pick() {
         if [ -n "${detail}" ]; then
           run_raw "${detail}"
         else
-          note='  nothing more to show here'
+          note='nothing more to show here'
         fi
         ;;
 
       r)
         pos="${idx}"
         rm -f "$(target_file "${view}")" 2>/dev/null || true
-        note="  refreshed at $(now_stamp)"
+        note="refreshed at $(now_stamp)"
         ;;
 
       *) return 0 ;;
