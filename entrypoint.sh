@@ -1073,6 +1073,20 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
       # you would fix it from.
       if [ -n "${PASEO_PLUGINS:-}" ]; then
         (
+          # Every CLI call below has to carry the SAME environment the daemon
+          # loop above starts the daemon with, and PASEO_PASSWORD is the reason.
+          # With a password set, the daemon closes an unauthenticated websocket
+          # (`Transport closed (code 1006)`), and the CLI reads the password from
+          # its own environment — there is no key for it in ~/.paseo/config.json.
+          # as_dev runs `su -l -s /bin/sh`, which reads neither .zshenv nor
+          # .bashrc, so without this prefix every call here fails, the probe
+          # below burns its full 120s, and no plugin is ever installed.
+          #
+          # The `if [ -f ]` guard is load-bearing for the same dash reason spelt
+          # out at the daemon loop: `.` is a special builtin, so a missing file
+          # exits the shell before `||` is considered.
+          paseo_env="if [ -f '${SECRETS_SNIPPET}' ]; then . '${SECRETS_SNIPPET}'; fi;"
+
           # Wait for the daemon to answer, up to two minutes. `plugin ls` is the
           # probe rather than `daemon status`, because it is also the call the
           # loop below needs to succeed — a daemon that is up but not yet serving
@@ -1080,7 +1094,8 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
           plugin_ls=""
           waited=0
           while [ "${waited}" -lt 120 ]; do
-            if plugin_ls="$(as_dev "paseo plugin ls --json" 2>/dev/null)"; then
+            if plugin_ls="$(as_dev "${paseo_env} paseo plugin ls --json" 2>/dev/null)" &&
+               printf '%s' "${plugin_ls}" | jq -e 'type == "array"' >/dev/null 2>&1; then
               break
             fi
             plugin_ls=""
@@ -1089,8 +1104,11 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
           done
           if [ -z "${plugin_ls}" ]; then
             log "WARNING: the Paseo daemon did not answer in 120s — PASEO_PLUGINS"
-            log "WARNING: not installed. Install them by hand with 'paseo plugin"
-            log "WARNING: install <source>', or restart the container."
+            log "WARNING: not installed. Check the daemon lines above first, then"
+            log "WARNING: PASEO_PASSWORD: a wrong password closes the socket with"
+            log "WARNING: 'Transport closed (code 1006)' rather than an auth error."
+            log "WARNING: Install them by hand with 'paseo plugin install"
+            log "WARNING: <source>', or restart the container."
             exit 0
           fi
 
@@ -1145,7 +1163,7 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
               continue
             fi
 
-            if as_dev "paseo plugin install $(sq "${plugin_src}") --id $(sq "${plugin_id}")" \
+            if as_dev "${paseo_env} paseo plugin install $(sq "${plugin_src}") --id $(sq "${plugin_id}")" \
                >/dev/null 2>&1; then
               log "Paseo plugin '${plugin_id}' installed from ${plugin_src}"
             else
