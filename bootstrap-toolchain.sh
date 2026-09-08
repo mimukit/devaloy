@@ -216,34 +216,57 @@ echo "installing agent skills from mimukit/skills"
 skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y
 
 # --- LazyVim ----------------------------------------------------------------
-# The LazyVim starter, cloned into the home volume rather than vendored into
-# config/. Two reasons. The starter is meant to be edited — it IS your config,
-# not a template this repo owns — so a boot-time copy from config/ would
-# overwrite your own lua/config and lua/plugins on every redeploy, which is what
-# entrypoint.sh does to the zsh and agent files. And ~/.config/nvim persists, so
-# a clone survives a redeploy anyway.
+# The LazyVim config in config/nvim/, copied into the home volume. It is a
+# vendored copy of mimukit/dotfiles:dot_config/nvim, so a fresh box gives the
+# same editor as the laptop instead of upstream's blank starter.
 #
-# Guarded on the directory, not on the revision marker: --force must not blow
-# away a config you have changed. To start over, delete ~/.config/nvim (plus the
-# ~/.local/share/nvim, ~/.local/state/nvim and ~/.cache/nvim state directories)
-# and run devaloy-update.
+# The copy is SEED-ONCE, and that is the whole reason it lives here rather than
+# in entrypoint.sh's seed_config(). That helper is a merge copy that runs on
+# every boot, which would overwrite your own lua/config and lua/plugins each
+# redeploy. This block is guarded on the directory instead, so --force cannot
+# blow away a config you have changed. Once seeded, ~/.config/nvim is yours: edit
+# it on the box and it survives every `docker compose up --build`.
+#
+# To pull the repo copy back over it later, run devaloy-nvim-sync — it backs the
+# current directory up first. To start over completely, delete ~/.config/nvim
+# (plus the ~/.local/share/nvim, ~/.local/state/nvim and ~/.cache/nvim state
+# directories) and run devaloy-update.
 #
 # Non-fatal, like the herdr block below and unlike the skills install. A box
 # with no editor config still has vim from the apt list, and it is not worth
 # costing the volume its revision marker.
+NVIM_CONFIG_SRC="/opt/devaloy/config/nvim"
 if [ ! -d "${HOME}/.config/nvim" ]; then
-  echo "installing the LazyVim starter into ~/.config/nvim"
-  if git clone --depth 1 https://github.com/LazyVim/starter "${HOME}/.config/nvim"; then
-    # The starter's own git history is the starter's, not yours. Upstream's
-    # install steps delete it so the directory is free to become your repo.
-    rm -rf "${HOME}/.config/nvim/.git"
+  nvim_seeded=""
+  if [ -d "${NVIM_CONFIG_SRC}" ]; then
+    echo "seeding ~/.config/nvim from ${NVIM_CONFIG_SRC}"
+    # The trailing /. copies the directory's contents, dotfiles included —
+    # .neoconf.json and .gitignore are both part of the config.
+    if mkdir -p "${HOME}/.config/nvim" &&
+      cp -R "${NVIM_CONFIG_SRC}/." "${HOME}/.config/nvim/"; then
+      nvim_seeded="yes"
+    else
+      echo "WARNING: the nvim config copy failed. Re-run devaloy-update." >&2
+    fi
+  else
+    # An image built before config/nvim/ existed, running a newer copy of this
+    # script from the home volume. Upstream's starter still beats no editor.
+    echo "${NVIM_CONFIG_SRC} is missing — falling back to the LazyVim starter"
+    if git clone --depth 1 https://github.com/LazyVim/starter "${HOME}/.config/nvim"; then
+      # The starter's own git history is the starter's, not yours. Upstream's
+      # install steps delete it so the directory is free to become your repo.
+      rm -rf "${HOME}/.config/nvim/.git"
+      nvim_seeded="yes"
+    else
+      echo "WARNING: the LazyVim starter clone failed. Re-run devaloy-update." >&2
+    fi
+  fi
+  if [ -n "${nvim_seeded}" ]; then
     # Resolve the plugins now instead of on your first `nvim`. Over a phone
     # tether, a cold Lazy sync in the foreground is a minute of a blank screen.
     if ! nvim --headless "+Lazy! sync" +qa 2>&1 | tail -5; then
       echo "WARNING: the first Lazy sync failed — run it again inside nvim." >&2
     fi
-  else
-    echo "WARNING: the LazyVim starter clone failed. Re-run devaloy-update." >&2
   fi
 else
   echo "~/.config/nvim exists, leaving it alone"

@@ -359,7 +359,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # No sshd, no authorized_keys, no host keys: Tailscale SSH is the only way in,
 # and it authenticates from tailnet identity plus the tailnet policy file.
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
-COPY --chmod=755 bootstrap-toolchain.sh devaloy-update devaloy-prune link-shims /usr/local/bin/
+COPY --chmod=755 bootstrap-toolchain.sh devaloy-update devaloy-prune devaloy-nvim-sync link-shims /usr/local/bin/
 
 # Claude Code and Codex are not installed here. mise's registry covers both and
 # fetches the same upstream artifacts their own installers do, so they live in
@@ -367,10 +367,12 @@ COPY --chmod=755 bootstrap-toolchain.sh devaloy-update devaloy-prune link-shims 
 # and an upgrade that persists in the home volume instead of dying on the next
 # rebuild.
 
-# Managed dotfiles (zsh, Claude Code, Codex). entrypoint.sh copies these into
-# /home/dev on every boot — see the "config sync" section of the README for
-# what that overwrites and what it leaves alone. Last, because it is what
-# changes most often and nothing below it needs rebuilding.
+# Managed dotfiles. entrypoint.sh copies zsh, Claude Code and Codex into
+# /home/dev on every boot — see the "config sync" section of the README for what
+# that overwrites and what it leaves alone. config/nvim is the exception:
+# bootstrap-toolchain.sh seeds it ONCE, so your editor config on the box is
+# yours to edit. devaloy-nvim-sync re-copies it on demand. Last, because it is
+# what changes most often and nothing below it needs rebuilding.
 COPY config /opt/devaloy/config
 
 # No VOLUME instruction: compose declares the named volumes, and Docker seeds an
