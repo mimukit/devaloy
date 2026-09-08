@@ -17,9 +17,18 @@
 [ -f "$HOME/.devaloy_env" ] && . "$HOME/.devaloy_env"
 
 # --- environment ---------------------------------------------------------
-# vim, not nvim: the image ships vim and nothing here is worth an editor
-# bootstrap. Override in ~/.zshrc.local if you install something else.
-export EDITOR=vim
+# nvim when it is there, vim when it is not. The box now seeds a configured
+# LazyVim (see bootstrap-toolchain.sh and config/nvim/), and `git commit` and
+# `gh` both open $EDITOR, so there is no reason to drop into stock vim for
+# those. nvim comes from mise, so it is absent until the toolchain bootstrap
+# runs — the guard keeps a cold volume on vim from the apt list rather than
+# leaving $EDITOR broken. Same guard as the `v` alias below.
+# Override in ~/.zshrc.local if you want something else.
+if command -v nvim >/dev/null; then
+    export EDITOR=nvim
+else
+    export EDITOR=vim
+fi
 export VISUAL="$EDITOR"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
@@ -98,9 +107,10 @@ alias c='clear'
 alias cc='clear; tmux clear-history 2>/dev/null; clear'
 alias e='exit'
 alias x='exit'
-# Neovim with the LazyVim config in ~/.config/nvim. It comes from mise, so it is
-# absent until the toolchain bootstrap runs — the guard keeps `v` on vim from
-# the apt list until then, rather than leaving it broken on a cold volume.
+# Neovim with the LazyVim config seeded into ~/.config/nvim from config/nvim/.
+# It comes from mise, so it is absent until the toolchain bootstrap runs — the
+# guard keeps `v` on vim from the apt list until then, rather than leaving it
+# broken on a cold volume. Same guard as $EDITOR above.
 if command -v nvim >/dev/null; then
     alias v='nvim'
 else
