@@ -127,6 +127,81 @@ every container and writes nothing:
 scripts/host-resource-guard.sh --check
 ```
 
+## Two full boxes on one host
+
+Running a second devaloy is not running a smaller one. Both boxes get the same limits, and the way you fit them into a host that cannot hold two peaks at once is swap, not asymmetry.
+
+The worked host: 11.4 GiB RAM, 6 vCPU, sharing with two WordPress stacks, a Traefik, a Beszel and Dokploy's own infra containers. Those neighbours together measure 311 MiB. The two boxes peak at 5-6 GiB each when several Claude Code sessions and a couple of dev servers are running.
+
+Same `.env` values in both stacks:
+
+```sh
+DEVALOY_MEM_LIMIT=4500m
+DEVALOY_MEMSWAP_LIMIT=10g
+DEVALOY_MEM_RESERVATION=1500m
+DEVALOY_CPUS=4
+DEVALOY_CPU_SHARES=512
+DEVALOY_PIDS_LIMIT=1024
+```
+
+The RAM caps total 9 GiB and leave 2.4 GiB for the host, dockerd and the neighbours. Each box may then take 5.5 GiB of swap on top of its 4.5 GiB of RAM, which is what carries the 5-6 GiB peak. `DEVALOY_CPUS=4` on a 6-core host is deliberate overcommit: one box can use most of the machine while the other is idle, and `cpu_shares` at 512 means the live sites win when all three want the CPU at once.
+
+### Swap has to be real
+
+The ceilings above promise 11 GiB of swap between them. A 3 GiB swap file cannot honour that, and the cgroup killer fires instead of the box going slow.
+
+```sh
+sudo swapoff -a
+sudo fallocate -l 12G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+```
+
+Add it to `/etc/fstab` so it survives a reboot.
+
+Then raise swappiness, because the guard script's default of `10` is tuned for the opposite goal:
+
+```sh
+SWAPPINESS=60 sudo scripts/host-resource-guard.sh --apply
+```
+
+At `10` the kernel keeps cold agent pages in RAM until it is nearly out. At `60` it moves them to swap early, which is what you want when a 12 GiB swap file exists specifically to hold them. Idle sessions are mostly cold pages and swap well. The cost is real: a session you return to after an hour pages back in and feels slow for a few seconds.
+
+### The reclaim scripts
+
+Two boxes at these limits need the memory and the disk given back on a schedule, not when you notice. `devaloy-ram` and `devaloy-disk` (see [Reference](reference.md#commands-on-the-box)) do that, and both report before they act.
+
+The Paseo daemon is the reclaim that matters. On the worked box it and its `@getpaseo/server` workers held 5519 MiB of the container's 6450 MiB, with two workers alone at 2025 MiB and 1148 MiB. Restarting it is cheap because `entrypoint.sh` supervises it and brings it back ten seconds later:
+
+```sh
+devaloy-ram              # report: what is holding the memory
+devaloy-ram --apply      # restart Paseo, TERM orphaned language servers
+```
+
+Run it between turns. Every pane the daemon owns dies with it.
+
+Neither script can run on a timer inside the box, because the image has no cron and no systemd, and a background loop would not survive a redeploy. Put the timer on the host next to the `docker-prune.timer` that `scripts/host-resource-guard.sh --apply` already installs, and have it call:
+
+```sh
+docker exec devaloy devaloy-ram --apply
+docker exec devaloy-two devaloy-ram --apply
+```
+
+Disk is the ceiling nobody watches. Two home volumes and a 12 GiB swap file share one disk, and `devaloy-prune` only covers the nested Docker daemon:
+
+```sh
+devaloy-disk                      # dry run, always read this first
+devaloy-disk --apply --docker     # node_modules, dead worktrees, Docker
+devaloy-disk --apply --caches     # also the pnpm/npm/turbo caches
+```
+
+### Fix the kill order before you rely on the cap
+
+`entrypoint.sh` sets the Paseo supervisor to `oom_score_adj -250`, and the daemon inherits it. Interactive shells raise themselves back to `0`.
+
+So when the 4.5 GiB cap fires, the cgroup killer prefers a Claude Code session over the Paseo daemon, even though the daemon holds most of the memory. You lose the work and keep the leak. Either raise the supervisor to `0`, or restart Paseo on a schedule so the cap is never the thing that fires. The scheduled restart is the smaller change and it is what the timer above does.
+
 ## What happens when devaloy hits the ceiling
 
 The container starts at `oom_score_adj: -500`, which keeps `tailscaled` off the
