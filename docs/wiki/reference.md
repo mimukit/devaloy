@@ -32,6 +32,7 @@ except `TS_AUTHKEY` on a first boot.
 | `GIT_AUTHOR_NAME` | empty | `user.name`. Falls back to the `GITHUB_TOKEN` account's name. |
 | `GIT_AUTHOR_EMAIL` | empty | `user.email`. Falls back to that account's `ID+login@users.noreply.github.com` address. |
 | `GIT_SIGNING_SSH_KEY` | empty | Base64 of a **passphrase-less OpenSSH private key**. Enables SSH commit and tag signing. |
+| `DEVALOY_REPOS` | empty | Whitespace-separated repos to clone into `~/projects` on each boot. See [Cloning repos on boot](#cloning-repos-on-boot). |
 
 Clearing any of these and redeploying **revokes** it: `~/.devaloy_secrets`,
 `~/.config/gh/hosts.yml`, `~/.config/agent-push.env` and the signing key are all
@@ -42,6 +43,22 @@ hundred characters and decodes to a `BEGIN OPENSSH PRIVATE KEY` block; anything
 near a hundred characters is the public half and is rejected at boot. Literal PEM
 is also accepted, for the case where the value arrives through some channel that
 can carry newlines.
+
+### Cloning repos on boot
+
+`DEVALOY_REPOS` seeds `~/projects` so a fresh box starts on real code. The list lives in `.env`, which is gitignored, so no repo of yours is named in this repository. Entries are separated by whitespace, and each one takes one of three forms:
+
+| Form | Example | Clones to |
+|---|---|---|
+| `owner/repo` | `mimukit/devaloy` | `~/projects/devaloy` |
+| `https://` URL | `https://github.com/cli/cli` | `~/projects/cli` |
+| `git@host:path` | `git@github.com:you/private.git` | `~/projects/private` |
+
+A trailing `.git` or `/` is stripped before the directory is named. Cloning goes over HTTPS through the credential helper that `gh auth setup-git` installs, so a private repo needs `GITHUB_TOKEN`. The `git@` form needs an SSH key on the box, which devaloy does not install for you.
+
+The step runs on every boot and is idempotent. A repo already cloned in `~/projects` is left alone and logs nothing, so adding an entry and redeploying clones only that one. Nothing is ever pulled, updated or deleted; `git pull` stays yours to run.
+
+Failures never stop the box. An entry with an illegal character, an unrecognized form, a failed clone, or a name already taken by something that is not a clone logs one `[entrypoint] WARNING` line and the rest of the list continues. Two repos of the same name from different owners hit that last case: the second is skipped, and you clone it by hand under another name.
 
 ### Push notifications
 
