@@ -133,7 +133,7 @@ evidence that pairings survive.
 | Thing | Why it bites |
 |---|---|
 | `docker compose up -d` with no `--build` | Build args are not re-read. Nothing changes and there is no error. |
-| Upgrading Orca | Pinned by `ARG ORCA_VERSION` in the `Dockerfile`. Bump it and rebuild — `devaloy-update` does **not** cover it, unlike every other tool here. |
+| Upgrading Orca | Pinned by `ARG ORCA_VERSION` in the `Dockerfile`. Bump it and rebuild — `devaloy update` does **not** cover it, unlike every other tool here. |
 | Stopping a misbehaving Orca | There is no runtime toggle. The entrypoint restarts it in an unbounded loop, so `pkill` will not stick — use `docker compose stop`, or `WITH_ORCA=false` and rebuild. |
 | `[autoUpdater] Checking for update` in the log | Expected noise. It cannot apply anything (`/opt` is root-owned, the server runs as `dev`), but a check that downloads would land ~160 MB in the home volume. |
 | `Failed to connect to the bus` in the log | Expected noise — there is no session bus here. Harmless unless pairings stop surviving a redeploy; see step 5. |

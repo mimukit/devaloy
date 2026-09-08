@@ -76,7 +76,7 @@ The agent CLIs come from `mise` rather than their own installers because
 `mise`'s registry fetches the same upstream artifacts — Claude Code's binary
 checksummed against its release manifest, Codex's musl build from its GitHub
 release — with nothing for this repo to hand-roll. They land in the home volume
-like every other tool, so a `devaloy-update` upgrade survives a redeploy. Pin
+like every other tool, so a `devaloy update` upgrade survives a redeploy. Pin
 either by pinning it in `bootstrap-toolchain.sh`.
 
 The trade is that a **cold volume takes a few minutes longer to boot**, since
@@ -91,7 +91,7 @@ Anything you `apt install` on the box yourself is gone at the next
 the same file.** The boot bootstrap skips itself when the home volume already
 records the current revision, so without the bump a box that is already
 provisioned will never install the new tool — it will keep skipping, and only
-`devaloy-update` will pull it in by hand.
+`devaloy update` will pull it in by hand.
 
 ## One-time setup
 
@@ -409,7 +409,7 @@ reaches — the same reason Tailscale SSH works with no `ports:` key.
 
 ### What to know before you turn it on
 
-- **Upgrading is a rebuild, not `devaloy-update`.** Orca is pinned by
+- **Upgrading is a rebuild, not `devaloy update`.** Orca is pinned by
   `ARG ORCA_VERSION` in the `Dockerfile` and installed as a system package.
   Bump it and rebuild. This is a genuine break from how every other tool on the
   box upgrades, and it will surprise you in three months.
@@ -548,7 +548,7 @@ the hosted web client reach a daemon it is not served from.
   on the next boot. It does not uninstall `paseo` and it does not rewrite
   `~/.paseo/config.json`, so your paired clients and settings are still there
   when you turn it back on. A `paseo` with no daemon behind it does nothing.
-- **Upgrading is `devaloy-update`,** unlike Orca. Paseo always tracks `latest`
+- **Upgrading is `devaloy update`,** unlike Orca. Paseo always tracks `latest`
   through mise, like `claude` and `codex` do. There is no environment variable
   to pin it. `MISE_PASEO_VERSION` would look like the obvious name, but mise
   reads any `MISE_<TOOL>_VERSION` as a request for a tool called `<TOOL>`, and
@@ -643,7 +643,7 @@ at start rather than quietly picking one.
   so a stack you started three weeks ago is a line you read on the way in.
 - **Nothing prunes images for you.** Build cache is reaped automatically by the
   builder GC; images are not, because an agent may be halfway through a build.
-  Run `devaloy-prune` when the disk fills, or `devaloy-prune --all` to also take
+  Run `devaloy prune --apply` when the disk fills, or add `--all` to also take
   images no container is running.
 - **Published ports bind `0.0.0.0`,** so they are reachable from the Docker host
   as well as the tailnet. This is the same call the compose file already records
@@ -722,6 +722,30 @@ other shell child, so under a memory ceiling it dies before tailscaled does.
 - **Turning it back off needs a rebuild**, like `WITH_ORCA`. The CLI and the
   browser stay in the home volume; only the exports and the warning go away.
 
+## Managing the box
+
+Everything you do *to* the box, rather than on it, is one command:
+
+```sh
+devaloy
+```
+
+It opens a picker on a status screen — disk on the home volume, memory against the container's ceiling, the Paseo daemon, Docker, the toolset revision — with the reclaims, the toolchain update and a `doctor` view underneath. `l` and `enter` open a view, `h` goes back, `a` applies, `q` quits.
+
+Each reclaim shows you what it found before it touches anything, and the apply deletes from that exact list rather than scanning again. Run any verb straight from the command line when you already know what you want:
+
+```sh
+devaloy status                 # the same figures as plain text
+devaloy doctor                 # what this box was built with, and what is broken
+devaloy disk                   # dry run; add --apply to act
+devaloy ram --apply            # restart Paseo, TERM orphaned language servers
+devaloy prune --apply --all    # Docker build cache and unused images
+```
+
+`devaloy-update`, `devaloy-disk`, `devaloy-ram`, `devaloy-prune` and `devaloy-nvim-sync` are symlinks to it and still work. With no terminal and no verb — `ssh devaloy 'devaloy'` — it prints the status block and exits `0`.
+
+Full key map and the `doctor` exit codes: [Manage the box](docs/wiki/manage-the-box.md).
+
 ## Updating the toolchain
 
 The toolchain installs once per volume, so redeploys are predictable and never
@@ -729,17 +753,17 @@ swap a tool out from under a live session. To pick up newer versions or a
 changed pin, run this on the box as `dev`:
 
 ```sh
-devaloy-update
+devaloy update
 ```
 
 Pins live in `bootstrap-toolchain.sh`. Node is pinned to an LTS major; `gh`,
 `pnpm` and `turbo` track latest. To pin herdr too, set `MISE_HERDR_VERSION` in
-your `.env` and re-run `devaloy-update`.
+your `.env` and re-run `devaloy update`.
 
 It also reinstalls the agent skills, so it doubles as the publish loop — see
 [Agent skills](#agent-skills). Use `skmi` when you want only that.
 
-`devaloy-update` also refreshes `/usr/local/bin`, which is what makes the
+`devaloy update` also refreshes `/usr/local/bin`, which is what makes the
 toolchain visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`,
 `rsync`, git-over-ssh). Run it after any `npm i -g`.
 
@@ -845,7 +869,7 @@ Publishing loop, once a skill is pushed to `mimukit/skills`:
 ```sh
 skmi              # install/refresh every skill — what you want after publishing
 skup              # update only what is already installed
-devaloy-update    # the toolchain too; runs the same skmi command
+devaloy update    # the toolchain too; runs the same skmi command
 ```
 
 `skmi`, not `skup`, is what picks up a **newly authored** skill: `skills update`

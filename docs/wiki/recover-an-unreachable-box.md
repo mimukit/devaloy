@@ -43,7 +43,7 @@ docker compose exec devaloy tailscale status
 | Node reachable, SSH refused | No matching rule in the tailnet policy file | [Fix the policy file](#ssh-is-refused) |
 | Node reachable, `dev` login rejected | Policy rule's `users` list omits `dev` | Add `"users": ["dev"]` |
 | Reachable, but `pnpm`/`gh`/`claude` are missing | Toolchain bootstrap failed | [Re-run the bootstrap](#the-toolchain-never-installed) |
-| `ssh devaloy '<cmd>'` cannot find a tool an interactive shell finds | `link-shims` did not run | `devaloy-update` as `dev` — see below |
+| `ssh devaloy '<cmd>'` cannot find a tool an interactive shell finds | `link-shims` did not run | `devaloy update` as `dev` — see below |
 
 ## The host is missing `tun`
 
@@ -143,7 +143,7 @@ The revision marker is only written on success, so the fix is simply to re-run
 it — on the box, as `dev`:
 
 ```sh
-devaloy-update
+devaloy update
 ```
 
 That runs `bootstrap-toolchain.sh --force`, which skips the revision gate,
@@ -167,7 +167,7 @@ WARNING: link-shims failed — non-interactive commands may not find the toolcha
 Re-run it from the box:
 
 ```sh
-devaloy-update
+devaloy update
 ```
 
 Run this after any `npm i -g` too — a globally installed binary is invisible to

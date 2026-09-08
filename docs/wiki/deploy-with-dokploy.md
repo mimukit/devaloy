@@ -217,7 +217,7 @@ whatever you had attached. So pick one:
   docker-compose.yml
   entrypoint.sh
   bootstrap-toolchain.sh
-  devaloy-update
+  devaloy update
   link-shims
   config/**
   ```
@@ -231,7 +231,7 @@ one or the other before you start relying on the box.
 
 **Updating the toolchain.** Unchanged by Dokploy — the toolchain installs once
 per home volume, so a redeploy never swaps tools out from under a live session.
-To pick up newer versions, SSH in and run `devaloy-update`. Adding a tool to
+To pick up newer versions, SSH in and run `devaloy update`. Adding a tool to
 `bootstrap-toolchain.sh` also requires bumping `TOOLSET_REVISION` in that file,
 or a provisioned box will keep skipping the bootstrap.
 

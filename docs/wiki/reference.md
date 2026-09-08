@@ -180,16 +180,21 @@ Changing either means editing the file and rebuilding.
 
 Run as the `dev` user unless noted.
 
+Every management verb belongs to one command, `devaloy`. The five older names are symlinks to it and still work; `devaloy` reads its own name to pick the verb. See [Manage the box](manage-the-box.md) for the picker and its keys.
+
 | Command | Effect |
 |---|---|
-| `devaloy-update` | Re-runs the bootstrap with `--force`, then refreshes the `/usr/local/bin` mirror. Refuses to run as root. |
+| `devaloy` | Opens the picker. With no terminal and no verb, prints `devaloy status` as plain text and exits `0`. Needs fzf 0.65+ to draw; below that it refuses and names `devaloy update`, while every verb still runs. Modules live in `/usr/local/lib/devaloy/`, overridable with `DEVALOY_LIB`. |
+| `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, Docker, and the toolset revision. |
+| `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes. |
+| `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, then refreshes the `/usr/local/bin` mirror. Refuses to run as root. |
 | `bootstrap-toolchain.sh` | Installs the toolchain, but **skips itself** if the home volume already records the current `TOOLSET_REVISION`. |
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |
-| `devaloy-nvim-sync` | Copies the repo's LazyVim config from `/opt/devaloy/config/nvim` over `~/.config/nvim`, then runs a headless `Lazy! sync`. Moves the current directory to `~/.config/nvim.bak-<timestamp>` first, unless given `--no-backup`. Refuses to run as root. See [The editor config](#the-editor-config). |
-| `devaloy-prune` | Reclaims disk from the nested Docker daemon. Only on a `WITH_DOCKER=true` build. Takes `--all` (also images no container is running) and `--age <duration>` (default `168h`). Never touches a running container, and never runs on a timer. |
-| `devaloy-ram` | Reclaims RAM inside the box. **Reports by default; needs `--apply` to act.** Restarts the Paseo daemon and its worker tree, and TERMs orphaned language servers (`ppid` 1, idle past `--age <minutes>`, default 60). Dev servers are listed, never killed. Takes `--paseo` or `--orphans` to run one half. Never touches `drop_caches`, which is not namespaced and would hit the whole host. |
-| `devaloy-disk` | Reclaims disk from the home volume, which `devaloy-prune` does not cover. **Dry run by default; needs `--apply` to act.** Removes `node_modules` untouched for `--age <days>` (default 30), prunes dead git worktree records, and with `--caches` prunes the pnpm/npm/turbo caches. `--docker` hands off to `devaloy-prune`. Lists linked worktrees but never deletes one, since it cannot tell a stale checkout from uncommitted work. |
+| `devaloy nvim-sync` (`devaloy-nvim-sync`) | Copies the repo's LazyVim config from `/opt/devaloy/config/nvim` over `~/.config/nvim`, then runs a headless `Lazy! sync`. Moves the current directory to `~/.config/nvim.bak-<timestamp>` first, unless given `--no-backup`. Refuses to run as root. See [The editor config](#the-editor-config). |
+| `devaloy prune` (`devaloy-prune`) | Reclaims disk from the nested Docker daemon. Only on a `WITH_DOCKER=true` build. **Reports by default; needs `--apply` to act** — a change from the old `devaloy-prune`, which pruned immediately. Takes `--all` (also images no container is running) and `--age <duration>` (default `168h`). Never touches a running container, and never runs on a timer. |
+| `devaloy ram` (`devaloy-ram`) | Reclaims RAM inside the box. **Reports by default; needs `--apply` to act.** Restarts the Paseo daemon and its worker tree, and TERMs orphaned language servers (`ppid` 1, idle past `--age <minutes>`, default 60). Dev servers are listed, never killed. Takes `--paseo` or `--orphans` to run one half. Never touches `drop_caches`, which is not namespaced and would hit the whole host. |
+| `devaloy disk` (`devaloy-disk`) | Reclaims disk from the home volume, which `devaloy prune` does not cover. **Dry run by default; needs `--apply` to act.** Removes `node_modules` untouched for `--age <days>` (default 30), prunes dead git worktree records, and with `--caches` prunes the pnpm/npm/turbo caches. `--docker` hands off to `devaloy prune`, and `mise prune` reaps the stale tool versions that are usually the largest share. Lists linked worktrees but never deletes one, since it cannot tell a stale checkout from uncommitted work. |
 | `playwright-cli` | Drives a headless Chromium. Only with `WITH_BROWSER=true`. `open <url>`, `screenshot` (prints a path under `/tmp/playwright-cli/`), `close`; `close-all` ends every session. Pinned to `@playwright/cli` 0.1.18 in `bootstrap-toolchain.sh`, the newest release with npm provenance. |
 
 Any argument to `bootstrap-toolchain.sh` other than `--force` exits `2` without
@@ -202,7 +207,7 @@ devaloy-specific, from `config/zsh/zshrc`. The file also carries the usual
 
 | Alias | Expands to |
 |---|---|
-| `update` | `devaloy-update` |
+| `update` | `devaloy update` |
 | `skmi` | `skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y` |
 | `skup` | `skills update --global -y` |
 | `clc` | `claude --model "claude-opus-5[1m]"` |
@@ -224,15 +229,15 @@ before.
 
 The config is not upstream's LazyVim starter. It is a vendored copy of `mimukit/dotfiles:dot_config/nvim`, kept in this repo at `config/nvim/` and carried into the image at `/opt/devaloy/config/nvim`. It sets tokyonight with a transparent background, `scrolloff` 20, `;` for command mode, 2-space tabs, the snacks explorer on the right showing hidden and gitignored files, and the `lang.json`, `lang.toml` and `util.dot` LazyVim extras. `lazy-lock.json` is vendored with it, so a fresh box resolves the same plugin commits as the laptop.
 
-**The seed runs once.** `bootstrap-toolchain.sh` copies `config/nvim/` into `~/.config/nvim` only when that directory does not exist. This is deliberate and it is why the copy does not go through `entrypoint.sh`, which re-copies the zsh, Claude Code and Codex files on every boot. Once seeded, `~/.config/nvim` is yours: edit it on the box and it survives every `docker compose up --build`, and `devaloy-update --force` will not touch it.
+**The seed runs once.** `bootstrap-toolchain.sh` copies `config/nvim/` into `~/.config/nvim` only when that directory does not exist. This is deliberate and it is why the copy does not go through `entrypoint.sh`, which re-copies the zsh, Claude Code and Codex files on every boot. Once seeded, `~/.config/nvim` is yours: edit it on the box and it survives every `docker compose up --build`, and `devaloy update` will not touch it.
 
-To pull the repo copy back over your own, run `devaloy-nvim-sync`. It moves the current directory to `~/.config/nvim.bak-<timestamp>` and prints the path, so a sync you did not mean to run costs nothing. Use it after changing `config/nvim/` in this repo, or on a box seeded before `config/nvim/` existed and still holding the plain starter.
+To pull the repo copy back over your own, run `devaloy nvim-sync`. It moves the current directory to `~/.config/nvim.bak-<timestamp>` and prints the path, so a sync you did not mean to run costs nothing. Use it after changing `config/nvim/` in this repo, or on a box seeded before `config/nvim/` existed and still holding the plain starter.
 
 To start over completely, delete the config and its state, then seed again:
 
 ```sh
 rm -rf ~/.config/nvim ~/.local/share/nvim ~/.local/state/nvim ~/.cache/nvim
-devaloy-nvim-sync --no-backup
+devaloy nvim-sync --no-backup
 ```
 
 **One divergence from the laptop.** The laptop config maps `<C-h/j/k/l>` to `Navigator.nvim`, which hops between Neovim splits and tmux panes with one key. That plugin is not in the spec, so the maps are dropped here rather than left to print `E492` on every press. LazyVim's own window maps take those keys instead, so split-to-split movement still works; the tmux pane hop and the terminal-mode variant do not. This is an omission on purpose, not an oversight.

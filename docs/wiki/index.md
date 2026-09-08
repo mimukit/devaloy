@@ -14,6 +14,8 @@ it when it stops answering.
 
 ## Tasks
 
+- [Manage the box with `devaloy`](manage-the-box.md) — one command for the
+  status screen, the reclaims, the toolchain update and `doctor`.
 - [Deploy with Dokploy](deploy-with-dokploy.md) — running the stack as a Dokploy
   Compose service instead of by hand.
 - [Size the container resource limits](vm-resource-limits.md) — the six
@@ -27,7 +29,7 @@ it when it stops answering.
 - [Lock down the host firewall](lock-down-the-host-firewall.md) — the other
   host-side script, and the two guards that stop it locking you out.
 - [Update the toolchain](update-the-toolchain.md) — which command updates what:
-  `devaloy-update`, `skmi`, or an edit to `bootstrap-toolchain.sh`.
+  `devaloy update`, `skmi`, or an edit to `bootstrap-toolchain.sh`.
 - [Migrate the box to a new host](migrate-to-a-new-host.md) — re-enroll fresh,
   or move the `home` and `tailscale-state` volumes across.
 - [Turn on phone push notifications](push-notifications.md) — one ntfy push per

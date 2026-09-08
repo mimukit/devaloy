@@ -21,9 +21,17 @@ pages:
       - docker-compose.yml
       - entrypoint.sh
       - bootstrap-toolchain.sh
-      - devaloy-update
+      - devaloy
+      - lib/**
       - link-shims
       - config/**
+
+  - path: manage-the-box.md
+    mode: how-to
+    documents:
+      - devaloy
+      - lib/**
+      - Dockerfile
 
   - path: reference.md
     mode: reference
@@ -33,7 +41,8 @@ pages:
       - .env.example
       - entrypoint.sh
       - bootstrap-toolchain.sh
-      - devaloy-update
+      - devaloy
+      - lib/**
       - link-shims
       - scripts/**
       - config/zsh/zshrc
@@ -56,7 +65,8 @@ pages:
     documents:
       - entrypoint.sh
       - docker-compose.yml
-      - devaloy-update
+      - devaloy
+      - lib/**
       - link-shims
 
   - path: run-a-project-stack.md
@@ -66,14 +76,16 @@ pages:
       - docker-compose.yml
       - entrypoint.sh
       - config/docker/daemon.json
-      - devaloy-prune
+      - devaloy
+      - lib/**
       - .env.example
 
   - path: update-the-toolchain.md
     mode: how-to
     documents:
       - bootstrap-toolchain.sh
-      - devaloy-update
+      - devaloy
+      - lib/**
       - link-shims
       - Dockerfile
       - config/zsh/zshrc

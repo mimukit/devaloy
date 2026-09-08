@@ -172,13 +172,13 @@ At `10` the kernel keeps cold agent pages in RAM until it is nearly out. At `60`
 
 ### The reclaim scripts
 
-Two boxes at these limits need the memory and the disk given back on a schedule, not when you notice. `devaloy-ram` and `devaloy-disk` (see [Reference](reference.md#commands-on-the-box)) do that, and both report before they act.
+Two boxes at these limits need the memory and the disk given back on a schedule, not when you notice. `devaloy ram` and `devaloy disk` (see [Reference](reference.md#commands-on-the-box)) do that, and both report before they act.
 
 The Paseo daemon is the reclaim that matters. On the worked box it and its `@getpaseo/server` workers held 5519 MiB of the container's 6450 MiB, with two workers alone at 2025 MiB and 1148 MiB. Restarting it is cheap because `entrypoint.sh` supervises it and brings it back ten seconds later:
 
 ```sh
-devaloy-ram              # report: what is holding the memory
-devaloy-ram --apply      # restart Paseo, TERM orphaned language servers
+devaloy ram              # report: what is holding the memory
+devaloy ram --apply      # restart Paseo, TERM orphaned language servers
 ```
 
 Run it between turns. Every pane the daemon owns dies with it.
@@ -186,16 +186,16 @@ Run it between turns. Every pane the daemon owns dies with it.
 Neither script can run on a timer inside the box, because the image has no cron and no systemd, and a background loop would not survive a redeploy. Put the timer on the host next to the `docker-prune.timer` that `scripts/host-resource-guard.sh --apply` already installs, and have it call:
 
 ```sh
-docker exec devaloy devaloy-ram --apply
-docker exec devaloy-two devaloy-ram --apply
+docker exec devaloy devaloy ram --apply
+docker exec devaloy-two devaloy ram --apply
 ```
 
-Disk is the ceiling nobody watches. Two home volumes and a 12 GiB swap file share one disk, and `devaloy-prune` only covers the nested Docker daemon:
+Disk is the ceiling nobody watches. Two home volumes and a 12 GiB swap file share one disk, and `devaloy prune` only covers the nested Docker daemon:
 
 ```sh
-devaloy-disk                      # dry run, always read this first
-devaloy-disk --apply --docker     # node_modules, dead worktrees, Docker
-devaloy-disk --apply --caches     # also the pnpm/npm/turbo caches
+devaloy disk                      # dry run, always read this first
+devaloy disk --apply --docker     # node_modules, mise versions, Docker
+devaloy disk --apply --caches     # also the pnpm/npm/turbo caches
 ```
 
 ### Fix the kill order before you rely on the cap

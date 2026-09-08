@@ -120,9 +120,9 @@ disagree.
 This exists so an ordinary redeploy cannot re-resolve `@latest` and swap an agent
 CLI out from under a live session. The cost is that **adding a tool without
 bumping the revision means already-provisioned boxes never install it** — the
-gate sees the marker, skips, and only `devaloy-update` picks it up by hand.
+gate sees the marker, skips, and only `devaloy update` picks it up by hand.
 
-`devaloy-update` runs the same script with `--force`, which skips the gate
+`devaloy update` runs the same script with `--force`, which skips the gate
 entirely, runs `mise upgrade` and re-runs the skills install. `mise install`
 alone would not move a tool already on disk even if it is pinned to `latest`.
 
@@ -286,7 +286,7 @@ argument** it puts the shared libraries a headless Chromium needs, plus
 makes the bootstrap install `playwright-cli` and download a Chromium into
 `~/.cache/ms-playwright`, in the home volume, and makes the entrypoint export
 three defaults into `~/.devaloy_env`. The image carries what apt owns; the
-volume carries what a `devaloy-update` moves. A box that sets the key without
+volume carries what a `devaloy update` moves. A box that sets the key without
 `--build` gets a warning in the boot log, the way `WITH_DOCKER` does.
 
 The browser is 982 MB on the volume, both the Chrome for Testing build and the

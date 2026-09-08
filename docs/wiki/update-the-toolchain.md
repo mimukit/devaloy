@@ -4,17 +4,17 @@ Every tool on the box — node, pnpm, gh, turbo, lazygit, herdr, claude, codex, 
 
 | You want to | Run |
 |---|---|
-| Upgrade the tools that track `latest` | `devaloy-update` on the box (aliased to `update`) |
-| Pick up a skill you just published to `mimukit/skills` | `skmi` on the box, or `devaloy-update` |
+| Upgrade the tools that track `latest` | `devaloy update` on the box (aliased to `update`) |
+| Pick up a skill you just published to `mimukit/skills` | `skmi` on the box, or `devaloy update` |
 | Add or remove a tool, or change a pin | Edit `bootstrap-toolchain.sh` in the repo, bump `TOOLSET_REVISION`, redeploy with `--build` |
-| Make an `npm i -g` install visible everywhere | `devaloy-update` after the install |
+| Make an `npm i -g` install visible everywhere | `devaloy update` after the install |
 
 ## Upgrade what tracks `latest`
 
-Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, herdr, claude, codex, command-code, skills, and Paseo when `WITH_PASEO=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy-update` is what runs it:
+Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, herdr, claude, codex, command-code, skills, and Paseo when `WITH_PASEO=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy update` is what runs it:
 
 ```sh
-devaloy-update
+devaloy update
 ```
 
 It runs `bootstrap-toolchain.sh --force` (which skips the revision gate and runs `mise upgrade`), then refreshes the `/usr/local/bin` shim mirror with `link-shims`. Run it as the dev user; it refuses to run as root.
@@ -27,7 +27,7 @@ Skills come from the `mimukit/skills` repo, not from `config/`. The publish loop
 
 ```sh
 skmi              # skills add mimukit/skills --global --skill '*' … — the skills half alone
-devaloy-update    # the same install, plus the full toolchain refresh
+devaloy update    # the same install, plus the full toolchain refresh
 ```
 
 `skup` (`skills update`) is not enough: it only refreshes skills that are already installed, so it never notices a newly authored one. Only `skills add` — which both commands above run — does.
@@ -48,7 +48,7 @@ On the next boot the marker disagrees with the new revision and the bootstrap re
 
 ## After `npm i -g`
 
-A global npm install lands in mise's node directory and works in your interactive shell, because the shims are on `PATH` there. Non-interactive sessions — `ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh — resolve through the `/usr/local/bin` mirror instead, and the new binary is not in it yet. `devaloy-update` refreshes the mirror; if you want only that half, the underlying command is:
+A global npm install lands in mise's node directory and works in your interactive shell, because the shims are on `PATH` there. Non-interactive sessions — `ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh — resolve through the `/usr/local/bin` mirror instead, and the new binary is not in it yet. `devaloy update` refreshes the mirror; if you want only that half, the underlying command is:
 
 ```sh
 sudo DEV_HOME="$HOME" link-shims
@@ -56,6 +56,6 @@ sudo DEV_HOME="$HOME" link-shims
 
 ## What survives what
 
-The whole toolchain lives in the home volume, so an ordinary redeploy keeps every tool and every version exactly as it was — including agents you upgraded with `devaloy-update`. `docker compose down -v` destroys it along with everything else in `/home/dev`. The per-command details of `devaloy-update`, `bootstrap-toolchain.sh`, and `link-shims` are in the [reference](reference.md).
+The whole toolchain lives in the home volume, so an ordinary redeploy keeps every tool and every version exactly as it was — including agents you upgraded with `devaloy update`. `docker compose down -v` destroys it along with everything else in `/home/dev`. The per-command details of `devaloy update`, `bootstrap-toolchain.sh`, and `link-shims` are in the [reference](reference.md).
 
 _Verified against `main`@`a1f2d83` on 2026-08-25._

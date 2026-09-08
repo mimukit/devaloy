@@ -21,7 +21,7 @@ side by side on different ports. Where they differ:
 |---|---|---|
 | Switch type | build argument, needs `--build` | environment variable, plain `up -d` |
 | Image cost | 683 MB to 1.6 GB | none, it installs into the home volume |
-| Upgrades | bump `ORCA_VERSION`, rebuild | `devaloy-update`, like every other tool |
+| Upgrades | bump `ORCA_VERSION`, rebuild | `devaloy update`, like every other tool |
 | Port and bind | 6768 on `0.0.0.0`, so the Docker host reaches it | 6767 on the tailnet address only |
 | Connecting | pairing URL from the container log | direct connection you type into the app |
 
@@ -69,7 +69,7 @@ first; there is no point binding an address nothing can route to. See
 [README → Recovering a box you can't reach](../../README.md#recovering-a-box-you-cant-reach).
 
 If you see `WARNING: WITH_PASEO is true but paseo is not installed`, the
-toolchain bootstrap did not finish. SSH in and run `devaloy-update`.
+toolchain bootstrap did not finish. SSH in and run `devaloy update`.
 
 ## 3. Connect the phone or desktop app
 
@@ -226,6 +226,6 @@ one. Agents, terminals, diffs and git all work normally.
 | Editing `~/.paseo/config.json` on the box | Only the keys the repo does not ship survive a redeploy. `daemon.listen`, `daemon.hostnames`, `features.webUi.enabled`, `daemon.relay.enabled`, `daemon.cors.allowedOrigins` and `worktrees.root` are all rewritten on the next boot. |
 | No password by default | Anything on your tailnet can drive your agents. That is the same trust model Tailscale SSH already runs on here, but it surprises people who expected the app to ask for something. |
 | A different tool list inside agents | Paseo injects its own orchestration tools into every agent it launches, so a Claude Code session started from the phone can spawn other agents. A session you started over SSH cannot. |
-| Upgrading | `devaloy-update`, not a rebuild. This is the opposite of Orca. Paseo always tracks `latest` and there is no variable to pin it. Do not add a `MISE_PASEO_VERSION`: mise reads any `MISE_<TOOL>_VERSION` as a request for a tool called `<TOOL>`, `paseo` is not in its registry, and setting one breaks every `mise` command on the box. Edit the pin in `bootstrap-toolchain.sh` instead. |
+| Upgrading | `devaloy update`, not a rebuild. This is the opposite of Orca. Paseo always tracks `latest` and there is no variable to pin it. Do not add a `MISE_PASEO_VERSION`: mise reads any `MISE_<TOOL>_VERSION` as a request for a tool called `<TOOL>`, `paseo` is not in its registry, and setting one breaks every `mise` command on the box. Edit the pin in `bootstrap-toolchain.sh` instead. |
 | A tailnet IP that changed | The daemon binds the address captured at boot, and `daemon.listen` in the config still holds the old one. If `tailscaled` ever re-registers on a different IPv4, restart the container and both are rewritten. The node identity lives in the `tailscale-state` volume, so this is rare. |
 | Both runtimes at once | Fine. Orca is 6768, Paseo is 6767, and neither knows about the other. |

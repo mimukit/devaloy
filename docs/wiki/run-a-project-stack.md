@@ -66,9 +66,10 @@ Build cache is reaped for you. `config/docker/daemon.json` sets the builder GC t
 Images are not, and that is deliberate: an agent may be halfway through a multi-stage build whose intermediate images are pinned by nothing. Reap them by hand:
 
 ```sh
-devaloy-prune                  # dangling images and build cache older than 7 days
-devaloy-prune --all            # also images no container is running
-devaloy-prune --all --age 24h  # narrower window
+devaloy prune                          # report only: what is reclaimable
+devaloy prune --apply                  # dangling images and build cache older than 7 days
+devaloy prune --apply --all            # also images no container is running
+devaloy prune --apply --all --age 24h  # narrower window
 ```
 
 Neither form can touch an image a running container uses — Docker refuses — so a stack you left up is safe by construction.
@@ -103,6 +104,7 @@ Two failures have their own entries in [Deploy with Dokploy → Troubleshooting]
 
 - [Prepare a host for Sysbox](prepare-a-host-for-sysbox.md) — the host-side prerequisite.
 - [Architecture → The optional Docker runtime](architecture.md#the-optional-docker-runtime) — why the daemon starts where it does in the boot order.
-- [Reference](reference.md) — the three environment keys and `devaloy-prune`.
+- [Reference](reference.md) — the three environment keys and `devaloy prune`.
+- [Manage the box](manage-the-box.md) — the picker the prune view lives in.
 
 _Verified against `main`@`b6bc42b` on 2026-08-25._
