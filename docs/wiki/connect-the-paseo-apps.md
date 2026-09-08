@@ -199,6 +199,46 @@ Workspaces, projects and their custom icons are not in this file. They live in
 `~/.paseo/projects/`, the daemon owns them, and the `home` volume is what
 carries them across a redeploy.
 
+## Plugins
+
+Name your plugins in `PASEO_PLUGINS` in `.env`, whitespace-separated:
+
+```sh
+PASEO_PLUGINS=mimukit/paseo-plugins:plugins/kit-launcher mimukit/paseo-plugins:plugins/worktree-sync
+```
+
+Each entry is either a git source in Paseo's `owner/repo:path` form or a
+directory already on the box, such as one `DEVALOY_REPOS` cloned. The runtime id
+comes from the last path segment. Prefix an entry with `id=` when the plugin's
+manifest id differs from its directory name:
+
+```sh
+PASEO_PLUGINS=launcher=mimukit/paseo-plugins:plugins/kit-launcher
+```
+
+The install waits for the daemon to answer, up to two minutes, then installs
+each entry whose id `paseo plugin ls` does not already show. So a plugin you
+disabled in the app stays disabled, and adding an entry installs only the new
+one. A private repo needs credentials on the box. A failing entry logs a warning
+and the box still starts.
+
+Plugins cannot ride `config/paseo/config.json`. That file records a plugin only
+after `paseo plugin install` has fetched it, and a git-sourced plugin also needs
+its clone under `~/.paseo/plugins`.
+
+Check what installed:
+
+```sh
+docker compose logs devaloy | grep -i "Paseo plugin"
+ssh dev@devaloy paseo plugin ls
+```
+
+Update a git-sourced plugin in place, without a redeploy:
+
+```sh
+ssh dev@devaloy paseo plugin update --all
+```
+
 `PASEO_PASSWORD` is the exception and stays out of the file. `daemon.auth.password`
 takes a bcrypt hash and nothing else, so the plaintext lives in
 `~/.devaloy_secrets` and the daemon hashes it when it starts.

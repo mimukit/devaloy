@@ -1057,6 +1057,107 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
       log "Paseo daemon on ${PASEO_IP}:${PASEO_PORT} — add it in the app under"
       log "Settings > Add host > Direct connection, with SSL off. The relay is"
       log "deliberately disabled, so the phone needs Tailscale connected."
+
+      # --- install the plugins named in PASEO_PLUGINS ---
+      # Plugins are the one part of the Paseo setup that config/paseo/config.json
+      # cannot carry. The config file records a plugin AFTER it is installed, and
+      # a git-sourced plugin also needs its clone under ~/.paseo/plugins, which
+      # only `paseo plugin install` creates. So this drives the CLI rather than
+      # writing the key.
+      #
+      # It runs in the BACKGROUND and after the daemon loop above, because
+      # `paseo plugin install` talks to the daemon and the daemon is not up yet
+      # on the line below. Running it in the foreground would hold the entrypoint
+      # short of the `wait` at the bottom of this file for as long as the daemon
+      # takes to answer, and a daemon that never answers would cost you the SSH
+      # you would fix it from.
+      if [ -n "${PASEO_PLUGINS:-}" ]; then
+        (
+          # Wait for the daemon to answer, up to two minutes. `plugin ls` is the
+          # probe rather than `daemon status`, because it is also the call the
+          # loop below needs to succeed — a daemon that is up but not yet serving
+          # the plugin API would pass a status check and then fail every install.
+          plugin_ls=""
+          waited=0
+          while [ "${waited}" -lt 120 ]; do
+            if plugin_ls="$(as_dev "paseo plugin ls --json" 2>/dev/null)"; then
+              break
+            fi
+            plugin_ls=""
+            waited=$((waited + 2))
+            sleep 2
+          done
+          if [ -z "${plugin_ls}" ]; then
+            log "WARNING: the Paseo daemon did not answer in 120s — PASEO_PLUGINS"
+            log "WARNING: not installed. Install them by hand with 'paseo plugin"
+            log "WARNING: install <source>', or restart the container."
+            exit 0
+          fi
+
+          # Same split as DEVALOY_REPOS, for the same reason — see the long note
+          # on `set -f` there.
+          set -f
+          # shellcheck disable=SC2086  # the split is the point.
+          set -- ${PASEO_PLUGINS}
+          set +f
+
+          for spec in "$@"; do
+            # Same whitelist as DEVALOY_REPOS, plus `=` for the id prefix. Every
+            # install below reaches the CLI through as_dev, which is `su -c` on
+            # ONE string.
+            case "${spec}" in
+              *[!A-Za-z0-9._:/@+~=-]*)
+                log "WARNING: PASEO_PLUGINS entry '${spec}' has an illegal"
+                log "WARNING: character — skipped."
+                continue
+                ;;
+            esac
+
+            # `id=source` pins the runtime id; a bare source derives it. The
+            # derived id is the last path segment with any .git stripped, which
+            # is the manifest id for every plugin laid out one-per-directory.
+            # Pin it explicitly when a plugin's manifest id differs from its
+            # directory name, because a wrong guess here reinstalls a plugin
+            # that is already installed on every boot.
+            case "${spec}" in
+              *=*)
+                plugin_id="${spec%%=*}"
+                plugin_src="${spec#*=}"
+                ;;
+              *)
+                plugin_src="${spec}"
+                plugin_id="${plugin_src%/}"
+                plugin_id="${plugin_id##*/}"
+                plugin_id="${plugin_id##*:}"
+                plugin_id="${plugin_id%.git}"
+                ;;
+            esac
+            if [ -z "${plugin_id}" ] || [ -z "${plugin_src}" ]; then
+              log "WARNING: PASEO_PLUGINS entry '${spec}' names no plugin — skipped."
+              continue
+            fi
+
+            # Already installed: silent, like the DEVALOY_REPOS skip. This block
+            # runs on every boot, and a redeploy should not reinstall a plugin
+            # you have since disabled in the app.
+            if printf '%s' "${plugin_ls}" |
+               jq -e --arg id "${plugin_id}" 'any(.[]; .id == $id)' >/dev/null 2>&1; then
+              continue
+            fi
+
+            if as_dev "paseo plugin install $(sq "${plugin_src}") --id $(sq "${plugin_id}")" \
+               >/dev/null 2>&1; then
+              log "Paseo plugin '${plugin_id}' installed from ${plugin_src}"
+            else
+              # Non-fatal, like every other failure in the Paseo block. The most
+              # common cause is a private repo with no credentials on the box.
+              log "WARNING: could not install Paseo plugin '${plugin_id}' from"
+              log "WARNING: ${plugin_src}. Run 'paseo plugin install' on the box"
+              log "WARNING: to see why."
+            fi
+          done
+        ) &
+      fi
     else
       # Same call as the Orca block and as tailscale up's own failure path: a
       # daemon on an address nothing can route to fails at connect time rather

@@ -80,6 +80,7 @@ Off by default. See [Connect the Paseo apps](connect-the-paseo-apps.md).
 | `WITH_PASEO` | `false` | Installs the `paseo` CLI through mise, writes `~/.paseo/config.json`, and starts the daemon on `<tailnet-ip>:6767`. A **runtime** variable, unlike `WITH_ORCA` — `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the daemon; it uninstalls nothing and stops rewriting the config. |
 | `WITH_PASEO_WEB_UI` | `false` | Sets `features.webUi.enabled`, serving a browser client from the daemon's origin. Static files load without auth. |
 | `PASEO_PASSWORD` | empty | Optional, and **daemon-wide** rather than web-UI only: setting it makes the phone's direct connection ask for it too. Written to `~/.devaloy_secrets` (0600), never to the config file — `daemon.auth.password` takes a bcrypt hash only. Empty with `WITH_PASEO_WEB_UI=true` logs a warning and serves anyway. |
+| `PASEO_PLUGINS` | empty | Plugins to install once the daemon answers. Whitespace-separated; each entry is a git source (`owner/repo:plugins/name`) or a directory on the box, optionally prefixed `id=`. A plugin whose id is already installed is skipped. |
 
 Flipping `WITH_PASEO` re-runs the toolchain bootstrap, because the revision
 marker records the key alongside the revision (`5` vs `5+paseo`). The boot path

@@ -265,6 +265,13 @@ services:
       # above — the entrypoint writes it into the 0600 file in the home volume,
       # and clearing it here plus a redeploy is what revokes it.
       - PASEO_PASSWORD=${PASEO_PASSWORD:-}
+      # Paseo plugins to install once the daemon answers. Whitespace-separated,
+      # each entry a git source (`owner/repo:plugins/name`) or a directory on
+      # the box, optionally prefixed `id=`. A plugin already installed is left
+      # alone, so this is safe to re-run and cheap to grow. Plugins cannot ride
+      # config/paseo/config.json — that file records a plugin only after
+      # `paseo plugin install` has fetched it.
+      - PASEO_PLUGINS=${PASEO_PLUGINS:-}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
       # Only add one whose tool name is a real mise registry entry. mise treats
       # any MISE_<TOOL>_VERSION in the container environment as a declaration of
