@@ -1,5 +1,7 @@
-# The build context is only entrypoint.sh, the seven /usr/local/bin scripts and
-# config/. Everything else is dead weight sent to the daemon on every build —
+# The build context is only entrypoint.sh, the three /usr/local/bin scripts,
+# lib/ (the devaloy modules) and config/. The five devaloy-* names are gone from
+# this list on purpose: they are symlinks the Dockerfile creates, not files.
+# Everything else is dead weight sent to the daemon on every build —
 # and worse, a change to any of it busts the context hash.
 #
 # This list is a whitelist, so a new file COPYed by the Dockerfile has to be
@@ -8,11 +10,9 @@
 *
 !entrypoint.sh
 !bootstrap-toolchain.sh
-!devaloy-update
-!devaloy-prune
-!devaloy-ram
-!devaloy-disk
-!devaloy-nvim-sync
+!devaloy
+!lib
+!lib/**
 !link-shims
 !config
 !config/**

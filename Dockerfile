@@ -140,6 +140,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         # to, plus the unzip that Mason's installers expect on PATH.
         ripgrep \
         fd-find \
+        # Noble's 0.44.1, kept as a cold-boot floor: LazyVim's pickers want an
+        # fzf on the first `nvim`, before the toolchain bootstrap has finished.
+        # The `devaloy` TUI needs 0.65+ (--footer, --no-input), so
+        # bootstrap-toolchain.sh pins a current fzf from mise, and the shim in
+        # /usr/local/bin shadows this one on PATH.
         fzf \
         unzip \
         zsh \
@@ -359,7 +364,37 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # No sshd, no authorized_keys, no host keys: Tailscale SSH is the only way in,
 # and it authenticates from tailnet identity plus the tailnet policy file.
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
-COPY --chmod=755 bootstrap-toolchain.sh devaloy-update devaloy-prune devaloy-ram devaloy-disk devaloy-nvim-sync link-shims /usr/local/bin/
+COPY --chmod=755 bootstrap-toolchain.sh devaloy link-shims /usr/local/bin/
+
+# The devaloy modules. A fixed list, and `devaloy` refuses to start when one is
+# missing — see the loader comment there for why a glob would be worse.
+COPY lib /usr/local/lib/devaloy
+
+# The five old command names. Symlinks rather than wrapper scripts: `devaloy`
+# reads its own basename and infers the verb, so there is nothing to keep in
+# sync. `ls -l /usr/local/bin` then shows a reader exactly what the old names
+# became.
+RUN set -eux; \
+    for name in devaloy-update devaloy-disk devaloy-ram devaloy-prune devaloy-nvim-sync; do \
+        ln -sfn /usr/local/bin/devaloy "/usr/local/bin/${name}"; \
+    done
+
+# The build flags, recorded for `devaloy doctor`.
+#
+# THIS IS WHY DOCTOR CAN HAVE AN EXIT CODE. "Docker is not reachable" is the
+# same observation whether the box was never built with it or the daemon died,
+# and those need opposite answers: the first is a correct minimal box, the
+# second is a fault worth failing a script on. The probe alone cannot tell them
+# apart, so the build writes down what was asked for.
+#
+# WITH_PASEO is deliberately absent. It is a runtime variable that
+# `docker compose up -d` can flip without a rebuild, so a value baked in here
+# would go stale; doctor reads that one from the environment and from whether
+# the daemon is actually running.
+RUN mkdir -p /opt/devaloy \
+    && printf 'WITH_ORCA=%s\nWITH_DOCKER=%s\nWITH_BROWSER=%s\n' \
+        "${WITH_ORCA}" "${WITH_DOCKER}" "${WITH_BROWSER}" \
+        > /opt/devaloy/build-flags
 
 # Claude Code and Codex are not installed here. mise's registry covers both and
 # fetches the same upstream artifacts their own installers do, so they live in

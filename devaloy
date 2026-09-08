@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# devaloy — one keyboard-driven front end to this box's management commands.
+#
+# Replaces devaloy-update, devaloy-disk, devaloy-ram, devaloy-prune and
+# devaloy-nvim-sync, which are now symlinks to this file. Those five each
+# documented themselves well in their own headers, and that was the problem:
+# the documentation was only readable by running --help on a name you already
+# remembered. There was no way to see what the box could do, no shared status
+# screen, and no path from "the disk is full" to the right command without
+# knowing that the disk reclaim and the docker reclaim are different tools with
+# different scopes.
+#
+# The shape is lifted from the `ip` script in mimukit/dotfiles: a status screen
+# at the root, `l`/`enter` to descend into a view, `h`/`esc` back, one fzf
+# process per view. See lib/tui.sh for why one process per view rather than one
+# long-lived fzf.
+#
+# Modes
+#   devaloy                  the picker
+#   devaloy status           the box's disk, RAM, Paseo and toolset, as text
+#   devaloy doctor           what this box was built with, and what is broken
+#   devaloy disk [flags]     the home-volume reclaim
+#   devaloy ram [flags]      the RAM reclaim
+#   devaloy prune [flags]    the nested Docker reclaim
+#   devaloy update           re-run the toolchain bootstrap
+#   devaloy nvim-sync        re-copy the repo's LazyVim config
+#   devaloy -h               this
+#
+# WITH NO TERMINAL, and no verb, it prints `status` and exits 0. That is the
+# same choice the ip script makes when its stdout is a pipe: `ssh devaloy
+# 'devaloy'` asked a question, so answer it rather than complain about the
+# absence of a terminal. It also makes the status block the one thing an agent
+# can grep for the capability checks CLAUDE.md spells out in prose.
+#
+# EVERY VERB STILL WORKS WITHOUT THE TUI. That is what makes the fzf floor in
+# lib/tui.sh a refusal to draw rather than a refusal to run: on a home volume
+# seeded before fzf was pinned in the toolchain, `devaloy disk --apply` is
+# unaffected and the picker tells you to run `devaloy update`.
+set -euo pipefail
+
+# --- the module loader ----------------------------------------------------
+#
+# The modules are a fixed, literal list rather than a glob of the directory. A
+# glob turns a missing file into a missing *verb*, which surfaces as "unknown
+# command: disk" three days later; this list turns it into one line naming the
+# file that did not arrive. That matters here specifically because the modules
+# reach the box through a Dockerfile COPY and a whitelist .dockerignore, and the
+# failure mode of that pair is a partial set rather than an empty one.
+#
+# DEVALOY_LIB is overridable so the script runs straight from a git checkout:
+#
+#     DEVALOY_LIB=./lib ./devaloy status
+#
+# Order matters. common.sh defines what every other module calls, and tui.sh
+# defines fzf_version_ok, which doctor.sh reports on.
+DEVALOY_LIB="${DEVALOY_LIB:-/usr/local/lib/devaloy}"
+DEVALOY_MODULES='common.sh tui.sh status.sh doctor.sh disk.sh ram.sh prune.sh update.sh nvim.sh'
+
+for _module in ${DEVALOY_MODULES}; do
+  if [ ! -r "${DEVALOY_LIB}/${_module}" ]; then
+    printf 'devaloy: missing module %s/%s\n' "${DEVALOY_LIB}" "${_module}" >&2
+    printf 'devaloy: the install is incomplete. Set DEVALOY_LIB to run from a\n' >&2
+    printf 'devaloy: checkout, or rebuild the image to restore it.\n' >&2
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  . "${DEVALOY_LIB}/${_module}"
+done
+unset _module
+
+usage() {
+  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# --- verb dispatch --------------------------------------------------------
+#
+# The five old names are symlinks to this file, so $0 carries the verb. Nothing
+# on the box *executes* those names — the 30 references are docs, one zsh alias
+# and log strings in entrypoint.sh — but they are what a person's hands and
+# every wiki page still type, and a symlink costs nothing to keep.
+verb_from_argv0() {
+  case "$(basename "$0")" in
+    devaloy-update) printf 'update' ;;
+    devaloy-disk) printf 'disk' ;;
+    devaloy-ram) printf 'ram' ;;
+    devaloy-prune) printf 'prune' ;;
+    devaloy-nvim-sync) printf 'nvim-sync' ;;
+    *) printf '' ;;
+  esac
+}
+
+main() {
+  local verb
+  verb="$(verb_from_argv0)"
+
+  if [ -z "${verb}" ]; then
+    case "${1:-}" in
+      status | doctor | disk | ram | prune | update | nvim-sync)
+        verb="$1"
+        shift
+        ;;
+      -h | --help | help)
+        usage
+        exit 0
+        ;;
+      '')
+        # No verb. A terminal gets the picker; anything else gets the status,
+        # because a pipe or a cron line cannot answer a picker.
+        if [ -t 1 ] && [ -t 0 ]; then
+          cmd_pick
+          exit 0
+        fi
+        do_status
+        exit 0
+        ;;
+      *)
+        printf 'devaloy: unknown command: %s\n' "$1" >&2
+        printf "devaloy: try 'devaloy -h'\n" >&2
+        exit 2
+        ;;
+    esac
+  fi
+
+  case "${verb}" in
+    status) do_status "$@" ;;
+    doctor) do_doctor "$@" ;;
+    disk) do_disk "$@" ;;
+    ram) do_ram "$@" ;;
+    prune) do_prune "$@" ;;
+    update) do_update "$@" ;;
+    nvim-sync) do_nvim_sync "$@" ;;
+  esac
+}
+
+main "$@"

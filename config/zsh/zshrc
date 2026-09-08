@@ -169,7 +169,7 @@ fi
 alias reload='exec zsh'
 alias zsrc='. "$HOME/.zshrc"'
 # The toolchain installs once per volume; this is the deliberate refresh.
-alias update='devaloy-update'
+alias update='devaloy update'
 
 # Agent skills, managed by the skills.sh CLI rather than copied out of this
 # repo. `skmi` installs every skill in the repo — the set is deliberately
