@@ -163,8 +163,10 @@ Add it to `/etc/fstab` so it survives a reboot.
 Then raise swappiness, because the guard script's default of `10` is tuned for the opposite goal:
 
 ```sh
-SWAPPINESS=60 sudo scripts/host-resource-guard.sh --apply
+sudo SWAPPINESS=60 scripts/host-resource-guard.sh --apply
 ```
+
+The variable goes **after** `sudo`, not before it. Written the other way round it sets the variable for `sudo` itself, `sudo` then strips it from the environment it hands the script, and the script falls back to its `10` default with no warning. The confirmation prompt is where you catch this: it prints the value it is about to set, so read `set vm.swappiness=60` before answering `y`.
 
 At `10` the kernel keeps cold agent pages in RAM until it is nearly out. At `60` it moves them to swap early, which is what you want when a 12 GiB swap file exists specifically to hold them. Idle sessions are mostly cold pages and swap well. The cost is real: a session you return to after an hour pages back in and feels slow for a few seconds.
 
