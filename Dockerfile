@@ -359,7 +359,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # No sshd, no authorized_keys, no host keys: Tailscale SSH is the only way in,
 # and it authenticates from tailnet identity plus the tailnet policy file.
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
-COPY --chmod=755 bootstrap-toolchain.sh devaloy-update devaloy-prune devaloy-nvim-sync link-shims /usr/local/bin/
+COPY --chmod=755 bootstrap-toolchain.sh devaloy-update devaloy-prune devaloy-ram devaloy-disk devaloy-nvim-sync link-shims /usr/local/bin/
 
 # Claude Code and Codex are not installed here. mise's registry covers both and
 # fetches the same upstream artifacts their own installers do, so they live in
