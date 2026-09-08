@@ -97,7 +97,8 @@ rows_status() {
   emit_branch '🧹' 'disk reclaim' 'node_modules, mise versions, worktrees, logs' 'disk'
   emit_branch '🔄' 'ram reclaim' 'restart Paseo, reap orphaned language servers' 'ram'
   emit_branch '🐳' 'docker reclaim' 'build cache and unused images' 'prune'
-  emit_branch '🔧' 'toolchain' 'update the toolchain, re-seed the nvim config' 'tools'
+  emit_branch '🔼' 'update' 're-resolve every toolchain pin, refresh the shims' 'tools:1'
+  emit_branch '📝' 'nvim sync' 'copy the repo LazyVim config over ~/.config/nvim' 'tools:2'
   emit_branch '🩺' 'doctor' 'what this box was built with, and what is broken' 'doctor'
 }
 

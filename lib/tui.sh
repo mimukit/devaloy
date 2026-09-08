@@ -213,7 +213,7 @@ cmd_pick() {
   fzf_version_ok || die "the TUI needs fzf 0.${FZF_FLOOR_MINOR} or later (this box has $(fzf --version 2>/dev/null | awk '{print $1}' || echo none)). Run devaloy-update, then try again. Every verb still works from the command line: devaloy --help"
 
   local view=status pos=1 back_pos=1 note='' scan apply detail
-  local out key line value target idx rc up rows head hints footer
+  local out key line value target target_pos idx rc up rows head hints footer
 
   while true; do
     scan="$(scan_of "${view}")"
@@ -273,6 +273,15 @@ cmd_pick() {
     line="${out#*$'\n'}"
     value="$(printf '%s' "${line}" | cut -f2)"
     target="$(printf '%s' "${line}" | cut -f3)"
+    # A target may name the row to land on as `view:pos`. Two root rows open the
+    # toolchain view, and each has to open on its own line.
+    target_pos=1
+    case "${target}" in
+      *:*)
+        target_pos="${target#*:}"
+        target="${target%%:*}"
+        ;;
+    esac
     idx="$(printf '%s' "${line}" | cut -f5)"
     [ -n "${idx}" ] || idx=1
 
@@ -294,7 +303,7 @@ cmd_pick() {
         if [ -n "${target}" ]; then
           back_pos="${idx}"
           view="${target}"
-          pos=1
+          pos="${target_pos}"
         else
           note='nothing to open on that row'
           pos="${idx}"
