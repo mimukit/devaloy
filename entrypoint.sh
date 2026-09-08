@@ -687,6 +687,105 @@ if [ ! -s "${SIGNING_KEY}" ]; then
   git_unset gpg.ssh.allowedSignersFile
 fi
 
+# --- clone the repos named in DEVALOY_REPOS ---
+# Seeds ~/projects on a fresh box so the first session lands on real code
+# instead of an empty home. The list lives in .env, which is gitignored, so no
+# repository of yours is ever named in this repository.
+#
+# Runs LAST of the git blocks on purpose: it clones over HTTPS and relies on the
+# credential helper that `gh auth setup-git` installed above. Without a
+# GITHUB_TOKEN the public repos in the list still clone and the private ones
+# fail one by one, which is the right split.
+#
+# Every failure here is a warning, never an exit. This block is far below
+# tailscaled, and a typo in one URL must not cost you the SSH you would fix it
+# from. `set -e` is on, hence the `if !` around the clone rather than a bare
+# call, which would take the whole script down on the first bad URL.
+if [ -n "${DEVALOY_REPOS:-}" ]; then
+  PROJECTS_DIR="${DEV_HOME}/projects"
+  as_dev "mkdir -p $(sq "${PROJECTS_DIR}")"
+
+  # Word-split on the default IFS, so spaces, tabs and newlines all separate.
+  # `set -f` is what makes that safe: a `?` or `*` anywhere in a URL would
+  # otherwise glob against the filesystem and expand into something else
+  # entirely. Restored right after, because the rest of this script does not
+  # expect noglob. The split lands in the positional parameters, which this
+  # script never reads — it takes no arguments.
+  set -f
+  # shellcheck disable=SC2086  # the split is the point; see the note above.
+  set -- ${DEVALOY_REPOS}
+  set +f
+
+  for spec in "$@"; do
+    # Whitelist, not a blacklist. Every clone below reaches git through
+    # `as_dev`, which is `su -c` on ONE string, so a token holding a quote or a
+    # semicolon is a command injection with root's environment behind it. The
+    # sq() quoting further down is the second layer; this is the first.
+    case "${spec}" in
+      *[!A-Za-z0-9._:/@+~-]*)
+        log "WARNING: DEVALOY_REPOS entry '${spec}' has an illegal character — skipped."
+        continue
+        ;;
+    esac
+
+    # Three accepted forms, matched in order. The shorthand needs exactly one
+    # slash and no colon, which is what tells `owner/repo` apart from the SSH
+    # form `git@github.com:owner/repo`.
+    case "${spec}" in
+      https://*|http://*|git@*:*)
+        repo_url="${spec}"
+        ;;
+      */*/*|*:*)
+        log "WARNING: DEVALOY_REPOS entry '${spec}' is not a URL or owner/repo — skipped."
+        continue
+        ;;
+      */*)
+        repo_url="https://github.com/${spec}"
+        ;;
+      *)
+        log "WARNING: DEVALOY_REPOS entry '${spec}' is not a URL or owner/repo — skipped."
+        continue
+        ;;
+    esac
+
+    # Normalize before taking the basename, so github.com/foo/bar/,
+    # github.com/foo/bar and github.com/foo/bar.git all land in ~/projects/bar.
+    repo_url="${repo_url%/}"
+    repo_name="${repo_url##*/}"
+    repo_name="${repo_name##*:}"
+    repo_name="${repo_name%.git}"
+    if [ -z "${repo_name}" ]; then
+      log "WARNING: DEVALOY_REPOS entry '${spec}' names no repository — skipped."
+      continue
+    fi
+
+    repo_dir="${PROJECTS_DIR}/${repo_name}"
+    # Already cloned: silent. This block runs on EVERY boot, and a redeploy of a
+    # box with fifteen repos should not print fifteen lines saying so.
+    if [ -d "${repo_dir}/.git" ]; then
+      continue
+    fi
+    # Occupied by something that is not a clone. Two repos of the same name from
+    # different owners land here, and so does a directory you made by hand.
+    # Skipped rather than merged into, because the alternative writes into your
+    # work.
+    if [ -e "${repo_dir}" ]; then
+      log "WARNING: ~/projects/${repo_name} exists and is not a git clone —"
+      log "WARNING: '${spec}' skipped. Rename or remove it, then restart."
+      continue
+    fi
+
+    log "Cloning ${spec} into ~/projects/${repo_name}"
+    if ! as_dev "git clone --quiet $(sq "${repo_url}") $(sq "${repo_dir}")" 2>&1; then
+      # A half-written directory would be read as "occupied" on the next boot
+      # and never retried, so the failed attempt is cleared here.
+      rm -rf "${repo_dir}"
+      log "WARNING: clone of '${spec}' failed — a private repo needs GITHUB_TOKEN."
+    fi
+  done
+  unset spec repo_url repo_name repo_dir
+fi
+
 # --- Orca headless runtime (only present when built with WITH_ORCA=true) ---
 # Lets the Orca desktop and mobile apps talk to this box, which Tailscale SSH
 # alone cannot do — they speak to a runtime, not a terminal.

@@ -212,6 +212,12 @@ services:
       # the 0600 file in the home volume, and clearing it here plus a redeploy
       # is what revokes it.
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # Whitespace-separated repos to clone into ~/projects on each boot, as
+      # owner/repo, an https:// URL, or git@host:path. The entrypoint skips a
+      # repo already cloned there, so this is safe to re-run and cheap to grow.
+      # Cloning goes over HTTPS through gh's credential helper, so a private
+      # repo needs GITHUB_TOKEN above.
+      - DEVALOY_REPOS=${DEVALOY_REPOS:-}
       # git identity for commits made on the box. Both optional: with a
       # GITHUB_TOKEN set, the entrypoint falls back to whoever that token
       # belongs to. Without either, every commit fails on "Author identity
