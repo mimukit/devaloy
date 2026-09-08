@@ -107,6 +107,15 @@ mise use -g npm:turbo@latest
 # A full-screen git UI is the difference between reviewing a diff over a phone
 # tether and giving up on it.
 mise use -g lazygit@latest
+# fzf, for the `devaloy` TUI. Noble ships 0.44.1 and the picker needs 0.54 for
+# --no-input (without it fzf treats every printable key as search input, so `j`
+# types a `j` instead of moving down) and 0.65 for --footer and
+# transform-footer. The apt copy in the Dockerfile stays as the cold-boot floor
+# for LazyVim's pickers, which do not care about the version; this one shadows
+# it, because /usr/local/bin precedes /usr/bin and a mise-activated shell puts
+# the install directory ahead of both. `devaloy` checks the version it actually
+# resolves and refuses to draw below the floor rather than half-rendering.
+mise use -g fzf@latest
 # Neovim, for the LazyVim config installed further down. Noble ships 0.9.5 and
 # LazyVim needs >= 0.11.2, so this comes from mise rather than the apt list in
 # the Dockerfile. Its search binaries (ripgrep, fd, unzip) DO come from apt —
