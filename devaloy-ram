@@ -198,7 +198,13 @@ do_paseo() {
   # SIGTERM, not SIGKILL. Paseo's own supervisor flushes session state and
   # releases the PID lock under ~/.paseo on a clean signal; a -9 leaves the lock
   # behind and the restart then fights it.
-  pkill -f 'paseo daemon' || true
+  #
+  # -u restricts the kill to processes this user owns. Without it the pattern
+  # also matches the root-owned `su -l -s /bin/sh` that entrypoint.sh uses to
+  # drop into the dev user, and pkill prints "Operation not permitted" for a
+  # process it never needed to signal. That su exits on its own the moment its
+  # node child dies, so skipping it changes nothing but the noise.
+  pkill -u "$(id -u)" -f 'paseo daemon' || true
 
   # The supervisor loop in entrypoint.sh sleeps 10s before restarting, so this
   # waits past that and then confirms. Without the confirmation you cannot tell
