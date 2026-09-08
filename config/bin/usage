@@ -1,15 +1,20 @@
 #!/usr/bin/env bash
 # Print the Claude Code 5-hour and 7-day usage limits on the terminal.
 #
-# Source: the `cachedUsageUtilization` block in ~/.claude.json. Claude Code
-# writes that block while a session runs; there is no CLI or API call here, so
-# the numbers are as fresh as the last session. The age of the cache is always
-# printed, so a stale reading is visible rather than silent.
+# Sources, freshest wins:
+#   ~/.claude.json                  .cachedUsageUtilization, written on OAuth /login
+#   ~/.claude/usage-live-cache.json written by the statusline on every render,
+#                                   the only source for CLAUDE_CODE_OAUTH_TOKEN sessions
+# There is no CLI or API call here, so the numbers are as fresh as the last
+# session. The age of the reading is always printed, so a stale value is
+# visible rather than silent.
 #
 # Usage:
 #   usage          coloured one-screen report
-#   usage --line   one line, same format as the status line
-#   usage --json   the raw utilization block
+#   usage --line   one line: percent and time left per window
+#   usage --json   the raw utilization block of the chosen source
+#
+# Colour is off when stdout is not a terminal or NO_COLOR is set.
 
 set -u
 
@@ -21,7 +26,7 @@ case "${1:-}" in
     --line) MODE="line" ;;
     --json) MODE="json" ;;
     -h|--help)
-        sed -n '2,12p' "$0" | cut -c3-
+        sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \{0,1\}//'
         exit 0
         ;;
     "") ;;
@@ -37,67 +42,69 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 # extract_fields FILE ROOT_EXPR — ROOT_EXPR is a jq filter locating the
-# utilization block within FILE. ~/.claude.json nests it under
-# .cachedUsageUtilization (written on OAuth /login); the statusline fallback
-# file below is that same shape at the top level.
+# utilization block within FILE. Prints one tab-separated line:
+#   fetchedAtMs  five_pct  five_reset  seven_pct  seven_reset
+# Missing, null and empty values become "-" so no field is ever blank.
 extract_fields() {
     local file="$1" root="$2"
     jq -r "
+        def v: if . == null or . == \"\" then \"-\" else . end;
         (${root}) as \$c
         | [ (\$c.fetchedAtMs // 0),
-            (\$c.utilization.five_hour.utilization // \"-\"),
-            (\$c.utilization.five_hour.resets_at // \"-\"),
-            (\$c.utilization.seven_day.utilization // \"-\"),
-            (\$c.utilization.seven_day.resets_at // \"-\") ]
+            (\$c.utilization.five_hour.utilization | v),
+            (\$c.utilization.five_hour.resets_at | v),
+            (\$c.utilization.seven_day.utilization | v),
+            (\$c.utilization.seven_day.resets_at | v) ]
         | @tsv" "$file" 2>/dev/null
+}
+
+# read_source FILE ROOT_EXPR — loads the fields into A_* and returns 0 when
+# the file holds a usable five_hour percentage.
+read_source() {
+    local line
+    [ -r "$1" ] || return 1
+    line=$(extract_fields "$1" "$2") || return 1
+    [ -n "$line" ] || return 1
+    IFS=$'\t' read -r A_FETCHED A_FIVE_PCT A_FIVE_RESET A_SEVEN_PCT A_SEVEN_RESET <<<"$line"
+    [ "${A_FIVE_PCT:--}" != "-" ]
 }
 
 SOURCE_FILE=""
 SOURCE_LABEL=""
+SOURCE_ROOT="."
 TIER="-"
+FETCHED_MS=0
 
-if [ -r "$CONFIG" ]; then
-    read -r FETCHED_MS FIVE_PCT FIVE_RESET SEVEN_PCT SEVEN_RESET <<EOF
-$(extract_fields "$CONFIG" ".cachedUsageUtilization" | tr '\t' ' ')
-EOF
-    if [ "${FIVE_PCT:--}" != "-" ]; then
-        SOURCE_FILE="$CONFIG"
-        SOURCE_LABEL="account cache"
-        TIER=$(jq -r '.oauthAccount.organizationRateLimitTier // "-"' "$CONFIG" 2>/dev/null)
-    fi
+if read_source "$CONFIG" ".cachedUsageUtilization"; then
+    SOURCE_FILE="$CONFIG"
+    SOURCE_LABEL="account cache"
+    SOURCE_ROOT=".cachedUsageUtilization"
+    FETCHED_MS="$A_FETCHED" FIVE_PCT="$A_FIVE_PCT" FIVE_RESET="$A_FIVE_RESET"
+    SEVEN_PCT="$A_SEVEN_PCT" SEVEN_RESET="$A_SEVEN_RESET"
 fi
 
-# ~/.claude.json only gets cachedUsageUtilization from an OAuth /login. A
-# CLAUDE_CODE_OAUTH_TOKEN session skips that flow and never writes it, so
-# fall back to the statusline's own cache — it receives the same rate_limits
-# payload on every render, regardless of auth method.
-if [ -z "$SOURCE_FILE" ] && [ -r "$FALLBACK" ]; then
-    read -r FETCHED_MS FIVE_PCT FIVE_RESET SEVEN_PCT SEVEN_RESET <<EOF
-$(extract_fields "$FALLBACK" "." | tr '\t' ' ')
-EOF
-    if [ "${FIVE_PCT:--}" != "-" ]; then
-        SOURCE_FILE="$FALLBACK"
-        SOURCE_LABEL="statusline cache (token auth)"
-        TIER="-"
-    fi
-fi
-
-if [ "$MODE" = "json" ]; then
-    if [ -z "$SOURCE_FILE" ]; then
-        echo "usage: no cached usage in $CONFIG or $FALLBACK — start a Claude Code session once" >&2
-        exit 1
-    fi
-    if [ "$SOURCE_FILE" = "$CONFIG" ]; then
-        jq '.cachedUsageUtilization' "$SOURCE_FILE"
-    else
-        jq '.' "$SOURCE_FILE"
-    fi
-    exit 0
+# The statusline mirror is refreshed on every render, the account block only
+# on /login. Take whichever reading is newer.
+if read_source "$FALLBACK" "." && [ "${A_FETCHED:-0}" -gt "$FETCHED_MS" ] 2>/dev/null; then
+    SOURCE_FILE="$FALLBACK"
+    SOURCE_LABEL="statusline cache"
+    SOURCE_ROOT="."
+    FETCHED_MS="$A_FETCHED" FIVE_PCT="$A_FIVE_PCT" FIVE_RESET="$A_FIVE_RESET"
+    SEVEN_PCT="$A_SEVEN_PCT" SEVEN_RESET="$A_SEVEN_RESET"
 fi
 
 if [ -z "$SOURCE_FILE" ]; then
     echo "usage: no cached usage in $CONFIG or $FALLBACK — start a Claude Code session once" >&2
     exit 1
+fi
+
+if [ "$SOURCE_FILE" = "$CONFIG" ]; then
+    TIER=$(jq -r '.oauthAccount.organizationRateLimitTier // "-"' "$CONFIG" 2>/dev/null)
+fi
+
+if [ "$MODE" = "json" ]; then
+    jq "$SOURCE_ROOT" "$SOURCE_FILE"
+    exit 0
 fi
 
 # --- colours: Catppuccin Mocha, same ramp as the status line -----------------
@@ -109,7 +116,7 @@ PINK="\033[38;2;243;139;168m"
 LABEL="\033[38;2;147;153;178m"
 SEP="\033[38;2;88;91;112m"
 
-if [ ! -t 1 ]; then
+if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then
     RESET="" GREEN="" LAVENDER="" PEACH="" PINK="" LABEL="" SEP=""
 fi
 
@@ -121,20 +128,62 @@ pick_color() {
     fi
 }
 
+# Round to an integer and clamp to 0-100; anything non-numeric becomes 0.
+clamp_pct() {
+    awk -v s="${1:-0}" 'BEGIN {
+        v = int(s + 0.5)
+        if (v < 0) v = 0
+        if (v > 100) v = 100
+        print v
+    }'
+}
+
 # --- time helpers ------------------------------------------------------------
 now=$(date +%s)
+today=$(date +%Y-%m-%d)
 
-epoch_of() { date -d "$1" +%s 2>/dev/null; }
+# Epoch seconds of an ISO 8601 or unix-epoch timestamp; empty when unparsable.
+epoch_of() {
+    local ts="$1"
+    case "$ts" in
+        ""|-) return 1 ;;
+        *[!0-9]*) date -d "$ts" +%s 2>/dev/null ;;
+        *) echo "$ts" ;;
+    esac
+}
 
-# "3h 12m" until the reset, or "now" when the window already turned over.
+# "in 3h 12m" until the reset, "due" when the window already turned over,
+# or empty when the reset time is unknown.
 time_left() {
-    local target="$1" secs
-    secs=$(epoch_of "$target") || return
-    [ -z "$secs" ] && return
-    local d=$(( secs - now ))
+    local secs d h m
+    secs=$(epoch_of "$1") || return 0
+    [ -n "$secs" ] || return 0
+    d=$(( secs - now ))
     if [ "$d" -le 0 ]; then echo "due"; return; fi
-    local h=$(( d / 3600 )) m=$(( (d % 3600) / 60 ))
-    if [ "$h" -gt 0 ]; then echo "${h}h ${m}m"; else echo "${m}m"; fi
+    h=$(( d / 3600 )); m=$(( (d % 3600) / 60 ))
+    if [ "$h" -gt 0 ]; then echo "in ${h}h ${m}m"; else echo "in ${m}m"; fi
+}
+
+# Wall-clock reset time in the local zone. Adds the date when it is not today.
+reset_at() {
+    local secs
+    secs=$(epoch_of "$1") || return 0
+    [ -n "$secs" ] || return 0
+    if [ "$(date -d "@$secs" +%Y-%m-%d)" = "$today" ]; then
+        date -d "@$secs" +"%H:%M %Z"
+    else
+        date -d "@$secs" +"%a %d %b %H:%M %Z"
+    fi
+}
+
+# "resets 23:59 UTC (in 3h 12m)", with the unknown pieces left out.
+reset_text() {
+    local at left
+    at=$(reset_at "$1"); left=$(time_left "$1")
+    if   [ -n "$at" ] && [ -n "$left" ]; then echo "resets $at ($left)"
+    elif [ -n "$at" ];                    then echo "resets $at"
+    else                                       echo "reset time unknown"
+    fi
 }
 
 bar() {
@@ -146,42 +195,45 @@ bar() {
     printf '%s' "$out"
 }
 
-FIVE_PCT=${FIVE_PCT%.*}
-SEVEN_PCT=${SEVEN_PCT%.*}
-FIVE_LEFT=$(time_left "$FIVE_RESET")
-SEVEN_LEFT=$(time_left "$SEVEN_RESET")
-FIVE_AT=$(date -d "$FIVE_RESET" +"%H:%M" 2>/dev/null)
-SEVEN_AT=$(date -d "$SEVEN_RESET" +"%a %d %b %H:%M" 2>/dev/null)
+FIVE_PCT=$(clamp_pct "$FIVE_PCT")
+SEVEN_PCT=$(clamp_pct "$SEVEN_PCT")
 
-AGE_MIN=$(( (now - FETCHED_MS / 1000) / 60 ))
-if [ "$AGE_MIN" -lt 1 ]; then AGE="just now"
-elif [ "$AGE_MIN" -lt 60 ]; then AGE="${AGE_MIN}m ago"
-else AGE="$(( AGE_MIN / 60 ))h $(( AGE_MIN % 60 ))m ago"
-fi
+case "$FETCHED_MS" in
+    ""|-|*[!0-9]*|0) AGE="age unknown" ;;
+    *)
+        AGE_MIN=$(( (now - FETCHED_MS / 1000) / 60 ))
+        if [ "$AGE_MIN" -lt 1 ]; then AGE="read just now"
+        elif [ "$AGE_MIN" -lt 60 ]; then AGE="read ${AGE_MIN}m ago"
+        elif [ "$AGE_MIN" -lt 1440 ]; then AGE="read $(( AGE_MIN / 60 ))h $(( AGE_MIN % 60 ))m ago"
+        else AGE="read $(( AGE_MIN / 1440 ))d $(( (AGE_MIN % 1440) / 60 ))h ago"
+        fi
+        ;;
+esac
 
 if [ "$MODE" = "line" ]; then
+    FIVE_LEFT=$(time_left "$FIVE_RESET"); SEVEN_LEFT=$(time_left "$SEVEN_RESET")
     printf '%b5h%b %b%s%%%b %b(%s)%b%b | %b%b7d%b %b%s%%%b %b(%s)%b\n' \
         "$LABEL" "$RESET" "$(pick_color "$FIVE_PCT")" "$FIVE_PCT" "$RESET" \
-        "$LABEL" "$FIVE_LEFT" "$RESET" \
+        "$LABEL" "${FIVE_LEFT:-?}" "$RESET" \
         "$SEP" "$RESET" \
         "$LABEL" "$RESET" "$(pick_color "$SEVEN_PCT")" "$SEVEN_PCT" "$RESET" \
-        "$LABEL" "$SEVEN_LEFT" "$RESET"
+        "$LABEL" "${SEVEN_LEFT:-?}" "$RESET"
     exit 0
 fi
 
 printf '\n'
-printf '  %b5 hour%b   %b%s%b %b%3s%%%b   %bresets %s (in %s)%b\n' \
+printf '  %b5 hour%b   %b%s%b %b%3s%%%b   %b%s%b\n' \
     "$LABEL" "$RESET" \
     "$(pick_color "$FIVE_PCT")" "$(bar "$FIVE_PCT")" "$RESET" \
     "$(pick_color "$FIVE_PCT")" "$FIVE_PCT" "$RESET" \
-    "$LABEL" "$FIVE_AT" "$FIVE_LEFT" "$RESET"
-printf '  %b7 day%b    %b%s%b %b%3s%%%b   %bresets %s (in %s)%b\n' \
+    "$LABEL" "$(reset_text "$FIVE_RESET")" "$RESET"
+printf '  %b7 day%b    %b%s%b %b%3s%%%b   %b%s%b\n' \
     "$LABEL" "$RESET" \
     "$(pick_color "$SEVEN_PCT")" "$(bar "$SEVEN_PCT")" "$RESET" \
     "$(pick_color "$SEVEN_PCT")" "$SEVEN_PCT" "$RESET" \
-    "$LABEL" "$SEVEN_AT" "$SEVEN_LEFT" "$RESET"
+    "$LABEL" "$(reset_text "$SEVEN_RESET")" "$RESET"
 if [ "$TIER" = "-" ]; then
-    printf '\n  %b%s · read %s%b\n\n' "$SEP" "$SOURCE_LABEL" "$AGE" "$RESET"
+    printf '\n  %b%s · %s%b\n\n' "$SEP" "$SOURCE_LABEL" "$AGE" "$RESET"
 else
-    printf '\n  %b%s · %s · read %s%b\n\n' "$SEP" "$TIER" "$SOURCE_LABEL" "$AGE" "$RESET"
+    printf '\n  %b%s · %s · %s%b\n\n' "$SEP" "$TIER" "$SOURCE_LABEL" "$AGE" "$RESET"
 fi
