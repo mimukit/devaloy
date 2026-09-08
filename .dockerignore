@@ -1,4 +1,4 @@
-# The build context is only entrypoint.sh, the five /usr/local/bin scripts and
+# The build context is only entrypoint.sh, the seven /usr/local/bin scripts and
 # config/. Everything else is dead weight sent to the daemon on every build —
 # and worse, a change to any of it busts the context hash.
 #
@@ -10,6 +10,8 @@
 !bootstrap-toolchain.sh
 !devaloy-update
 !devaloy-prune
+!devaloy-ram
+!devaloy-disk
 !devaloy-nvim-sync
 !link-shims
 !config
