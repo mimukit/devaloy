@@ -236,6 +236,20 @@ now_stamp() {
   date +%H:%M:%S
 }
 
+# --- the box's name -------------------------------------------------------
+#
+# DEVALOY_NAME lives on the host, in the compose file, and is NOT passed into
+# the container's environment. What it does set is `hostname:`, so the box's own
+# hostname is the same string on a stock box and on a second stack. Read that
+# first, take the variable when it is somehow in scope, and fall back to the
+# default the compose file uses.
+box_name() {
+  local name
+  name="$(hostname 2>/dev/null || true)"
+  [ -n "${name}" ] || name="${DEVALOY_NAME:-}"
+  printf '%s' "${name:-devaloy}"
+}
+
 refuse_root() { # refuse_root <verb>
   # update and nvim-sync both refuse root, and for the same reason: root writes
   # the files with the wrong owner and leaves the dev user unable to edit its

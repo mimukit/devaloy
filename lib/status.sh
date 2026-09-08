@@ -86,7 +86,7 @@ status_docker_line() {
 # "open the disk reclaim" are the same row and one keypress. Swap has no
 # reclaim of its own; it moves with the RAM, so it opens the same view.
 rows_status() {
-  emit_head 'this box' "read at $(now_stamp)"
+  emit_head "$(box_name)" "read at $(now_stamp)"
   emit_row '💾' 'disk (home volume)' "$(status_disk_line)" disk
   emit_row '🧠' 'ram (cgroup)' "$(status_ram_line)" ram
   emit_row '💤' 'swap' "$(status_swap_line)" ram
@@ -107,7 +107,7 @@ rows_status() {
 # public IPv4: the caller asked a question, so answer it rather than complaining
 # about the absence of a terminal.
 do_status() {
-  printf 'devaloy: this box, read at %s\n\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+  printf 'devaloy: %s, read at %s\n\n' "$(box_name)" "$(date '+%Y-%m-%d %H:%M:%S')"
   printf '  disk    %s\n' "$(status_disk_line)"
   printf '  ram     %s\n' "$(status_ram_line)"
   printf '  swap    %s\n' "$(status_swap_line)"
