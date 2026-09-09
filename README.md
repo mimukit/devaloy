@@ -72,6 +72,13 @@ From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 [`skills`](https://www.skills.sh), which then installs the agent skills both
 CLIs share. See [Agent skills](#agent-skills).
 
+One tool on the box does not come from `mise`. The
+[CodeRabbit CLI](https://docs.coderabbit.ai/cli/) (`coderabbit`, aliased `cr`)
+has no registry entry, so the boot bootstrap runs CodeRabbit's own install
+script; the binary lands in `~/.local/bin` in the home volume like everything
+else. It needs `CODERABBIT_API_KEY` in `.env` before it will review anything —
+see [(Optional) CodeRabbit reviews](#optional-coderabbit-reviews).
+
 The agent CLIs come from `mise` rather than their own installers because
 `mise`'s registry fetches the same upstream artifacts — Claude Code's binary
 checksummed against its release manifest, Codex's musl build from its GitHub
@@ -353,6 +360,42 @@ Redeploy, then subscribe to that topic in the ntfy app. Off by default; metadata
 only, never prompt or code. Full details — security model, quota, tuning, and the
 Android-16 caveat — are in
 [docs/wiki/push-notifications.md](docs/wiki/push-notifications.md).
+
+## (Optional) CodeRabbit reviews
+
+The [CodeRabbit CLI](https://docs.coderabbit.ai/cli/) (`coderabbit`, aliased
+`cr`) reviews the working tree from the terminal. It is installed on every box,
+but it does nothing until it has a key:
+
+```sh
+CODERABBIT_API_KEY=cr-xxxxxxxxxxxxxxxx
+```
+
+Generate the key in the CodeRabbit web app under Organization Settings → API
+Keys, put it in `.env`, and redeploy. The entrypoint stores it with
+`cr auth login --api-key`, which writes `~/.coderabbit/auth.json`, and also
+writes the variable to `~/.devaloy_secrets` for a caller that wants to pass
+`--api-key "$CODERABBIT_API_KEY"` by hand. **The home volume holds a live
+credential**; clearing the variable plus a redeploy deletes `auth.json` and is
+what revokes it.
+
+The key is the only route that works here. `cr auth login` with no key opens a
+browser and waits on a localhost callback, and this box has neither. The CLI
+does *not* read `CODERABBIT_API_KEY` at review time — the stored credential is
+what an unattended `cr review` reads. On the EU region, log in by hand once with
+`cr auth login --region eu --api-key "$CODERABBIT_API_KEY"`.
+
+```sh
+cd ~/projects/some-repo
+cr review               # review the changes against the base branch
+cr review --uncommitted # review staged and unstaged edits only
+cr review --agent       # structured JSON, to hand to an agent on the box
+```
+
+The CLI comes from CodeRabbit's own install script rather than `mise`, which has
+no registry entry for it, and lands in `~/.local/bin` in the home volume. Pin it
+with `CODERABBIT_VERSION` in `.env`; empty means latest. `devaloy update`
+re-runs the installer, so that is also how you upgrade it.
 
 ## (Optional) the Orca apps
 
