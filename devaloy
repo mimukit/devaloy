@@ -22,7 +22,9 @@
 #   devaloy disk [flags]     the home-volume reclaim
 #   devaloy ram [flags]      the RAM reclaim
 #   devaloy prune [flags]    the nested Docker reclaim
-#   devaloy update           re-run the toolchain bootstrap
+#   devaloy update [flags]   seed config/, then re-run the toolchain bootstrap
+#                            --config-only seeds and stops, for testing a
+#                            config/ edit without a redeploy
 #   devaloy nvim-sync        re-copy the repo's LazyVim config
 #   devaloy -h               this
 #
@@ -69,7 +71,7 @@ done
 unset _module
 
 usage() {
-  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # --- verb dispatch --------------------------------------------------------
