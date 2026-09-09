@@ -148,7 +148,7 @@ alias u='usage'
 # `nd` DELIBERATELY shadows ni's own `nd`, which runs `nr dev`. An alias only
 # wins in an interactive shell, so `ssh devaloy 'nd'` and any script still get
 # ni's version and start the dev server. Type `nr dev` when you want that here.
-alias nd='nr build'
+alias nd='nr dev'
 alias nb='nr build'
 alias ns='nr start'
 alias pab='pnpm approve-builds'
