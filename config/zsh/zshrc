@@ -141,12 +141,16 @@ alias h='herdr'
 # Claude Code rate limits at a glance. `usage` is seeded from config/bin.
 alias u='usage'
 
-# node — the toolchain is pnpm, so these are `pnpm run` rather than a runner
-# like `nr` that isn't installed.
-alias ni='pnpm install'
-alias nd='pnpm run dev'
-alias nb='pnpm run build'
-alias ns='pnpm run start'
+# node — @antfu/ni ships ni, nr, nd, nup, nun, nci, na and nlx. The shortcuts
+# below go through `nr`, which reads the repo's lockfile and calls pnpm, npm,
+# yarn or bun as that repo needs.
+#
+# `nd` DELIBERATELY shadows ni's own `nd`, which runs `nr dev`. An alias only
+# wins in an interactive shell, so `ssh devaloy 'nd'` and any script still get
+# ni's version and start the dev server. Type `nr dev` when you want that here.
+alias nd='nr build'
+alias nb='nr build'
+alias ns='nr start'
 alias pab='pnpm approve-builds'
 alias ncu='npx npm-check-updates'
 
