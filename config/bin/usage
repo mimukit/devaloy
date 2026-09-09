@@ -14,6 +14,12 @@
 # script agree. The age of the reading is always printed, so a stale value is
 # visible rather than silent.
 #
+# The probe authenticates from the first source that has a credential:
+# CLAUDE_CODE_OAUTH_TOKEN, then ~/.devaloy_secrets (where this box writes that
+# variable, and which a login shell does not export), then the accessToken in
+# ~/.claude/.credentials.json written by /login, then ANTHROPIC_API_KEY. Both
+# auth styles work, so the probe does not care how the box was provisioned.
+#
 # Usage:
 #   usage             coloured one-screen report
 #   usage --line      one line: percent and time left per window
@@ -34,6 +40,7 @@ set -u
 
 CONFIG="${CLAUDE_CONFIG_FILE:-$HOME/.claude.json}"
 FALLBACK="$HOME/.claude/usage-live-cache.json"
+CREDENTIALS="$HOME/.claude/.credentials.json"
 MODE="report"
 PROBE_MAX_AGE="${USAGE_PROBE_MAX_AGE:-120}"
 # auto: probe when the cache is stale. always: probe regardless. never: no probe.
@@ -89,12 +96,49 @@ newest_cache_ms() {
 
 # probe — fetch the live numbers and rewrite $FALLBACK. Returns non-zero and
 # stays silent on any failure, so the caller falls back to the cached reading.
+
+# oauth_token — the bearer token for a Claude subscription, from the first
+# source that has one:
+#
+#   1. CLAUDE_CODE_OAUTH_TOKEN in the environment.
+#   2. ~/.devaloy_secrets, which is where the entrypoint writes that variable.
+#      A login shell does not export it, so an interactive `usage --fetch`
+#      sees an empty environment variable on a token-provisioned box.
+#   3. ~/.claude/.credentials.json, written by `/login`. Its accessToken is
+#      the same kind of OAuth token and the API accepts it the same way.
+#
+# An expired accessToken is skipped rather than sent: the API would answer 401
+# and the probe would fail anyway. Nothing here refreshes it — a `claude`
+# session does that, and the next probe picks up the rewritten file.
+oauth_token() {
+    local t exp now_ms
+    if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+        printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN"; return 0
+    fi
+    if [ -r "$HOME/.devaloy_secrets" ]; then
+        t=$( . "$HOME/.devaloy_secrets" >/dev/null 2>&1
+             printf '%s' "${CLAUDE_CODE_OAUTH_TOKEN:-}" )
+        if [ -n "$t" ]; then printf '%s' "$t"; return 0; fi
+    fi
+    if [ -r "$CREDENTIALS" ]; then
+        t=$(jq -r '.claudeAiOauth.accessToken // empty' "$CREDENTIALS" 2>/dev/null)
+        exp=$(jq -r '.claudeAiOauth.expiresAt // 0 | floor' "$CREDENTIALS" 2>/dev/null)
+        case "$exp" in ''|*[!0-9]*) exp=0 ;; esac
+        now_ms=$(( $(date +%s) * 1000 ))
+        if [ -n "$t" ] && { [ "$exp" -eq 0 ] || [ "$exp" -gt "$now_ms" ]; }; then
+            printf '%s' "$t"; return 0
+        fi
+    fi
+    return 1
+}
+
 probe() {
-    local auth=() headers pct5 reset5 pct7 reset7 tmp now_ms
+    local auth=() headers pct5 reset5 pct7 reset7 tmp now_ms token
     command -v curl >/dev/null 2>&1 || return 1
 
-    if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
-        auth=(-H "Authorization: Bearer $CLAUDE_CODE_OAUTH_TOKEN"
+    token=$(oauth_token) || token=""
+    if [ -n "$token" ]; then
+        auth=(-H "Authorization: Bearer $token"
               -H "anthropic-beta: oauth-2025-04-20")
     elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
         auth=(-H "x-api-key: $ANTHROPIC_API_KEY")
@@ -137,11 +181,16 @@ probe() {
     return 1
 }
 
+# PROBED marks a reading this run fetched itself, so the footer can say "live"
+# instead of naming the cache file the probe happens to write through.
+PROBED=0
 if [ "$FETCH" = "always" ]; then
-    probe || echo "usage: probe failed, showing the cached reading" >&2
+    if probe; then PROBED=1; else
+        echo "usage: probe failed, showing the cached reading" >&2
+    fi
 elif [ "$FETCH" = "auto" ]; then
     CACHE_AGE=$(( $(date +%s) - $(newest_cache_ms) / 1000 ))
-    [ "$CACHE_AGE" -ge "$PROBE_MAX_AGE" ] && probe
+    if [ "$CACHE_AGE" -ge "$PROBE_MAX_AGE" ] && probe; then PROBED=1; fi
 fi
 
 # extract_fields FILE ROOT_EXPR — ROOT_EXPR is a jq filter locating the
@@ -191,6 +240,7 @@ fi
 if read_source "$FALLBACK" "." && [ "${A_FETCHED:-0}" -gt "$FETCHED_MS" ] 2>/dev/null; then
     SOURCE_FILE="$FALLBACK"
     SOURCE_LABEL="statusline cache"
+    [ "$PROBED" = 1 ] && SOURCE_LABEL="live"
     SOURCE_ROOT="."
     FETCHED_MS="$A_FETCHED" FIVE_PCT="$A_FIVE_PCT" FIVE_RESET="$A_FIVE_RESET"
     SEVEN_PCT="$A_SEVEN_PCT" SEVEN_RESET="$A_SEVEN_RESET"
