@@ -4,15 +4,29 @@
 # Sources, freshest wins:
 #   ~/.claude.json                  .cachedUsageUtilization, written on OAuth /login
 #   ~/.claude/usage-live-cache.json written by the statusline on every render,
-#                                   the only source for CLAUDE_CODE_OAUTH_TOKEN sessions
-# There is no CLI or API call here, so the numbers are as fresh as the last
-# session. The age of the reading is always printed, so a stale value is
+#                                   and by the probe below
+#
+# Both sources move only when Claude Code runs, so on their own the numbers are
+# as fresh as the last session. To close that gap this script probes the API
+# itself: a 1-token request whose response headers carry the live rate-limit
+# numbers. The probe runs when the cache is older than PROBE_MAX_AGE and writes
+# the result back to the statusline cache, so a later statusline render and this
+# script agree. The age of the reading is always printed, so a stale value is
 # visible rather than silent.
 #
 # Usage:
-#   usage          coloured one-screen report
-#   usage --line   one line: percent and time left per window
-#   usage --json   the raw utilization block of the chosen source
+#   usage             coloured one-screen report
+#   usage --line      one line: percent and time left per window
+#   usage --json      the raw utilization block of the chosen source
+#   usage --fetch     probe the API even when the cache is fresh
+#   usage --no-fetch  never probe, read the cache only
+#
+# --line does not probe unless --fetch is given, so a prompt that calls it
+# stays instant.
+#
+# Environment:
+#   USAGE_PROBE_MAX_AGE   seconds before the cache is probed again (default 120)
+#   USAGE_NO_FETCH        set to any value for --no-fetch by default
 #
 # Colour is off when stdout is not a terminal or NO_COLOR is set.
 
@@ -21,24 +35,113 @@ set -u
 CONFIG="${CLAUDE_CONFIG_FILE:-$HOME/.claude.json}"
 FALLBACK="$HOME/.claude/usage-live-cache.json"
 MODE="report"
+PROBE_MAX_AGE="${USAGE_PROBE_MAX_AGE:-120}"
+# auto: probe when the cache is stale. always: probe regardless. never: no probe.
+FETCH="auto"
+[ -n "${USAGE_NO_FETCH:-}" ] && FETCH="never"
 
-case "${1:-}" in
-    --line) MODE="line" ;;
-    --json) MODE="json" ;;
-    -h|--help)
-        sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \{0,1\}//'
-        exit 0
-        ;;
-    "") ;;
-    *)
-        echo "usage: usage [--line|--json]" >&2
-        exit 2
-        ;;
-esac
+LINE_MODE=0
+for arg in "$@"; do
+    case "$arg" in
+        --line) MODE="line"; LINE_MODE=1 ;;
+        --json) MODE="json" ;;
+        --fetch) FETCH="always" ;;
+        --no-fetch) FETCH="never" ;;
+        -h|--help)
+            sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *)
+            echo "usage: usage [--line|--json] [--fetch|--no-fetch]" >&2
+            exit 2
+            ;;
+    esac
+done
+
+# --line stays instant unless the caller asks for a probe outright.
+if [ "$LINE_MODE" = 1 ] && [ "$FETCH" != "always" ]; then
+    FETCH="never"
+fi
 
 if ! command -v jq >/dev/null 2>&1; then
     echo "usage: jq is required" >&2
     exit 1
+fi
+
+# --- the probe ---------------------------------------------------------------
+# Claude Code's own /api/oauth/usage endpoint rejects a long-lived
+# CLAUDE_CODE_OAUTH_TOKEN with 403, so the numbers come from the rate-limit
+# headers on a normal request instead. A max_tokens:1 Haiku call costs about
+# 23 input tokens and 1 output token, which the freshness gate keeps rare.
+
+# newest_cache_ms — the fetchedAtMs of the freshest source, 0 when there is none.
+newest_cache_ms() {
+    local f newest=0 v
+    for f in "$CONFIG" "$FALLBACK"; do
+        [ -r "$f" ] || continue
+        v=$(jq -r 'if has("cachedUsageUtilization") then .cachedUsageUtilization else . end
+                   | .fetchedAtMs // 0 | floor' "$f" 2>/dev/null)
+        case "$v" in ''|*[!0-9]*) v=0 ;; esac
+        [ "$v" -gt "$newest" ] && newest="$v"
+    done
+    printf '%s' "$newest"
+}
+
+# probe — fetch the live numbers and rewrite $FALLBACK. Returns non-zero and
+# stays silent on any failure, so the caller falls back to the cached reading.
+probe() {
+    local auth=() headers pct5 reset5 pct7 reset7 tmp now_ms
+    command -v curl >/dev/null 2>&1 || return 1
+
+    if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
+        auth=(-H "Authorization: Bearer $CLAUDE_CODE_OAUTH_TOKEN"
+              -H "anthropic-beta: oauth-2025-04-20")
+    elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+        auth=(-H "x-api-key: $ANTHROPIC_API_KEY")
+    else
+        return 1
+    fi
+
+    # The OAuth token is only accepted for Claude Code, which the system prompt
+    # identifies. It is required, not decoration.
+    headers=$(curl -sS --max-time 10 -D - -o /dev/null \
+        https://api.anthropic.com/v1/messages \
+        "${auth[@]}" \
+        -H "anthropic-version: 2023-06-01" \
+        -H "content-type: application/json" \
+        -d '{"model":"claude-haiku-4-5-20251001","max_tokens":1,
+             "system":[{"type":"text","text":"You are Claude Code, Anthropic'"'"'s official CLI for Claude."}],
+             "messages":[{"role":"user","content":"hi"}]}' 2>/dev/null) || return 1
+
+    # Header names are lower case over HTTP/2 but not guaranteed to be, and the
+    # values are fractions: 0.57 is 57 percent.
+    hdr() {
+        printf '%s' "$headers" \
+            | tr -d '\r' \
+            | awk -v k="anthropic-ratelimit-unified-$1:" \
+                  'tolower($1) == k {print $2; exit}'
+    }
+    pct5=$(hdr 5h-utilization); reset5=$(hdr 5h-reset)
+    pct7=$(hdr 7d-utilization); reset7=$(hdr 7d-reset)
+    [ -n "$pct5" ] && [ -n "$pct7" ] || return 1
+    pct5=$(awk -v v="$pct5" 'BEGIN {print v * 100}')
+    pct7=$(awk -v v="$pct7" 'BEGIN {print v * 100}')
+
+    # Same atomic write as the statusline, which can render concurrently.
+    tmp=$(mktemp "$HOME/.claude/.usage-live-cache.XXXXXX" 2>/dev/null) || return 1
+    now_ms=$(( $(date +%s) * 1000 ))
+    printf '{"fetchedAtMs": %s, "utilization": {"five_hour": {"utilization": %s, "resets_at": "%s"}, "seven_day": {"utilization": %s, "resets_at": "%s"}}}\n' \
+        "$now_ms" "$pct5" "$reset5" "$pct7" "$reset7" > "$tmp" 2>/dev/null \
+        && mv "$tmp" "$FALLBACK" 2>/dev/null && return 0
+    rm -f "$tmp" 2>/dev/null
+    return 1
+}
+
+if [ "$FETCH" = "always" ]; then
+    probe || echo "usage: probe failed, showing the cached reading" >&2
+elif [ "$FETCH" = "auto" ]; then
+    CACHE_AGE=$(( $(date +%s) - $(newest_cache_ms) / 1000 ))
+    [ "$CACHE_AGE" -ge "$PROBE_MAX_AGE" ] && probe
 fi
 
 # extract_fields FILE ROOT_EXPR — ROOT_EXPR is a jq filter locating the
