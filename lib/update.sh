@@ -11,6 +11,11 @@
 # a live box, which is what --config-only is for: the toolchain half takes
 # minutes, and testing a one-line change to config/bin/usage should not.
 #
+# The seed also reinstalls the CLI itself when a clone is present, because
+# devaloy and lib/ arrive through their own Dockerfile COPY rather than through
+# config/. Without that, pulling a commit that changes lib/update.sh leaves the
+# box answering with the old module and no way to fix it short of a rebuild.
+#
 # Usage:
 #   devaloy update                 seed the config, then re-run the bootstrap
 #   devaloy update --config-only   seed the config and stop, seconds not minutes
@@ -84,6 +89,62 @@ do_config_seed() {
   rm -f "${HOME}/.local/bin/agent-hook" "${HOME}/.local/bin/rm-guard"
 
   echo "devaloy: config seeded from ${src}"
+
+  # The CLI itself is not under config/. A stale /usr/local/lib/devaloy is what
+  # answers "update: takes no arguments" on a box that has pulled this commit,
+  # so seeding config/ without this leaves half the box behind the clone.
+  self_install "${src%/config}"
+}
+
+# self_install SRC_ROOT — reinstall the CLI, its modules and the two boot
+# scripts from a clone, matching the Dockerfile COPY at lines 367 and 371.
+#
+# Only a clone has these; /opt/devaloy holds config/ alone, so a box without the
+# repo skips this and keeps the image copy. The verb symlinks are left as they
+# are, because they point at /usr/local/bin/devaloy by name and do not move.
+#
+# Non-fatal on failure: the config seed has already landed by this point, and
+# reporting a working half is better than aborting over the other one.
+self_install() {
+  local root="$1"
+  [ -f "${root}/devaloy" ] && [ -d "${root}/lib" ] || return 0
+
+  if ! sudo -n true 2>/dev/null; then
+    warn "update: cannot sudo, so /usr/local/bin/devaloy is unchanged."
+    warn "update: run 'sudo cp ${root}/devaloy /usr/local/bin/devaloy' by hand."
+    return 0
+  fi
+
+  # install_bin, not cp: this very script is /usr/local/bin/devaloy when the
+  # installed copy is the one running, and bash reads a script as it goes. A cp
+  # truncates the file under the running interpreter and it resumes into
+  # whatever the new bytes say at that offset. A mv swaps the directory entry
+  # instead, so the running process keeps reading the inode it started on.
+  local script ok=1
+  for script in devaloy bootstrap-toolchain.sh link-shims; do
+    [ -f "${root}/${script}" ] || continue
+    install_bin "${root}/${script}" "/usr/local/bin/${script}" || ok=0
+  done
+  for script in "${root}"/lib/*.sh; do
+    [ -f "${script}" ] || continue
+    install_bin "${script}" "/usr/local/lib/devaloy/$(basename "${script}")" 644 || ok=0
+  done
+
+  if [ "${ok}" -eq 1 ]; then
+    echo "devaloy: cli reinstalled from ${root}"
+  else
+    warn "update: the cli reinstall failed, so /usr/local still holds the image copy."
+  fi
+}
+
+# install_bin SRC DEST [MODE] — copy to a temp beside DEST, then rename over it.
+install_bin() {
+  local src="$1" dest="$2" mode="${3:-755}" tmp="$2.devaloy-new"
+  sudo -n cp "${src}" "${tmp}" 2>/dev/null &&
+    sudo -n chmod "${mode}" "${tmp}" 2>/dev/null &&
+    sudo -n mv -f "${tmp}" "${dest}" 2>/dev/null && return 0
+  sudo -n rm -f "${tmp}" 2>/dev/null
+  return 1
 }
 
 do_update() {
@@ -126,7 +187,7 @@ do_update() {
 rows_tools() {
   emit_head 'toolchain' "toolset $(toolset_revision)"
   emit "$(printf '  🔼  %-22s %s%s%s' 'update the toolchain' "${DIM}" 'seed the config, re-resolve every pin, refresh the shims' "${RESET}")" 'update'
-  emit "$(printf '  ⚡  %-22s %s%s%s' 'seed the config only' "${DIM}" 'copy config/ over ~, no toolchain resolve' "${RESET}")" 'config'
+  emit "$(printf '  ⚡  %-22s %s%s%s' 'seed the config only' "${DIM}" 'copy config/ over ~ and reinstall the cli, no resolve' "${RESET}")" 'config'
   emit "$(printf '  📝  %-22s %s%s%s' 'sync the nvim config' "${DIM}" 'copy config/nvim over ~/.config/nvim, backed up' "${RESET}")" 'nvim'
   emit_hint "${DIM}the first and last take minutes and stream on the terminal${RESET}"
 }
@@ -147,7 +208,8 @@ tools_apply() { # tools_apply <row value>
     config)
       if ! confirm \
         "devaloy update --config-only copies config/ over the matching files" \
-        "in your home directory: .zshrc, ~/.claude, ~/.codex, ~/.local/bin." \
+        "in your home directory: .zshrc, ~/.claude, ~/.codex, ~/.local/bin," \
+        "and reinstalls the devaloy CLI from the clone." \
         "It merges, so files the repo does not ship are left alone."; then
         printf '\n  cancelled\n'
         sleep 1
