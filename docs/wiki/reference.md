@@ -210,7 +210,7 @@ Every management verb belongs to one command, `devaloy`. The five older names ar
 | `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, Docker, and the toolset revision. |
 | `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes. |
 | `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, then refreshes the `/usr/local/bin` mirror. Refuses to run as root. |
-| `bootstrap-toolchain.sh` | Installs the toolchain, but **skips itself** if the home volume already records the current `TOOLSET_REVISION`. |
+| `bootstrap-toolchain.sh` | Seeds `config/mise/` into `~/.config/mise` and installs the toolchain, but **skips itself** if the home volume already records the hash of that config. |
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |
 | `devaloy nvim-sync` (`devaloy-nvim-sync`) | Copies the repo's LazyVim config from `/opt/devaloy/config/nvim` over `~/.config/nvim`, then runs a headless `Lazy! sync`. Moves the current directory to `~/.config/nvim.bak-<timestamp>` first, unless given `--no-backup`. Refuses to run as root. See [The editor config](#the-editor-config). |
@@ -351,10 +351,12 @@ that signed yesterday does not fail every commit today.
 | Path | Notes |
 |---|---|
 | `~/.local/share/mise/shims` | Where the toolchain actually lives |
-| `~/.local/share/mise/.devaloy-bootstrapped` | The `TOOLSET_REVISION` marker, with `+paseo` and `+browser` appended for the flags that were on. Written last, and only on success. |
+| `~/.local/share/mise/.devaloy-bootstrapped` | The toolset marker: 12 hex characters of a hash over the mise config the bootstrap installed, optional fragments included. Written last, and only on success. |
 | `~/.cache/ms-playwright` | The Chromium builds `playwright-cli` launches. Only with `WITH_BROWSER=true`. In the home volume, so it survives a redeploy; Playwright's installer removes builds no installed release links to. |
 | `/tmp/playwright-cli` | Where a bare `playwright-cli screenshot` writes. Created by Playwright on first use. Not a volume: gone with the container. |
 | `/usr/local/bin` | The `link-shims` mirror. Outside the volume, so it is rebuilt each boot. |
+| `~/.config/mise/config.toml` | The declared toolset, copied from `config/mise/config.toml` on each boot. A `mise use -g` here is overwritten by the next one. |
+| `~/.config/mise/conf.d/` | The optional tools, one fragment per `WITH_*` key. Deleted when the key is off. |
 | `/opt/devaloy/config` | The image's copy of `config/`, the source for the sync |
 | `/var/lib/tailscale` | The `tailscale-state` volume. Node identity. |
 | `/var/lib/docker` | The `docker-data` volume. The nested daemon's images and containers. |

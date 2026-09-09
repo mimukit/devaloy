@@ -146,7 +146,7 @@ it — on the box, as `dev`:
 devaloy update
 ```
 
-That runs `bootstrap-toolchain.sh --force`, which skips the revision gate,
+That runs `bootstrap-toolchain.sh --force`, which skips the toolset gate,
 re-resolves everything tracking `latest`, reinstalls the agent skills, and
 refreshes the `/usr/local/bin` mirror.
 

@@ -85,13 +85,13 @@ you can log in and watch it happen rather than waiting for it.
 
 Anything you `apt install` on the box yourself is gone at the next
 `docker compose up --build`. If a tool is worth having, put it in the
-`Dockerfile` — or in `bootstrap-toolchain.sh` if `mise` has it.
+`Dockerfile` — or in `config/mise/config.toml` if `mise` has it.
 
-**Adding a tool to `bootstrap-toolchain.sh` means bumping `TOOLSET_REVISION` in
-the same file.** The boot bootstrap skips itself when the home volume already
-records the current revision, so without the bump a box that is already
-provisioned will never install the new tool — it will keep skipping, and only
-`devaloy update` will pull it in by hand.
+**Adding a tool is one line under `[tools]` in `config/mise/config.toml`**, and
+nothing else. `bootstrap-toolchain.sh` copies that file into `~/.config/mise`
+and installs what it declares. It skips itself when the home volume already
+records the hash of that config, so an edit is what tells an already-provisioned
+box to install the new tool on its next boot.
 
 ## One-time setup
 
@@ -756,9 +756,10 @@ changed pin, run this on the box as `dev`:
 devaloy update
 ```
 
-Pins live in `bootstrap-toolchain.sh`. Node is pinned to an LTS major; `gh`,
-`pnpm` and `turbo` track latest. To pin herdr too, set `MISE_HERDR_VERSION` in
-your `.env` and re-run `devaloy update`.
+The tool list and its pins live in `config/mise/config.toml`, a plain mise
+global config the bootstrap copies to `~/.config/mise`. Node is pinned to an LTS
+major; `gh`, `pnpm` and `turbo` track latest. To pin herdr too, set
+`MISE_HERDR_VERSION` in your `.env` and re-run `devaloy update`.
 
 It also reinstalls the agent skills, so it doubles as the publish loop — see
 [Agent skills](#agent-skills). Use `skmi` when you want only that.
@@ -875,8 +876,8 @@ devaloy update    # the toolchain too; runs the same skmi command
 `skmi`, not `skup`, is what picks up a **newly authored** skill: `skills update`
 only refreshes skills already in the lockfile, so it will never notice one that
 was not installed before. Nothing in this repo needs editing either way — the
-`TOOLSET_REVISION` gate only governs the unattended boot path, and both commands
-skip it.
+toolset gate only governs the unattended boot path, and both commands skip
+it.
 
 Pulling from another repo works the same way and survives redeploys, but not a
 volume reset unless you add it to `bootstrap-toolchain.sh`:

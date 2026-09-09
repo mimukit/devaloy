@@ -111,16 +111,24 @@ dying with the image. The agent CLIs come from mise's registry rather than their
 own installers because mise fetches the same upstream artifacts, so there is one
 package manager rather than three.
 
-### The revision gate
+### The toolset gate
 
-`bootstrap-toolchain.sh` carries a `TOOLSET_REVISION` constant and writes it to a
-marker in the home volume. The boot path re-runs the bootstrap only when the two
-disagree.
+The tool list is declarative: `config/mise/config.toml` in the repo, copied to
+`~/.config/mise/config.toml` by `bootstrap-toolchain.sh`, which then runs
+`mise install`. The two optional tools ship as fragments under
+`config/mise/optional/` and land in `~/.config/mise/conf.d/` only while their
+`WITH_*` key is on.
 
-This exists so an ordinary redeploy cannot re-resolve `@latest` and swap an agent
-CLI out from under a live session. The cost is that **adding a tool without
-bumping the revision means already-provisioned boxes never install it** — the
-gate sees the marker, skips, and only `devaloy update` picks it up by hand.
+`bootstrap-toolchain.sh` hashes that config — pins applied, optional fragments
+included — and writes the hash to a marker in the home volume. The boot path
+re-runs the bootstrap only when the two disagree.
+
+This exists so an ordinary redeploy cannot re-resolve `latest` and swap an agent
+CLI out from under a live session. Editing the tool list is enough to invalidate
+the marker, which is the whole reason the gate is a hash: the hand-bumped
+`TOOLSET_REVISION` it replaced could be forgotten, and a forgotten bump left
+every provisioned box skipping the bootstrap and never installing the new
+tool.
 
 `devaloy update` runs the same script with `--force`, which skips the gate
 entirely, runs `mise upgrade` and re-runs the skills install. `mise install`
