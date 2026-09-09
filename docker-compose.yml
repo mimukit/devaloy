@@ -212,6 +212,19 @@ services:
       # the 0600 file in the home volume, and clearing it here plus a redeploy
       # is what revokes it.
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # Authenticates the CodeRabbit CLI (`coderabbit`, `cr`) with no browser
+      # login — there is no browser here, and `cr auth login` without a key waits
+      # on a localhost callback that never arrives. Generate the key in the
+      # CodeRabbit web app under Organization Settings -> API Keys. The entrypoint
+      # stores it with `cr auth login --api-key` (the CLI does not read this
+      # variable itself) and copies it into the 0600 file in the home volume.
+      # Clearing it here plus a redeploy deletes the stored credential.
+      - CODERABBIT_API_KEY=${CODERABBIT_API_KEY:-}
+      # Pins the CodeRabbit CLI, which bootstrap-toolchain.sh installs from
+      # CodeRabbit's own script rather than mise. Empty means latest. NOT a
+      # MISE_* name on purpose: mise would read that as a tool declaration and
+      # break every mise call, the same trap the pins below carry.
+      - CODERABBIT_VERSION=${CODERABBIT_VERSION:-}
       # Whitespace-separated repos to clone into ~/projects on each boot, as
       # owner/repo, an https:// URL, or git@host:path. The entrypoint skips a
       # repo already cloned there, so this is safe to re-run and cheap to grow.

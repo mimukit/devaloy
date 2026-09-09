@@ -163,6 +163,14 @@ write_secret CLAUDE_CODE_OAUTH_TOKEN "${CLAUDE_CODE_OAUTH_TOKEN:-}"
 # with no --host. Note the scope — Paseo's password is DAEMON-wide, not web-UI
 # only, so setting this also makes the phone's direct connection ask for it.
 write_secret PASEO_PASSWORD "${PASEO_PASSWORD:-}"
+# Authenticates the CodeRabbit CLI. `cr auth login` with no key opens a browser
+# and waits on a localhost callback, neither of which exists on this box, so the
+# key is the only route that works here. Generate it in the CodeRabbit web app
+# under Organization Settings -> API Keys; it starts `cr-`. The CLI does not read
+# this variable — the block further down stores the key with `cr auth login
+# --api-key`, and what is here is for a caller passing `--api-key` by hand. Same
+# lifecycle as the tokens above: clearing it in .env and redeploying revokes it.
+write_secret CODERABBIT_API_KEY "${CODERABBIT_API_KEY:-}"
 
 # --- ntfy push-notification config for hooks ---
 # agent-push reads ~/.config/agent-push.env rather than the shell environment,
@@ -456,6 +464,7 @@ if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
     MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
     WITH_PASEO='${WITH_PASEO:-false}' \
     WITH_BROWSER='${WITH_BROWSER:-false}' \
+    CODERABBIT_VERSION='${CODERABBIT_VERSION:-}' \
     /usr/local/bin/bootstrap-toolchain.sh"; then
   log "Toolchain ready"
 else
@@ -466,6 +475,32 @@ fi
 # Make the toolchain resolvable from sessions that never source .bashrc.
 DEV_HOME="${DEV_HOME}" /usr/local/bin/link-shims || \
   log "WARNING: link-shims failed — non-interactive commands may not find the toolchain."
+
+# --- the CodeRabbit CLI via CODERABBIT_API_KEY ---
+# Run after link-shims, which is what mirrors `coderabbit` into /usr/local/bin.
+#
+# The CLI does NOT read CODERABBIT_API_KEY at review time — checked against the
+# binary, which knows no such variable. Only its installer does. So the key has
+# to be *stored*, and `auth login --api-key` is what stores it, in
+# ~/.coderabbit/auth.json inside the home volume. This is the same shape as the
+# gh block below: the variable in ~/.devaloy_secrets is for a caller that wants
+# to pass `--api-key "$CODERABBIT_API_KEY"` by hand; the stored credential is
+# what an unattended `cr review` actually reads.
+#
+# auth.json is deleted first and unconditionally, ABOVE the key check, so
+# clearing the variable in .env and redeploying really does revoke it. Nothing
+# is lost by that on this box: the only other way to fill the file is
+# `cr auth login` with a browser, which does not exist here.
+rm -f "${DEV_HOME}/.coderabbit/auth.json"
+if [ -n "${CODERABBIT_API_KEY:-}" ] && [ -x /usr/local/bin/coderabbit ]; then
+  if as_dev '. "$HOME/.devaloy_secrets" && \
+      coderabbit auth login --api-key "${CODERABBIT_API_KEY}"' >/dev/null 2>&1; then
+    log "CodeRabbit CLI authenticated (~/.coderabbit/auth.json written)"
+  else
+    log "WARNING: coderabbit auth login failed — check CODERABBIT_API_KEY."
+    log "WARNING: 'cr review' will ask for a browser login it cannot open."
+  fi
+fi
 
 # --- gh and git over HTTPS via GITHUB_TOKEN ---
 # Run after link-shims because that is what puts gh on root's PATH.
