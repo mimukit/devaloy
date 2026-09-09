@@ -1,0 +1,27 @@
+# OPTIONAL: the Paseo daemon (WITH_PASEO=true).
+#
+# bootstrap-toolchain.sh copies this file to ~/.config/mise/conf.d/ when the key
+# is on and deletes it when the key is off. mise loads every non-hidden TOML in
+# that directory, so the fragment adds one tool to the declared set and removing
+# it takes the tool back out. That symmetry is the reason for the split: one
+# static config.toml cannot say "this tool only when a key is set".
+#
+# Paseo lives in mise and not in the Dockerfile — the opposite of Orca — because
+# it is a plain npm package with npm dependencies. No system package, no apt
+# resolution, no architecture to match. So the key is a runtime variable and not
+# a build argument: the payload lands in the home volume, and
+# `docker compose up -d` is enough to turn it on. Nothing enters the image.
+#
+# Turning the key back off stops the daemon (see entrypoint.sh) and drops this
+# fragment, but it does NOT delete the installed copy. `devaloy prune --apply`
+# reclaims that disk.
+#
+# It tracks latest and has NO pin variable, and the reason is a name collision
+# rather than a policy call. mise reads any MISE_<TOOL>_VERSION in its
+# environment as "add tool <TOOL> at this version", so a MISE_PASEO_VERSION
+# declared a tool literally named `paseo`. There is no `paseo` in mise's
+# registry — the package is npm:@getpaseo/cli — so every mise call warned and
+# exited 1. To hold a version, edit the pin below.
+
+[tools]
+"npm:@getpaseo/cli" = "latest"

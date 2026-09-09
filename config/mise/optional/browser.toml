@@ -1,0 +1,23 @@
+# OPTIONAL: headless browser capture (WITH_BROWSER=true).
+#
+# bootstrap-toolchain.sh copies this file to ~/.config/mise/conf.d/ when the key
+# is on and deletes it when the key is off. See optional/paseo.toml for why the
+# optional tools live in fragments instead of config.toml.
+#
+# The npm half of the feature; the Dockerfile block of the same name holds the
+# shared libraries. `playwright-cli` is a plain npm package, so it lands in the
+# home volume like Paseo does, and the same key that built the libraries into
+# the image turns this on. The Chromium download runs later, in
+# bootstrap-toolchain.sh, because it needs the CLI on the shims path first.
+#
+# PINNED, unlike Paseo, and not by choice. Releases 0.1.0 through 0.1.18 carry
+# npm provenance from GitHub Actions; 0.1.19 (2026-09-01) was published by hand
+# from Microsoft's npm account with none. mise's npm backend treats that as a
+# trust downgrade and refuses `latest` outright. This is the newest release with
+# provenance. Move the pin by hand once a later release carries it again
+# (`npm view @playwright/cli@<v> dist.attestations`), rather than adding a
+# trust-policy exclusion or shelling out to npm, which would waive the check for
+# every release that follows.
+
+[tools]
+"npm:@playwright/cli" = "0.1.18"

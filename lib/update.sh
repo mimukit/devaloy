@@ -71,6 +71,12 @@ config_src() {
 # is not seeded here on purpose — it is seeded once and `devaloy nvim-sync` is
 # the deliberate way to overwrite it. config/paseo and config/docker do not
 # belong in /home/dev at all.
+#
+# config/mise is not here either: bootstrap-toolchain.sh seeds it, because the
+# copy is not a plain copy — it applies the MISE_NODE_VERSION and
+# MISE_HERDR_VERSION pins and prunes conf.d to the optional keys that are on.
+# So `--config-only` leaves ~/.config/mise alone, and a changed tool list needs
+# the toolchain half, which is the half that would install it anyway.
 do_config_seed() {
   local src dest sub
   src="$(config_src)" || die "update: no config directory found to seed from."
@@ -156,11 +162,11 @@ do_update() {
   fi
 
   if [ "${UPDATE_DO_TOOLCHAIN}" -eq 0 ]; then
-    echo "devaloy: config updated."
+    echo "devaloy: config updated (~/.config/mise needs the toolchain half)."
     return 0
   fi
 
-  # --force skips the revision gate, so this re-runs the skills install too.
+  # --force skips the toolset gate, so this re-runs the skills install too.
   # That is deliberate and it is the publish loop: push a skill to
   # mimukit/skills, run this, and it is on the box. It has to be `skills add`,
   # which the bootstrap runs — `skills update` only refreshes what is already

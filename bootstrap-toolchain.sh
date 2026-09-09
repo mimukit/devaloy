@@ -3,63 +3,31 @@
 # Shared by entrypoint.sh (first boot) and devaloy-update (deliberate upgrade)
 # so the tool list and the pins only ever live in one place.
 #
+# That one place is config/mise/config.toml, NOT this file. This script seeds
+# that config into ~/.config/mise and runs `mise install`; adding or dropping a
+# tool is an edit to the TOML and nothing here. What is left below is the work
+# a declaration cannot do: the optional keys, the install gate, agent skills,
+# the LazyVim seed, the Chromium download, the herdr integrations.
+#
 # Usage: bootstrap-toolchain.sh [--force]
-#   no args   install only if the home volume is behind TOOLSET_REVISION
+#   no args   install only if the home volume is behind the declared toolset
 #   --force   install regardless — what devaloy-update runs
 set -euo pipefail
 
-# Bump this whenever the tool list below changes. The marker in the home volume
-# records the revision it installed, and the boot path re-runs when the two
-# disagree — so an existing box picks up a newly added tool on its next
-# redeploy. A marker that only recorded *that* the bootstrap had run is what
-# left every already-provisioned volume without claude and codex when they were
-# added: the gate saw the marker, skipped, and the tools never arrived.
-#
-# Bumping does re-resolve the @latest tools, so it can move herdr or an agent
-# CLI under a live session. That is the cost of a deliberate toolset change;
-# leave this alone for edits that do not add or remove a tool.
-#
-# The agent skills installed at the end of this script are covered by the same
-# marker. Note what that does and does not gate: it stops an ordinary redeploy
-# re-resolving skills mid-session, but it is NOT how a newly authored skill
-# reaches the box. That is `devaloy-update` (or `skmi`), which runs --force and
-# skips the gate entirely — so publishing a skill needs no edit here.
-TOOLSET_REVISION=7
-
 MARKER="${HOME}/.local/share/mise/.devaloy-bootstrapped"
+MISE_CONFIG_DIR="${HOME}/.config/mise"
 
-# The optional tools (see the blocks further down). Read up here because the
-# marker has to know about them: a revision number alone cannot express an
-# optional tool, so a volume already at revision N would skip this script
-# forever and WITH_PASEO=true would never install anything. Same class of bug as
-# the one described above, where claude and codex arrived on a volume whose
-# marker already said "done".
-#
-# So the marker records each FLAG as well as the revision, in a fixed order —
-# `5`, `5+paseo`, `5+browser` or `5+paseo+browser` — and flipping either key
-# invalidates it. A volume that already reads `5+paseo` still matches, so adding
-# a flag here never re-runs a box that did not ask for it. Re-running is close
-# to free: the boot path below runs `mise install`, never `mise upgrade`, so
-# every tool already on the volume stays exactly where it is.
+# The optional tools. Each is a fragment under config/mise/optional/ that lands
+# in ~/.config/mise/conf.d/ when its key is true and is DELETED when it is
+# false, so turning a key off actually undeclares the tool. mise loads every
+# non-hidden TOML in that directory.
 WITH_PASEO="${WITH_PASEO:-false}"
 WITH_BROWSER="${WITH_BROWSER:-false}"
-MARKER_VALUE="${TOOLSET_REVISION}"
-if [ "${WITH_PASEO}" = "true" ]; then
-  MARKER_VALUE="${MARKER_VALUE}+paseo"
-fi
-if [ "${WITH_BROWSER}" = "true" ]; then
-  MARKER_VALUE="${MARKER_VALUE}+browser"
-fi
 
 FORCE=0
 case "${1:-}" in
   --force) FORCE=1 ;;
-  '')
-    if [ "$(cat "${MARKER}" 2>/dev/null)" = "${MARKER_VALUE}" ]; then
-      echo "toolset ${MARKER_VALUE} already installed, skipping (run devaloy-update to refresh)"
-      exit 0
-    fi
-    ;;
+  '') ;;
   *)
     echo "bootstrap-toolchain.sh: unknown argument: $1" >&2
     exit 2
@@ -71,26 +39,116 @@ esac
 # which sources neither .zshenv nor .bashrc.
 export MISE_MINIMUM_RELEASE_AGE=0
 
-# Node is pinned to an LTS *major*, not mise's floating `lts` alias — that
-# alias rolls across majors, which is exactly the unannounced jump a dev box
-# shouldn't take on a redeploy. Bump this deliberately.
-MISE_NODE_VERSION="${MISE_NODE_VERSION:-24}"
-# herdr tracks latest by design: the boot bootstrap is gated behind the revision
-# marker above, so an ordinary redeploy can't swap it under a live session. Set
-# MISE_HERDR_VERSION in compose to pin it.
-MISE_HERDR_VERSION="${MISE_HERDR_VERSION:-latest}"
-# Paseo has NO pin variable, on purpose, and the reason is a name collision
-# rather than a policy call. mise reads any MISE_<TOOL>_VERSION in its
-# environment as "add tool <TOOL> at this version", so a MISE_PASEO_VERSION
-# here declared a tool literally named `paseo`. There is no `paseo` in mise's
-# registry — the package is npm:@getpaseo/cli — so every mise call below warned
-# and `mise use` exited 1, which under `set -e` killed this script before the
-# marker, the skills install and the herdr integrations. herdr and node are safe
-# from the same trap only because `herdr` and `node` ARE registry entries.
+# --- where the declared toolset comes from ------------------------------------
+# Same order devaloy-update's config_src() uses, and for the same reason:
+# /opt/devaloy/config is a build-time snapshot baked in by a Dockerfile COPY, so
+# on a box that also has the repo cloned, the clone is the copy you are editing.
+# DEVALOY_CONFIG_SRC overrides both.
+config_src() {
+  local candidate
+  for candidate in \
+    "${DEVALOY_CONFIG_SRC:-}" \
+    "${HOME}/projects/devaloy/config" \
+    /opt/devaloy/config; do
+    if [ -n "${candidate}" ] && [ -f "${candidate}/mise/config.toml" ]; then
+      printf '%s' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# --- the effective toolset, staged and hashed ---------------------------------
+# Rendered into a temp directory BEFORE the install gate, because the gate is
+# now the hash of what this run would install: config.toml with the two pin
+# variables applied, plus whichever optional fragments the keys turned on.
 #
-# So Paseo always tracks latest. That is what the flag was defaulted to anyway,
-# and the revision marker above still stops a redeploy swapping it under a live
-# session. To hold a version, edit the pin on the `mise use` line below.
+# The hash replaces a hand-bumped TOOLSET_REVISION, and that is the point of the
+# whole arrangement. The old number had to be remembered on every tool change,
+# and forgetting it left an already-provisioned volume matching a stale marker,
+# skipping the script, and never receiving the new tool — which is exactly how
+# claude and codex once failed to arrive. A hash cannot forget. It also folds in
+# the optional keys, so flipping WITH_PASEO invalidates the marker by itself.
+#
+# Re-running is close to free: the boot path runs `mise install`, never
+# `mise upgrade`, so every tool already on the volume stays where it is.
+#
+# The agent skills at the end of this script sit behind the same marker. That
+# stops an ordinary redeploy re-resolving them mid-session; it is NOT how a
+# newly authored skill reaches the box. `devaloy-update` (or `skmi`) runs
+# --force and skips the gate, so publishing a skill needs no edit here.
+STAGE="$(mktemp -d)"
+trap 'rm -rf "${STAGE}"' EXIT
+mkdir -p "${STAGE}/conf.d"
+
+CONFIG_SRC="$(config_src || true)"
+if [ -z "${CONFIG_SRC}" ]; then
+  # An image built before config/mise/ existed, with no clone to read either.
+  # The declared set is then whatever is already in the home volume: install it
+  # rather than aborting, and say why the box is not tracking the repo.
+  if [ ! -f "${MISE_CONFIG_DIR}/config.toml" ]; then
+    echo "bootstrap-toolchain.sh: no mise config found in the image, the clone" >&2
+    echo "bootstrap-toolchain.sh: or ${MISE_CONFIG_DIR}. Nothing to install." >&2
+    exit 1
+  fi
+  echo "WARNING: no config/mise/config.toml to seed from — keeping the copy in" >&2
+  echo "WARNING: ${MISE_CONFIG_DIR}. Pull the repo and run devaloy-update." >&2
+  cp "${MISE_CONFIG_DIR}/config.toml" "${STAGE}/config.toml"
+  SEED=0
+else
+  cp "${CONFIG_SRC}/mise/config.toml" "${STAGE}/config.toml"
+  SEED=1
+fi
+
+# The two pin variables from compose, applied to the staged copy rather than
+# left in the environment. mise does read MISE_<TOOL>_VERSION as an override,
+# but only in a process that HAS it — the boot path would install one version
+# and every later shell would read another out of the config. Writing the pin
+# into the file keeps one answer for the whole box.
+#
+# Only when set and non-empty. entrypoint.sh forwards these unconditionally, so
+# an unset key arrives as the empty string, and `node = ""` is not a version.
+#
+# There is no equivalent for Paseo, and the reason is a name collision rather
+# than a policy call: mise reads any MISE_<TOOL>_VERSION in its environment as
+# "add tool <TOOL> at this version", so a MISE_PASEO_VERSION declared a tool
+# literally named `paseo`. There is no `paseo` in mise's registry — the package
+# is npm:@getpaseo/cli — so every mise call warned and exited 1, which under
+# `set -e` killed this script before the marker, the skills and the herdr
+# integrations. `node` and `herdr` are safe from that trap only because both ARE
+# registry entries. To hold Paseo, edit the pin in optional/paseo.toml.
+pin_tool() {
+  local tool="$1" version="$2"
+  [ -n "${version}" ] || return 0
+  if ! grep -qE "^${tool} = " "${STAGE}/config.toml"; then
+    echo "WARNING: no '${tool}' line in config.toml — pin ignored." >&2
+    return 0
+  fi
+  sed -i "s|^${tool} = .*|${tool} = \"${version}\"|" "${STAGE}/config.toml"
+  echo "pinned ${tool} to ${version} from the environment"
+}
+pin_tool node "${MISE_NODE_VERSION:-}"
+pin_tool herdr "${MISE_HERDR_VERSION:-}"
+
+if [ "${SEED}" -eq 1 ]; then
+  if [ "${WITH_PASEO}" = "true" ]; then
+    cp "${CONFIG_SRC}/mise/optional/paseo.toml" "${STAGE}/conf.d/paseo.toml"
+  fi
+  if [ "${WITH_BROWSER}" = "true" ]; then
+    cp "${CONFIG_SRC}/mise/optional/browser.toml" "${STAGE}/conf.d/browser.toml"
+  fi
+fi
+
+# One hash over every staged file, names included, so a fragment appearing or
+# disappearing moves the marker as surely as an edited pin does.
+MARKER_VALUE="$(cd "${STAGE}" && find . -name '*.toml' -type f | sort |
+  xargs sha256sum | sha256sum | cut -c1-12)"
+
+if [ "${FORCE}" -eq 0 ] &&
+  [ "$(cat "${MARKER}" 2>/dev/null)" = "${MARKER_VALUE}" ]; then
+  echo "toolset ${MARKER_VALUE} already installed, skipping (run devaloy-update to refresh)"
+  exit 0
+fi
 
 echo "installing toolset ${MARKER_VALUE} — several minutes on a cold volume"
 
@@ -99,102 +157,40 @@ if [ ! -x "${HOME}/.local/bin/mise" ]; then
 fi
 export PATH="${HOME}/.local/bin:${PATH}"
 
-mise use -g "node@${MISE_NODE_VERSION}"
-mise use -g pnpm@latest
-mise use -g gh@latest
-mise use -g npm:turbo@latest
-# lazygit has no noble package, so it comes from here instead of the Dockerfile.
-# A full-screen git UI is the difference between reviewing a diff over a phone
-# tether and giving up on it.
-mise use -g lazygit@latest
-# fzf, for the `devaloy` TUI. Noble ships 0.44.1 and the picker needs 0.54 for
-# --no-input (without it fzf treats every printable key as search input, so `j`
-# types a `j` instead of moving down) and 0.65 for --footer and
-# transform-footer. The apt copy in the Dockerfile stays as the cold-boot floor
-# for LazyVim's pickers, which do not care about the version; this one shadows
-# it, because /usr/local/bin precedes /usr/bin and a mise-activated shell puts
-# the install directory ahead of both. `devaloy` checks the version it actually
-# resolves and refuses to draw below the floor rather than half-rendering.
-mise use -g fzf@latest
-# Neovim, for the LazyVim config installed further down. Noble ships 0.9.5 and
-# LazyVim needs >= 0.11.2, so this comes from mise rather than the apt list in
-# the Dockerfile. Its search binaries (ripgrep, fd, unzip) DO come from apt —
-# they are system packages with no version demand behind them.
-mise use -g neovim@latest
-# The tree-sitter CLI, which `:checkhealth lazyvim` reports as an error without.
-# nvim-treesitter needs it to build a grammar that ships no prebuilt parser.
-mise use -g tree-sitter@latest
-mise use -g "herdr@${MISE_HERDR_VERSION}"
-# The AI agents. mise's registry entries fetch the same upstream artifacts their
-# own installers do — Claude Code's binary checksummed against the release
-# manifest, Codex's musl build from its GitHub release — so there is nothing to
-# hand-roll here. Both track latest, like pnpm/gh/turbo: pin one by pinning it
-# in this file. They ship far too often to freeze by default, and the
-# revision marker already stops a redeploy swapping them mid-session.
-mise use -g claude@latest
-mise use -g codex@latest
-# command-code, a third agent CLI. It has no mise registry entry, so it comes
-# through mise's npm backend as `npm:command-code` — the same route as turbo,
-# skills and Paseo. Do not run `npm i -g` for it: a global npm install lands
-# outside the shims path, so `ssh devaloy '<cmd>'` would not see it until the
-# next link-shims run. Tracks latest, like claude and codex.
-mise use -g npm:command-code@latest
-# The skills.sh CLI, which installs the agent skills below. It is a tool like
-# any other here, so it lands in the home volume and survives a redeploy.
-mise use -g npm:skills@latest
-
-# --- OPTIONAL: the Paseo daemon (WITH_PASEO). BEGIN ---------------------------
-# One contiguous block, so removing Paseo later is deleting a unit rather than
-# unpicking a line from the list above.
+# --- seed the declared toolset ------------------------------------------------
+# The staged copy from the top of this script, moved into place. A merge would
+# be wrong here: ~/.config/mise/config.toml is the repo's file, and a `mise use`
+# you ran on the box is meant to be overwritten by it. conf.d is pruned to the
+# staged fragments for the same reason — that is what makes WITH_PASEO=false
+# undeclare Paseo instead of leaving the last true value on the volume forever.
 #
-# It lives HERE and not in the Dockerfile — the opposite of Orca — because it is
-# a plain npm package with npm dependencies. No system package, no apt
-# resolution, no architecture to match. That means the key is a runtime variable
-# and not a build argument: the payload lands in the home volume, so
-# `docker compose up -d` is enough to turn it on. Nothing enters the image.
-#
-# Turning the key back off stops the daemon (see entrypoint.sh); it does NOT
-# uninstall this. A `paseo` with no daemon behind it does nothing, and pulling a
-# tool out from under a live session is worse than leaving a dormant command on
-# PATH.
-if [ "${WITH_PASEO}" = "true" ]; then
-  mise use -g npm:@getpaseo/cli@latest
+# Skipped entirely when there was nothing to seed from; the warning is already
+# printed above and the config in the home volume is what gets installed.
+if [ "${SEED}" -eq 1 ]; then
+  mkdir -p "${MISE_CONFIG_DIR}/conf.d"
+  cp "${STAGE}/config.toml" "${MISE_CONFIG_DIR}/config.toml"
+  rm -f "${MISE_CONFIG_DIR}/conf.d/paseo.toml" \
+    "${MISE_CONFIG_DIR}/conf.d/browser.toml"
+  for fragment in "${STAGE}"/conf.d/*.toml; do
+    [ -f "${fragment}" ] || continue
+    cp "${fragment}" "${MISE_CONFIG_DIR}/conf.d/$(basename "${fragment}")"
+  done
+  echo "mise config seeded from ${CONFIG_SRC}/mise"
 fi
-# --- OPTIONAL: the Paseo daemon. END ------------------------------------------
-
-# --- OPTIONAL: headless browser capture (WITH_BROWSER). BEGIN -----------------
-# The npm half of the feature; the Dockerfile block of the same name holds the
-# shared libraries. `playwright-cli` is a plain npm package, so it lands in the
-# home volume like Paseo does, and the same key that built the libraries into
-# the image is what turns this on. Turning it back off uninstalls nothing, for
-# the same reason as Paseo. The browser download is further down, after
-# `mise install` has put the CLI on the shims path.
-#
-# PINNED, unlike Paseo, and not by choice. Releases 0.1.0 through 0.1.18 carry
-# npm provenance from GitHub Actions; 0.1.19 (2026-09-01) was published by hand
-# from Microsoft's npm account with none. mise's npm backend treats that as a
-# trust downgrade and refuses `@latest` outright. This is the newest release
-# with provenance. Move the pin by hand once a later release carries it again
-# (`npm view @playwright/cli@<v> dist.attestations`), rather than adding a
-# trust-policy exclusion or shelling out to npm, which would waive the check
-# for every release that follows.
-if [ "${WITH_BROWSER}" = "true" ]; then
-  mise use -g npm:@playwright/cli@0.1.18
-fi
-# --- OPTIONAL: headless browser capture. END ----------------------------------
 
 mise install
 
 # `mise install` does NOT move a tool that is already installed, even one pinned
 # to `latest` — it resolves `latest` against what is on disk, prints "all tools
-# are installed" and stops. Every @latest tool above was therefore frozen at
-# whatever version first landed on the home volume, and devaloy-update upgraded
-# nothing. `mise upgrade` is the command that actually re-resolves.
+# are installed" and stops. Every `latest` tool in the config was therefore
+# frozen at whatever version first landed on the home volume, and devaloy-update
+# upgraded nothing. `mise upgrade` is the command that actually re-resolves.
 #
-# Only on --force. The boot path must stay install-only: the revision marker
+# Only on --force. The boot path must stay install-only: the toolset marker
 # exists precisely so a redeploy cannot swap an agent CLI under a live session,
 # and upgrading here would hand that back. No --bump — that would rewrite the
-# pins above to concrete versions and defeat tracking latest at all.
+# pins in the seeded config to concrete versions, defeating `latest` and putting
+# the copy in the home volume out of step with the repo's.
 if [ "${FORCE}" -eq 1 ]; then
   echo "upgrading tools that track latest"
   mise upgrade
@@ -342,6 +338,6 @@ done
 unset _target
 
 # Written last, and only on success: a bootstrap that died halfway through must
-# leave the volume behind the revision so the next boot retries it.
+# leave the volume behind the declared toolset so the next boot retries it.
 mkdir -p "$(dirname "${MARKER}")"
 printf '%s\n' "${MARKER_VALUE}" > "${MARKER}"

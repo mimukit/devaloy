@@ -1,0 +1,85 @@
+# The devaloy toolchain, declared. This file is the source of truth for every
+# tool mise installs here: add a line, redeploy, and the tool arrives.
+# bootstrap-toolchain.sh copies it to ~/.config/mise/config.toml and runs
+# `mise install`. That script holds no tool list of its own any more, and it
+# needs no edit to add or drop one — its install gate hashes this file.
+#
+# Three consequences of the copy, all deliberate:
+#
+#   - `mise use -g <tool>` on the box edits ~/.config/mise/config.toml, and the
+#     next boot overwrites it. Try a tool that way, then put it here to keep it.
+#   - Deleting a line drops the declaration, not the payload. mise leaves the
+#     installed copy in the home volume; `devaloy prune --apply` reclaims it.
+#   - Adding a line to a running box costs a `devaloy update`, which also
+#     re-resolves every `latest` pin below. That is the price of a toolset
+#     change; it is why the boot path never upgrades on its own.
+#
+# The two optional tools (WITH_PASEO, WITH_BROWSER) are NOT here. A key that is
+# off has to declare nothing at all, which one static file cannot express, so
+# each ships as its own fragment in optional/ and lands in
+# ~/.config/mise/conf.d/. See bootstrap-toolchain.sh.
+#
+# There is no [settings] block, on purpose. mise's defaults are what this box
+# wants, and a key here changes behaviour for every agent that runs on it.
+
+[tools]
+
+# --- the node toolchain -------------------------------------------------------
+# Pinned to an LTS *major*, not mise's floating `lts` alias — that alias rolls
+# across majors, which is exactly the unannounced jump a dev box should not take
+# on a redeploy. Bump it deliberately. MISE_NODE_VERSION in compose overrides
+# this line; bootstrap-toolchain.sh rewrites it into the seeded copy.
+node = "24"
+pnpm = "latest"
+"npm:turbo" = "latest"
+# @antfu/ni — one set of commands (ni, nr, nd, nup, nun, nci, na, nlx) that
+# reads a repo's lockfile and calls the right package manager. This box is
+# pnpm-first, but a cloned repo can be npm, yarn or bun. The zshrc gives up the
+# `ni` and `nd` alias names to it.
+"npm:@antfu/ni" = "latest"
+
+# --- git and the terminal -----------------------------------------------------
+gh = "latest"
+# lazygit has no noble package, so it comes from here instead of the Dockerfile.
+# A full-screen git UI is the difference between reviewing a diff over a phone
+# tether and giving up on it.
+lazygit = "latest"
+# fzf, for the `devaloy` TUI. Noble ships 0.44.1 and the picker needs 0.54 for
+# --no-input (without it fzf treats every printable key as search input, so `j`
+# types a `j` instead of moving down) and 0.65 for --footer and
+# transform-footer. The apt copy in the Dockerfile stays as the cold-boot floor
+# for LazyVim's pickers, which do not care about the version; this one shadows
+# it, because /usr/local/bin precedes /usr/bin and a mise-activated shell puts
+# the install directory ahead of both. `devaloy` checks the version it actually
+# resolves and refuses to draw below the floor rather than half-rendering.
+fzf = "latest"
+# Neovim, for the LazyVim config bootstrap-toolchain.sh seeds. Noble ships 0.9.5
+# and LazyVim needs >= 0.11.2, so this comes from mise rather than the apt list
+# in the Dockerfile. Its search binaries (ripgrep, fd, unzip) DO come from apt —
+# they are system packages with no version demand behind them.
+neovim = "latest"
+# The tree-sitter CLI, which `:checkhealth lazyvim` reports as an error without.
+# nvim-treesitter needs it to build a grammar that ships no prebuilt parser.
+"tree-sitter" = "latest"
+# herdr tracks latest by design: the boot path is gated behind the toolset
+# marker, so an ordinary redeploy cannot swap it under a live session. Set
+# MISE_HERDR_VERSION in compose to pin it, like MISE_NODE_VERSION above.
+herdr = "latest"
+
+# --- the AI agents ------------------------------------------------------------
+# mise's registry entries fetch the same upstream artifacts the agents' own
+# installers do — Claude Code's binary checksummed against the release manifest,
+# Codex's musl build from its GitHub release — so there is nothing to hand-roll.
+# Both track latest, like pnpm and turbo: pin one by editing its line. They ship
+# far too often to freeze by default, and the toolset marker already stops a
+# redeploy swapping them mid-session.
+claude = "latest"
+codex = "latest"
+# command-code, a third agent CLI. It has no mise registry entry, so it comes
+# through mise's npm backend, the same route as turbo and skills. Do not install
+# it with `npm i -g`: that lands outside the shims path, so `ssh devaloy '<cmd>'`
+# would not see it until the next link-shims run.
+"npm:command-code" = "latest"
+# The skills.sh CLI, which installs the agent skills. It is a tool like any
+# other here, so it lands in the home volume and survives a redeploy.
+"npm:skills" = "latest"

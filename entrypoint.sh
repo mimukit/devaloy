@@ -200,12 +200,16 @@ fi
 # replaces, so files the repo does not ship — ~/.zshrc.local, credentials,
 # session history, skills you added by hand — are left alone.
 #
-# Two directories under config/ are NOT seeded here, for different reasons.
+# Three directories under config/ are NOT seeded here, for different reasons.
 # config/paseo is a single JSON file that has to be merged key by key rather
 # than copied, and the values it needs come from the tailnet, which is not up
 # yet at this point in the boot; the Paseo block at the bottom of this file does
 # it. config/docker does not belong in /home/dev at all — dockerd reads
 # /etc/docker, so the Docker block further down copies it there instead.
+# config/mise is seeded by bootstrap-toolchain.sh, further down, because that
+# copy is not a plain copy: it applies the two version pins and prunes conf.d to
+# the optional keys that are on, and the script hashes the result to decide
+# whether it has anything to install.
 seed_config() {
   src="$1"; dest="$2"
   [ -d "${src}" ] || return 0
@@ -416,8 +420,9 @@ fi
 
 # --- mise bootstrap + pinned toolchain (runs as dev) ---
 # The skip-if-already-installed decision lives in bootstrap-toolchain.sh, not
-# here: it is gated on that script's TOOLSET_REVISION, and only the script knows
-# what revision it ships. Keeping the check next to the tool list is what stops
+# here: it hashes the toolset that config/mise/config.toml declares (plus the
+# optional fragments the keys turn on) and compares that against the marker in
+# the home volume. Keeping the check next to the config it hashes is what stops
 # a newly added tool from being skipped forever on a volume that was
 # provisioned before it existed.
 #
