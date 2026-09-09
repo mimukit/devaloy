@@ -83,3 +83,15 @@ codex = "latest"
 # The skills.sh CLI, which installs the agent skills. It is a tool like any
 # other here, so it lands in the home volume and survives a redeploy.
 "npm:skills" = "latest"
+
+# --- not from mise ------------------------------------------------------------
+# The CodeRabbit CLI (`coderabbit`, alias `cr`) has no mise registry entry and no
+# npm package. It comes from its own install script, in bootstrap-toolchain.sh,
+# and lands in ~/.local/bin inside the home volume.
+#
+# It is named here anyway, and the reason is the install gate above: the marker
+# is a hash of THIS FILE, so a tool the script installs but the config never
+# mentions cannot invalidate it. Bumping CODERABBIT_VERSION in the line below is
+# what makes a redeploy pick up a change to that block.
+#
+# CODERABBIT_VERSION = latest

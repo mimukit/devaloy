@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Mirror the dev user's mise shims into /usr/local/bin. Needs root.
+# Mirror the dev user's mise shims, plus a short list of non-mise binaries in
+# ~/.local/bin, into /usr/local/bin. Needs root.
 #
 # Why this exists: Tailscale SSH runs non-interactive commands
 # (`ssh devaloy 'pnpm build'`, scp, rsync, git-over-ssh) through a shell that
@@ -21,23 +22,43 @@ fi
 DEV_HOME="${DEV_HOME:-/home/dev}"
 SHIM_DIR="${DEV_HOME}/.local/share/mise/shims"
 
-if [ ! -d "${SHIM_DIR}" ]; then
-  echo "link-shims: no shims at ${SHIM_DIR} — nothing to do."
-  exit 0
-fi
+# Tools that are NOT mise shims and still need the mirror. Each is a real binary
+# in ~/.local/bin, put there by its own installer in bootstrap-toolchain.sh, so
+# the loop over SHIM_DIR below cannot see it. Named one by one on purpose:
+# mirroring all of ~/.local/bin would also drag in mise itself and the agent
+# scripts, which resolve fine already.
+#
+# coderabbit and cr are the CodeRabbit CLI and its alias.
+EXTRA_BINS="coderabbit cr"
 
 count=0
-for shim in "${SHIM_DIR}"/*; do
-  [ -x "${shim}" ] || continue
-  target="/usr/local/bin/$(basename "${shim}")"
+
+link_one() {
+  src="$1"
+  target="/usr/local/bin/$(basename "${src}")"
   # Never clobber a real file — that would be one of our own scripts, or
   # something apt installed.
   if [ -e "${target}" ] && [ ! -L "${target}" ]; then
     echo "link-shims: skipping ${target} — a real file is already there." >&2
-    continue
+    return 0
   fi
-  ln -sfn "${shim}" "${target}"
+  ln -sfn "${src}" "${target}"
   count=$((count + 1))
+}
+
+if [ -d "${SHIM_DIR}" ]; then
+  for shim in "${SHIM_DIR}"/*; do
+    [ -x "${shim}" ] || continue
+    link_one "${shim}"
+  done
+else
+  echo "link-shims: no shims at ${SHIM_DIR} — mirroring the extras only."
+fi
+
+for name in ${EXTRA_BINS}; do
+  bin="${DEV_HOME}/.local/bin/${name}"
+  [ -x "${bin}" ] || continue
+  link_one "${bin}"
 done
 
 echo "link-shims: linked ${count} tool(s) into /usr/local/bin."

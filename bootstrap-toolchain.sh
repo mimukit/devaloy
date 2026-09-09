@@ -226,6 +226,38 @@ export PATH="${HOME}/.local/share/mise/shims:${PATH}"
 echo "installing agent skills from mimukit/skills"
 skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y
 
+# --- the CodeRabbit CLI ------------------------------------------------------
+# `coderabbit review` runs an AI code review over the working tree from the
+# terminal, and `--prompt-only` gives an agent on this box a findings list to
+# act on. It is not a mise tool: there is no registry entry and no npm package,
+# so it comes from CodeRabbit's own install script, which drops the binary and
+# its `cr` alias into ~/.local/bin — the home volume, so it survives a redeploy.
+#
+# CI=1 is what keeps this safe to run unattended. Without it the installer ends
+# with an interactive login prompt, and on a headless box that prompt is a boot
+# that never finishes. Authentication happens elsewhere: entrypoint.sh stores
+# CODERABBIT_API_KEY with `cr auth login --api-key` once the binary is on PATH.
+# A browser login is the only other route, and there is no browser here.
+#
+# The installer appends a PATH line to a shell profile only when ~/.local/bin is
+# missing from one, and entrypoint.sh has already put it there, so on this box it
+# writes nothing (verified: no CodeRabbit line in ~/.zshrc after a run).
+#
+# Pinned by CODERABBIT_VERSION when set; empty means latest. config/mise/config.toml
+# carries the declaration that moves the install marker — see the comment there.
+#
+# Non-fatal, like the herdr block below. A box with no reviewer CLI is still a
+# working box, and an outage at CodeRabbit's CDN must not cost the volume its
+# marker and re-run the whole toolset install on the next boot.
+echo "installing the CodeRabbit CLI"
+if CI=1 CODERABBIT_VERSION="${CODERABBIT_VERSION:-}" \
+  sh -c 'curl -fsSL https://cli.coderabbit.ai/install.sh | sh' >/dev/null 2>&1; then
+  echo "coderabbit installed at ${HOME}/.local/bin/coderabbit"
+else
+  echo "WARNING: the CodeRabbit CLI install failed. Re-run devaloy-update, or" >&2
+  echo "WARNING: run the installer by hand. Nothing else is affected." >&2
+fi
+
 # --- LazyVim ----------------------------------------------------------------
 # The LazyVim config in config/nvim/, copied into the home volume. It is a
 # vendored copy of mimukit/dotfiles:dot_config/nvim, so a fresh box gives the
