@@ -19,6 +19,8 @@ devaloy update
 
 It runs `bootstrap-toolchain.sh --force` (which skips the toolset gate and runs `mise upgrade`), then refreshes the `/usr/local/bin` shim mirror with `link-shims`. Run it as the dev user; it refuses to run as root.
 
+It finishes with `mise prune`, which deletes every installed version no tracked config asks for any more. `mise upgrade` installs the new version beside the old one and never removes the old directory, so without the prune the home volume keeps a copy of every claude, codex and pnpm you have ever run. A failed prune only warns: it costs disk, not a working toolchain. To see what would go before you run it, use `mise ls --prunable` or `mise prune --dry-run`.
+
 Because it can move `claude` and `codex`, run it between agent sessions, not under one.
 
 ## Publish a skill to the box

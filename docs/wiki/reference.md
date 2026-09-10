@@ -211,7 +211,7 @@ Every management verb belongs to one command, `devaloy`. The five older names ar
 | `devaloy` | Opens the picker. With no terminal and no verb, prints `devaloy status` as plain text and exits `0`. Needs fzf 0.65+ to draw; below that it refuses and names `devaloy update`, while every verb still runs. Modules live in `/usr/local/lib/devaloy/`, overridable with `DEVALOY_LIB`. |
 | `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, Docker, and the toolset revision. |
 | `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes. |
-| `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, then refreshes the `/usr/local/bin` mirror. Refuses to run as root. |
+| `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, refreshes the `/usr/local/bin` mirror, then runs `mise prune` to delete tool versions no tracked config still asks for. A failed prune warns and does not fail the update. Refuses to run as root. |
 | `bootstrap-toolchain.sh` | Seeds `config/mise/` into `~/.config/mise` and installs the toolchain, but **skips itself** if the home volume already records the hash of that config. |
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |

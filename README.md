@@ -811,6 +811,12 @@ It also reinstalls the agent skills, so it doubles as the publish loop — see
 toolchain visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`,
 `rsync`, git-over-ssh). Run it after any `npm i -g`.
 
+It ends with `mise prune`. `mise upgrade` leaves the version it replaced on the
+home volume, so without a prune the disk collects every old copy of claude,
+codex and pnpm. The prune deletes any version no tracked config still asks for.
+If it fails, the update warns and carries on — the cost is disk, not a broken
+toolchain.
+
 ### Why mise's release delay is off
 
 mise holds back any release younger than 24 hours (`minimum_release_age`) as a
