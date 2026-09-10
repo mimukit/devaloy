@@ -113,7 +113,7 @@ If you reach that message, it means the two keys were not in place when the inst
 
 ## What Sysbox changes about devaloy
 
-Three keys in `docker-compose.yml` behave differently under `sysbox-runc`, and none of the differences cost anything. All three were measured; the numbers are in the [Sysbox spike](../qa/qa-docker-runtime-sysbox-spike-2026-08-25.md).
+Three keys in `docker-compose.yml` behave differently under `sysbox-runc`, and none of the differences cost anything. All three were measured; the numbers are in the [Sysbox spike](../qa/0004-qa-docker-runtime-sysbox-spike-2026-08-25.md).
 
 | Key | Under `runc` | Under `sysbox-runc` |
 |---|---|---|

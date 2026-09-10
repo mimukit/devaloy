@@ -92,7 +92,7 @@ Seven phases. Phase 0 is a spike and it gates the rest. Phases 1 to 3 are the co
 
 ### Phase 0 — The Sysbox spike (built 2026-08-25)
 
-**Ran 2026-08-25 on an OrbStack noble machine. All five steps passed. Results in [`docs/qa/qa-docker-runtime-sysbox-spike-2026-08-25.md`](../qa/qa-docker-runtime-sysbox-spike-2026-08-25.md).** One result reverses a decision above: bubblewrap's user namespace works under `sysbox-runc`, and the one operation that fails there fails identically on devaloy today, so **the "if the spike fails" row is void and Codex loses nothing**. Sysbox does ignore `seccomp=unconfined`, which fires Phase 3 step 5. The QA note carries the full list of plan items the results change.
+**Ran 2026-08-25 on an OrbStack noble machine. All five steps passed. Results in [`docs/qa/0004-qa-docker-runtime-sysbox-spike-2026-08-25.md`](../qa/0004-qa-docker-runtime-sysbox-spike-2026-08-25.md).** One result reverses a decision above: bubblewrap's user namespace works under `sysbox-runc`, and the one operation that fails there fails identically on devaloy today, so **the "if the spike fails" row is void and Codex loses nothing**. Sysbox does ignore `seccomp=unconfined`, which fires Phase 3 step 5. The QA note carries the full list of plan items the results change.
 
 On a scratch VPS, not the Dokploy host. Write the results into `docs/qa/`, following the existing QA notes. No code starts until this reports.
 
@@ -145,7 +145,7 @@ Verifiable when: `docker compose config` with an empty `.env` shows `privileged:
 
 ### Phase 4 — Prove it on the scratch host (built 2026-08-25)
 
-**Ran 2026-08-25. Seven of the nine checks passed; two need a `TS_AUTHKEY` and are recorded as unproven. Results in [`docs/qa/qa-docker-runtime-sysbox-spike-2026-08-25.md`](../qa/qa-docker-runtime-sysbox-spike-2026-08-25.md).** Two corrections to the steps below: the storage driver reports as `overlayfs` on Docker 29, not `overlay2`, and only `vfs` is a failure; and step 6 holds only for a nested container whose compose file sets a `restart:` policy, which is what the documentation now says.
+**Ran 2026-08-25. Seven of the nine checks passed; two need a `TS_AUTHKEY` and are recorded as unproven. Results in [`docs/qa/0004-qa-docker-runtime-sysbox-spike-2026-08-25.md`](../qa/0004-qa-docker-runtime-sysbox-spike-2026-08-25.md).** Two corrections to the steps below: the storage driver reports as `overlayfs` on Docker 29, not `overlay2`, and only `vfs` is a failure; and step 6 holds only for a nested container whose compose file sets a `restart:` policy, which is what the documentation now says.
 
 Same machine as Phase 0, now running the real stack under `sysbox-runc`. Test in this order, because the first failure invalidates the rest.
 

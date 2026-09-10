@@ -5,10 +5,10 @@ zsh as login shell, `config/` as the source of truth for shell and agent
 dotfiles, `GITHUB_TOKEN` auth, Claude Code and Codex from `mise`, and the
 retirement of the login banner._
 
-_Design of record: [`docs/plans/plan-remote-devaloy-2026-07-25.md`](../plans/plan-remote-devaloy-2026-07-25.md),
+_Design of record: [`docs/plans/0001-plan-remote-devaloy-2026-07-25.md`](../plans/0001-plan-remote-devaloy-2026-07-25.md),
 Revision 2026-08-02._
 
-_Prior run record: [`qa-devaloy-vps-dryrun-2026-07-31.md`](./qa-devaloy-vps-dryrun-2026-07-31.md).
+_Prior run record: [`qa-devaloy-vps-dryrun-2026-07-31.md`](./0001-qa-devaloy-vps-dryrun-2026-07-31.md).
 That pass stands — this plan does not repeat it._
 
 ## Revised after the first run — 2026-08-02

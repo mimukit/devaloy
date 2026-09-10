@@ -223,7 +223,7 @@ Three trades are worth knowing before running this anywhere sensitive:
   NET_ADMIN` is subsumed, because Sysbox gives container root the full
   capability set inside its own user namespace, and `seccomp=unconfined` is
   ignored, because Sysbox keeps its own filter on regardless. Neither costs
-  anything — measured during the [Sysbox spike](../qa/qa-docker-runtime-sysbox-spike-2026-08-25.md),
+  anything — measured during the [Sysbox spike](../qa/0004-qa-docker-runtime-sysbox-spike-2026-08-25.md),
   bubblewrap's user namespace works under both runtimes.
 - **There is no delete guard.** An earlier revision routed every agent `rm`
   through a confirmation hook; it was removed because a permission prompt on

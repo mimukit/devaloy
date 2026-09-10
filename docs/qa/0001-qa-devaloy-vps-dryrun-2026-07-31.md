@@ -5,7 +5,7 @@ _Generated 2026-07-31 · rewritten same day for the merged Tailscale SSH design
 compose.yml, bootstrap-toolchain.sh, devaloy-update, link-shims,
 scripts/host-firewall-lockdown.sh_
 
-_Design of record: [`docs/plans/plan-remote-devaloy-2026-07-25.md`](../plans/plan-remote-devaloy-2026-07-25.md),
+_Design of record: [`docs/plans/0001-plan-remote-devaloy-2026-07-25.md`](../plans/0001-plan-remote-devaloy-2026-07-25.md),
 Revision 2026-07-31._
 
 ## Summary

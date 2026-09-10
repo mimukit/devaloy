@@ -220,7 +220,7 @@ Rows marked **[R2]** were changed by the 2026-07-31 revision; **[R3]** by the
 - From phone (Tailscale app + Terminus): same host, reattach the herdr session.
 - Confirm nothing answers on the host's own IP, and that access dies when the policy rule is removed.
 - Clone a repo into `/home/dev`, run a `pnpm`/`turbo` build, redeploy, confirm repo + tools + node identity survived.
-- Full manual script: `docs/qa/qa-devaloy-vps-dryrun-2026-07-31.md`.
+- Full manual script: `docs/qa/0001-qa-devaloy-vps-dryrun-2026-07-31.md`.
 
 **Phase 5 — Document** — **done**
 - `README.md`: what devaloy is, the tailnet policy + auth-key setup, `docker compose up`, the connect-from-phone/laptop flow, toolchain updates, break-glass recovery, and the "git-push discipline = your only backup" contract.

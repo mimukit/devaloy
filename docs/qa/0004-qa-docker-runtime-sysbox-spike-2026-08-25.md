@@ -1,6 +1,6 @@
 # QA: the Sysbox spike for Docker on devaloy
 
-_Run 2026-08-25. This covers **Phase 0** and **Phase 4** of [`docs/plans/plan-docker-runtime-2026-08-25.md`](../plans/plan-docker-runtime-2026-08-25.md), grilled 2026-08-25._
+_Run 2026-08-25. This covers **Phase 0** and **Phase 4** of [`docs/plans/0006-plan-docker-runtime-2026-08-25.md`](../plans/0006-plan-docker-runtime-2026-08-25.md), grilled 2026-08-25._
 
 _Venue: an **OrbStack Linux machine** named `devaloy`, Ubuntu 24.04.4 LTS on arm64, kernel `7.0.14-orbstack`, 7 CPUs, 2 GB RAM. Docker CE 29.7.2 from Docker's own apt repository. `sysbox-ce` 0.7.1 from the GitHub release, `sysbox-ce_0.7.1.linux_arm64.deb`._
 

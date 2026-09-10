@@ -5,7 +5,7 @@ _Generated 2026-08-02 · covers `df83e5c..HEAD` — the optional Orca runtime:
 `entrypoint.sh`, the compose wiring, and the docs._
 
 _Design of record:
-[`docs/plans/plan-orca-serve-headless-2026-08-02.md`](../plans/plan-orca-serve-headless-2026-08-02.md),
+[`docs/plans/0003-plan-orca-serve-headless-2026-08-02.md`](../plans/0003-plan-orca-serve-headless-2026-08-02.md),
 grilled 2026-08-02. This plan is that plan's **Phase 4**._
 
 _Target environment for this pass: an **OrbStack Linux machine on an arm64 Mac**,
