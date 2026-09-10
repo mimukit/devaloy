@@ -180,6 +180,14 @@ do_update() {
   # upgrading them here persists across a redeploy.
   sudo DEV_HOME="${HOME}" /usr/local/bin/link-shims
 
+  # `mise upgrade` installs the new version beside the old one and leaves the
+  # old directory on the home volume forever. Prune drops every version no
+  # tracked config asks for, which is the only thing reclaiming that disk.
+  # Non-fatal: a failed prune costs disk, not a working toolchain.
+  if ! "${HOME}/.local/bin/mise" prune --yes; then
+    warn "update: mise prune failed, so old tool versions still hold disk."
+  fi
+
   echo "devaloy: toolchain updated."
 }
 
