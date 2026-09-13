@@ -21,8 +21,23 @@ MISE_CONFIG_DIR="${HOME}/.config/mise"
 # in ~/.config/mise/conf.d/ when its key is true and is DELETED when it is
 # false, so turning a key off actually undeclares the tool. mise loads every
 # non-hidden TOML in that directory.
-WITH_PASEO="${WITH_PASEO:-false}"
-WITH_BROWSER="${WITH_BROWSER:-false}"
+#
+# The environment is only the answer on the boot path, where entrypoint.sh
+# forwards both keys. `devaloy update` runs from a shell, and no shell on the
+# box has them: they live in PID 1's environment and nothing exports them. A
+# plain `:-false` default therefore read "off" on every update, deleted the
+# fragments, and left `paseo` and `playwright-cli` as shims with no declared
+# version until the next boot put them back. So an unset key falls back to
+# the runtime flags file the entrypoint writes on every boot, and only then
+# to false.
+RUNTIME_FLAGS_FILE="${RUNTIME_FLAGS_FILE:-/opt/devaloy/runtime-flags}"
+runtime_flag() { # runtime_flag <name>
+  local v
+  v="$(sed -n "s/^$1=//p" "${RUNTIME_FLAGS_FILE}" 2>/dev/null | head -1)"
+  printf '%s' "${v:-false}"
+}
+WITH_PASEO="${WITH_PASEO:-$(runtime_flag WITH_PASEO)}"
+WITH_BROWSER="${WITH_BROWSER:-$(runtime_flag WITH_BROWSER)}"
 
 FORCE=0
 case "${1:-}" in

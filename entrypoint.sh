@@ -459,6 +459,17 @@ if [ "${WITH_BROWSER:-false}" = "true" ] && ! dpkg -s libnss3 >/dev/null 2>&1; t
   log "WARNING: add them. Redeploy with --build, or in Dokploy tick Rebuild."
 fi
 
+# The runtime keys, recorded for every process that is not a child of this
+# script. The keys live in PID 1's environment, and no shell on the box inherits
+# it, so `devaloy update` used to run the bootstrap with both keys unset. The
+# bootstrap read that as "off" and deleted the Paseo and browser fragments.
+# Sits beside build-flags and is rewritten on every boot, so a key flipped by
+# `docker compose up -d` is never stale. The home volume would be the wrong
+# place: a file there outlives the container that wrote it.
+printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\n' \
+  "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" > /opt/devaloy/runtime-flags
+chmod 644 /opt/devaloy/runtime-flags
+
 log "Checking the mise toolchain"
 if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
     MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
