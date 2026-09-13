@@ -51,10 +51,9 @@ status_paseo_line() {
   local roots pids
   roots="$(paseo_pids)"
   if [ -z "${roots}" ]; then
-    # WITH_PASEO is exported into interactive shells by entrypoint.sh but not
-    # into `ssh devaloy '<cmd>'`, so its absence does not mean Paseo is off.
-    # Say what was observed and let the variable qualify it.
-    if [ "${WITH_PASEO:-false}" = "true" ]; then
+    # Say what was observed and let the key qualify it. The key comes from the
+    # runtime flags file, because no shell on the box has it in its environment.
+    if [ "$(runtime_flag WITH_PASEO)" = "true" ]; then
       bad 'DOWN — WITH_PASEO is on but no daemon is running'
     else
       printf 'not running'

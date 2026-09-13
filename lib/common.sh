@@ -227,6 +227,23 @@ build_flag() { # build_flag <name>
   printf '%s' "${v:-unknown}"
 }
 
+# --- the runtime flags ----------------------------------------------------
+#
+# The keys `docker compose up -d` can flip without a rebuild. entrypoint.sh
+# writes them on every boot, because they live in PID 1's environment and no
+# shell on the box inherits it. The environment still wins when a key is set
+# there, so a one-off `WITH_PASEO=false devaloy ...` means what it says.
+RUNTIME_FLAGS_FILE="${RUNTIME_FLAGS_FILE:-/opt/devaloy/runtime-flags}"
+
+runtime_flag() { # runtime_flag <name>
+  # Prints true or false. A container started before the file existed reads as
+  # false, which is what the old environment-only check reported.
+  local v
+  v="$(printenv "$1" 2>/dev/null || true)"
+  [ -n "${v}" ] || v="$(sed -n "s/^$1=//p" "${RUNTIME_FLAGS_FILE}" 2>/dev/null | head -1)"
+  printf '%s' "${v:-false}"
+}
+
 toolset_revision() {
   local marker="${HOME}/.local/share/mise/.devaloy-bootstrapped"
   [ -r "${marker}" ] && head -1 "${marker}" 2>/dev/null || printf 'not bootstrapped'

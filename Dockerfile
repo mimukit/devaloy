@@ -389,8 +389,8 @@ RUN set -eux; \
 #
 # WITH_PASEO is deliberately absent. It is a runtime variable that
 # `docker compose up -d` can flip without a rebuild, so a value baked in here
-# would go stale; doctor reads that one from the environment and from whether
-# the daemon is actually running.
+# would go stale; entrypoint.sh records it in /opt/devaloy/runtime-flags on
+# every boot, and doctor reads it there and from whether the daemon is running.
 RUN mkdir -p /opt/devaloy \
     && printf 'WITH_ORCA=%s\nWITH_DOCKER=%s\nWITH_BROWSER=%s\n' \
         "${WITH_ORCA}" "${WITH_DOCKER}" "${WITH_BROWSER}" \

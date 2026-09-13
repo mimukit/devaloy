@@ -15,7 +15,7 @@
 #
 # WITH_PASEO is not in the flags file on purpose. It is a runtime variable that
 # `docker compose up -d` can flip without a rebuild, so an image-baked answer
-# would be wrong; it comes from the environment instead.
+# would be wrong; it comes from the runtime flags file entrypoint.sh writes.
 
 DOCTOR_FAILURES=0
 
@@ -81,17 +81,16 @@ doctor_collect() {
   doctor_gated WITH_ORCA 'orca runtime' orca_up
   doctor_gated WITH_BROWSER 'browser capture' browser_up
 
-  # Paseo, from the environment rather than the flags file, and the running
-  # daemon outranks the variable. entrypoint.sh exports WITH_PASEO into
-  # interactive shells, but a cron line or `ssh devaloy '<cmd>'` does not get
-  # it, and reporting a daemon that is plainly up as "off" would be a lie the
-  # environment happens to tell.
+  # Paseo, from the runtime flags rather than the build flags, and the running
+  # daemon outranks the key. An old container with no runtime flags file reads
+  # the key as false, and reporting a daemon that is plainly up as "off" would
+  # be a lie the missing file happens to tell.
   if [ -n "$(paseo_pids)" ]; then
     doctor_row ok 'paseo daemon' 'up'
-  elif [ "${WITH_PASEO:-false}" = "true" ]; then
+  elif [ "$(runtime_flag WITH_PASEO)" = "true" ]; then
     doctor_row broken 'paseo daemon' 'WITH_PASEO=true but no daemon is running'
   else
-    doctor_row off 'paseo daemon' 'not running, and WITH_PASEO is not set here'
+    doctor_row off 'paseo daemon' 'not running, and WITH_PASEO is off'
   fi
 
   # Things that are always meant to be here, so absent is always a fault.
