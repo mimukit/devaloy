@@ -93,6 +93,18 @@ doctor_collect() {
     doctor_row off 'paseo daemon' 'not running, and WITH_PASEO is off'
   fi
 
+  # The CLI, on its own row, because it fails apart from the daemon. A pruned
+  # install leaves the running daemon untouched, since node holds the deleted
+  # files open, while every `paseo` command on the box reports it is not
+  # installed. One row for the pair would report that box as healthy.
+  if [ "$(runtime_flag WITH_PASEO)" = "true" ] || [ -n "$(paseo_pids)" ]; then
+    if command -v paseo >/dev/null 2>&1; then
+      doctor_row ok 'paseo cli' "$(command -v paseo)"
+    else
+      doctor_row broken 'paseo cli' 'missing from PATH, so run devaloy update'
+    fi
+  fi
+
   # Things that are always meant to be here, so absent is always a fault.
   if [ -n "${GITHUB_TOKEN:-}" ]; then
     doctor_row ok 'github auth' 'GITHUB_TOKEN is set — do not run gh auth login'
