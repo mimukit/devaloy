@@ -587,10 +587,8 @@ the hosted web client reach a daemon it is not served from.
   session started from the phone can spawn and coordinate other agents. That is
   much of the point, but it means a session started through Paseo has a
   different tool list from one you started over SSH.
-- **Turning it off leaves the CLI behind.** `WITH_PASEO=false` stops the daemon
-  on the next boot. It does not uninstall `paseo` and it does not rewrite
-  `~/.paseo/config.json`, so your paired clients and settings are still there
-  when you turn it back on. A `paseo` with no daemon behind it does nothing.
+- **Turning it off stops the daemon and undeclares the CLI.** `WITH_PASEO=false` stops the daemon on the next boot and drops the mise fragment that declares `npm:@getpaseo/cli`. The installed copy stays on the home volume until the next `devaloy update`, whose `mise prune` reclaims it. Nothing rewrites `~/.paseo/config.json`, so your paired clients and settings are still there when you turn it back on.
+- **`devaloy update` reads the key from a file, not from your shell.** `WITH_PASEO` only ever reaches PID 1's environment, so no shell on the box inherits it. `entrypoint.sh` writes it and `WITH_BROWSER` to `/opt/devaloy/runtime-flags` on every boot, and `bootstrap-toolchain.sh` reads that file when the variable is absent. Without it an update read both optional keys as `false`, undeclared Paseo and the browser CLI, and then let `mise prune` delete both from the home volume. What that leaves behind is a running daemon and no `paseo` on `PATH`.
 - **Upgrading is `devaloy update`,** unlike Orca. Paseo always tracks `latest`
   through mise, like `claude` and `codex` do. There is no environment variable
   to pin it. `MISE_PASEO_VERSION` would look like the obvious name, but mise
