@@ -180,6 +180,30 @@ do_update() {
   # upgrading them here persists across a redeploy.
   sudo DEV_HOME="${HOME}" /usr/local/bin/link-shims
 
+  # An upgrade of gh breaks `git push` over HTTPS unless this runs. `gh auth
+  # setup-git` records the helper as the absolute path of the gh binary it ran
+  # as, which is the versioned mise install directory — and `mise prune` below
+  # deletes exactly that directory once the new version lands. git then reports
+  # "gh: not found" and falls back to asking for a username, which an
+  # unattended agent cannot answer.
+  #
+  # Point every gh helper at /usr/local/bin/gh instead, the link-shims mirror
+  # refreshed a line above: no version in the name, resolved at exec time. Only
+  # entries that already hold a gh helper are rewritten, so the empty
+  # `helper =` reset line setup-git writes first survives. entrypoint.sh does
+  # the same after its setup-git call; this covers the gh upgrades that happen
+  # between two boots.
+  # shellcheck disable=SC2016  # $key belongs to the subshell, not to this one.
+  if ! sh -c 'git config --global --get-regexp "^credential\..*\.helper$" 2>/dev/null |
+    awk "/gh auth git-credential/ {print \$1}" | sort -u |
+    while read -r key; do
+      git config --global --replace-all "$key" \
+        "!/usr/local/bin/gh auth git-credential" "git-credential"
+    done'; then
+    warn "update: could not repoint gh's git credential helper — 'git push'"
+    warn "update: over HTTPS may now ask for a username. Run 'gh auth setup-git'."
+  fi
+
   # `mise upgrade` installs the new version beside the old one and leaves the
   # old directory on the home volume forever. Prune drops every version no
   # tracked config asks for, which is the only thing reclaiming that disk.

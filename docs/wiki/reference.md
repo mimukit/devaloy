@@ -353,6 +353,8 @@ Never touched:
 The last five are **unset** when no usable signing key is configured, so a box
 that signed yesterday does not fail every commit today.
 
+One more key is rewritten rather than set: `credential.https://<host>.helper`, for each host `gh auth setup-git` configured. gh records the helper as the absolute path of the gh binary it ran as, which is the versioned mise install directory. `devaloy update` moves gh and `mise prune` then deletes that directory, so the helper points at nothing and `git push` over HTTPS dies on `gh: not found` and asks for a username. The entrypoint and `devaloy update` both repoint it at `/usr/local/bin/gh`, which carries no version and resolves the current one at exec time. The empty `helper =` reset line gh writes first is left alone.
+
 ### Other paths
 
 | Path | Notes |

@@ -579,6 +579,27 @@ if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
   else
     log "WARNING: gh auth setup-git failed — 'git push' over HTTPS may prompt."
   fi
+
+  # `gh auth setup-git` writes the helper as the ABSOLUTE path of the gh binary
+  # it ran as, which resolves through the shim to
+  # ~/.local/share/mise/installs/gh/<version>/... — a path that stops existing
+  # the moment `devaloy update` moves gh and `mise prune` drops the old version.
+  # git then dies on "gh: not found" and asks for a username instead, and the
+  # box cannot push until the next redeploy rewrites this.
+  #
+  # Rewrite it to /usr/local/bin/gh, the link-shims mirror of the shim, which
+  # carries no version in its name and resolves the current one at exec time.
+  # Only entries that already hold a gh helper are touched — the empty `helper =`
+  # line setup-git writes first is a deliberate reset of any inherited helper and
+  # has to survive. lib/update.sh repairs the same keys after a gh upgrade.
+  # shellcheck disable=SC2016  # the pipeline belongs to the dev user's shell.
+  as_dev 'git config --global --get-regexp "^credential\..*\.helper$" 2>/dev/null |
+    awk "/gh auth git-credential/ {print \$1}" | sort -u |
+    while read -r key; do
+      git config --global --replace-all "$key" \
+        "!/usr/local/bin/gh auth git-credential" "git-credential"
+    done' 2>/dev/null || \
+    log "WARNING: could not repoint gh's git credential helper at /usr/local/bin."
 fi
 
 # --- git identity ---
