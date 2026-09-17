@@ -65,7 +65,9 @@ From the image, available the moment you can log in:
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `lazygit`, `neovim` (seeded with the LazyVim config in
 `config/nvim/`, and what `v` and `$EDITOR` point at — see
-[The editor config](docs/wiki/reference.md#the-editor-config)), `herdr`, plus
+[The editor config](docs/wiki/reference.md#the-editor-config)), `herdr`,
+`infisical` (see [(Optional) Infisical secrets](#optional-infisical-secrets)),
+plus
 [Claude Code](https://claude.com/claude-code)
 (`claude`), [Codex](https://github.com/openai/codex) (`codex`) and
 `command-code` — and
@@ -396,6 +398,47 @@ The CLI comes from CodeRabbit's own install script rather than `mise`, which has
 no registry entry for it, and lands in `~/.local/bin` in the home volume. Pin it
 with `CODERABBIT_VERSION` in `.env`; empty means latest. `devaloy update`
 re-runs the installer, so that is also how you upgrade it.
+
+## (Optional) Infisical secrets
+
+The [Infisical CLI](https://infisical.com/docs/cli/overview) (`infisical`) is on
+every box, from `mise` like the rest of the toolchain. A repo whose env loader
+pulls its values from Infisical Cloud shells out to `infisical export`, so the
+binary has to be here and it has to authenticate with nobody at the keyboard.
+
+`infisical login` with no arguments opens a browser and waits on a localhost
+callback. This box has neither, so a machine identity is the only route:
+
+```sh
+# in .env
+INFISICAL_CLIENT_ID=
+INFISICAL_CLIENT_SECRET=
+```
+
+Create the identity in the Infisical dashboard, give it universal auth, and put
+its client ID and secret in `.env`. The entrypoint writes both to
+`~/.devaloy_secrets` (0600) and does nothing else — there is no stored
+credential to revoke, because the caller runs the exchange itself:
+
+```sh
+infisical login --method=universal-auth \
+  --client-id "$INFISICAL_CLIENT_ID" --client-secret "$INFISICAL_CLIENT_SECRET" \
+  --plain --silent
+```
+
+That prints a token, which the CLI then reads from `INFISICAL_TOKEN`. A repo's
+own env loader usually does this for you.
+
+**Give the box the `dev` identity, never `prod`.** The `prod` identity can read
+the production `DATABASE_URL`, and a production value that lands in an app
+folder's `.env` points `pnpm dev` and an e2e database reset at production.
+Agents run here unattended in bypass permission mode, so nothing would catch it.
+Run a production migration or a deploy from a laptop instead.
+
+Both variables are optional and inert while empty; the entrypoint skips a secret
+with no value. Clearing them plus a redeploy revokes the box's access, since
+`~/.devaloy_secrets` is deleted and rewritten on every boot. Do not hand-edit
+that file — the next boot overwrites it.
 
 ## (Optional) the Orca apps
 

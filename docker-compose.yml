@@ -225,6 +225,22 @@ services:
       # MISE_* name on purpose: mise would read that as a tool declaration and
       # break every mise call, the same trap the pins below carry.
       - CODERABBIT_VERSION=${CODERABBIT_VERSION:-}
+      # The Infisical machine identity, for a repo whose env loader pulls its
+      # values from Infisical Cloud. `infisical login` with no arguments opens a
+      # browser and waits on a localhost callback — neither exists here — so
+      # universal auth is the only route that works, the same constraint the
+      # CodeRabbit key above carries. The entrypoint copies both into the 0600
+      # file in the home volume and stores nothing else: the caller runs the
+      # `infisical login --method=universal-auth` exchange itself. Clearing them
+      # here plus a redeploy is what revokes them.
+      #
+      # Give this box the `dev` identity, NEVER `prod`. The `prod` identity can
+      # read the production DATABASE_URL, and a dev-time runner that loads an
+      # app folder's .env would then point `pnpm dev` and an e2e database reset
+      # at production. Agents run here unattended in bypass permission mode. Run
+      # a production migration or deploy from a laptop instead.
+      - INFISICAL_CLIENT_ID=${INFISICAL_CLIENT_ID:-}
+      - INFISICAL_CLIENT_SECRET=${INFISICAL_CLIENT_SECRET:-}
       # Whitespace-separated repos to clone into ~/projects on each boot, as
       # owner/repo, an https:// URL, or git@host:path. The entrypoint skips a
       # repo already cloned there, so this is safe to re-run and cheap to grow.

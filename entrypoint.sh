@@ -171,6 +171,24 @@ write_secret PASEO_PASSWORD "${PASEO_PASSWORD:-}"
 # --api-key`, and what is here is for a caller passing `--api-key` by hand. Same
 # lifecycle as the tokens above: clearing it in .env and redeploying revokes it.
 write_secret CODERABBIT_API_KEY "${CODERABBIT_API_KEY:-}"
+# The Infisical machine identity. `infisical login` with no arguments opens a
+# browser and waits on a localhost callback, neither of which exists here, so
+# universal auth is the only route — the same constraint as the CodeRabbit key
+# above. Nothing is stored at boot, unlike that key: the caller reads these two
+# and runs `infisical login --method=universal-auth --client-id ... --plain
+# --silent` itself, which is why this file is the whole wiring. Same lifecycle
+# as the tokens above: clearing them in .env and redeploying revokes them.
+#
+# Use the `dev` identity here, NEVER `prod`. The `prod` identity can read the
+# production DATABASE_URL, and a production value that reaches an app folder
+# points `pnpm dev` and an e2e database reset at production. Agents run on this
+# box unattended in bypass permission mode; run a production migration or deploy
+# from a laptop instead.
+#
+# Nobody hand-edits ~/.devaloy_secrets. This block deletes and rewrites it on
+# every boot, which is what makes clearing a value in .env a real revocation.
+write_secret INFISICAL_CLIENT_ID "${INFISICAL_CLIENT_ID:-}"
+write_secret INFISICAL_CLIENT_SECRET "${INFISICAL_CLIENT_SECRET:-}"
 
 # --- ntfy push-notification config for hooks ---
 # agent-push reads ~/.config/agent-push.env rather than the shell environment,

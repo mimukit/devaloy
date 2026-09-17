@@ -30,6 +30,8 @@ except `TS_AUTHKEY` on a first boot.
 | `GITHUB_TOKEN` | empty | Authenticates `gh` and `git push` over HTTPS from first boot. Written to `~/.devaloy_secrets` **and** stored via `gh auth login --with-token`. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | Authenticates Claude Code with no interactive `/login`. Generate with `claude setup-token` on a machine that has a browser. |
 | `CODERABBIT_API_KEY` | empty | Authenticates the CodeRabbit CLI (`coderabbit`, `cr`). Generate it in the CodeRabbit web app under Organization Settings → API Keys. Stored with `cr auth login --api-key` into `~/.coderabbit/auth.json`, and written to `~/.devaloy_secrets` for a hand-passed `--api-key`. The CLI does not read the variable at review time. |
+| `INFISICAL_CLIENT_ID` | empty | Client ID of the Infisical machine identity the `infisical` CLI authenticates with. Written to `~/.devaloy_secrets` only; nothing is stored at boot, because the caller runs the `infisical login --method=universal-auth --plain --silent` exchange itself. Give this box the **`dev`** identity, never `prod` — see below. |
+| `INFISICAL_CLIENT_SECRET` | empty | Client secret of that identity. Same handling as the ID above. |
 | `GIT_AUTHOR_NAME` | empty | `user.name`. Falls back to the `GITHUB_TOKEN` account's name. |
 | `GIT_AUTHOR_EMAIL` | empty | `user.email`. Falls back to that account's `ID+login@users.noreply.github.com` address. |
 | `GIT_SIGNING_SSH_KEY` | empty | Base64 of a **passphrase-less OpenSSH private key**. Enables SSH commit and tag signing. |
@@ -38,6 +40,8 @@ except `TS_AUTHKEY` on a first boot.
 Clearing any of these and redeploying **revokes** it: `~/.devaloy_secrets`,
 `~/.config/gh/hosts.yml`, `~/.config/agent-push.env` and the signing key are all
 deleted and rebuilt from scratch on every boot.
+
+The Infisical pair is the one credential here with a scope rule attached. Give the box the `dev` machine identity and nothing else. The `prod` identity can read the production `DATABASE_URL`, and a dev-time runner that loads an app folder's `.env` would then point `pnpm dev` and an e2e database reset at production. Agents run on this box unattended in bypass permission mode, so nothing would stop that. Run a production migration or deploy from a laptop instead.
 
 `GIT_SIGNING_SSH_KEY` wants the **private** half. A correct value runs to several
 hundred characters and decodes to a `BEGIN OPENSSH PRIVATE KEY` block; anything
@@ -316,7 +320,7 @@ on the box is pointless — the change is gone at the next redeploy.
 | Path | Mode | Contents |
 |---|---|---|
 | `~/.devaloy_env` | default | `PATH`, the mise release-age exclusion, sources `~/.devaloy_secrets`, resets `oom_score_adj`; plus the three `PLAYWRIGHT_MCP_*` exports when `WITH_BROWSER=true` |
-| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CODERABBIT_API_KEY`, `PASEO_PASSWORD` — each only written when set |
+| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CODERABBIT_API_KEY`, `PASEO_PASSWORD`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` — each only written when set. Do not hand-edit it: the entrypoint deletes and rewrites it on every boot, which is what makes clearing a value in `.env` a real revocation. |
 | `~/.config/agent-push.env` | **600** | `PUSH_NTFY_*` — only written when `NTFY_TOPIC` is set |
 | `~/.coderabbit/auth.json` | **600** | The CodeRabbit credential, written by `cr auth login --api-key`. Deleted on every boot and rewritten only when `CODERABBIT_API_KEY` is set. |
 | `~/.zshrc` | default | Copied from `config/zsh/zshrc` |

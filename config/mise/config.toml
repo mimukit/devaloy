@@ -84,6 +84,22 @@ codex = "latest"
 # other here, so it lands in the home volume and survives a redeploy.
 "npm:skills" = "latest"
 
+# --- secrets -----------------------------------------------------------------
+# The Infisical CLI, which a repo's env loader shells out to (`infisical export`)
+# to pull its environment values from Infisical Cloud. One static binary from a
+# GitHub release, no system dependency and no daemon, so it sits here rather
+# than behind a WITH_* key in optional/.
+#
+# `infisical login` with no arguments opens a browser and waits on a localhost
+# callback. This box has neither, so the only route here is a machine identity:
+# universal auth, INFISICAL_CLIENT_ID and INFISICAL_CLIENT_SECRET, passed
+# through compose and written to ~/.devaloy_secrets by entrypoint.sh. Nothing is
+# stored at boot — the caller performs the login exchange itself.
+#
+# This box gets the `dev` identity ONLY, never `prod`. See the comment on those
+# two variables in docker-compose.yml for why.
+infisical = "latest"
+
 # --- not from mise ------------------------------------------------------------
 # The CodeRabbit CLI (`coderabbit`, alias `cr`) has no mise registry entry and no
 # npm package. It comes from its own install script, in bootstrap-toolchain.sh,
