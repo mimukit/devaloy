@@ -38,6 +38,11 @@ network_access = false
 # token is scoped at GitHub, the box is reachable only from the tailnet, and the
 # same token already sits in the environment of every shell Codex can spawn — so
 # denying the file would be theatre. Revoke at GitHub if it ever matters.
+#
+# Env files follow the same line Claude's deny list now draws: a local `.env`,
+# `.env.local` or `.env.example` is working material an agent needs, and only
+# `.env.prod*` stays off limits. Codex cannot enforce that, so keep production
+# secrets off this box rather than expecting the sandbox to hide them.
 
 [features]
 # Load-bearing for hooks.json. Without it, that file is inert and the agent-push

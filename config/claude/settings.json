@@ -24,10 +24,8 @@
       "Bash(gh issue reopen*)"
     ],
     "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)",
-      "Read(**/.env)",
-      "Read(**/.env.*)",
+      "Read(./.env.prod*)",
+      "Read(**/.env.prod*)",
       "Read(~/.devaloy_secrets)",
       "Read(~/.codex/auth.json)",
       "Read(~/.claude/.credentials.json)",
