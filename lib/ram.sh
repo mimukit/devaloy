@@ -21,15 +21,17 @@
 #                 you are still using. They are reported, never killed. Stop
 #                 them yourself.
 #
-# Usage: devaloy ram [--apply] [--paseo] [--orphans] [--age <minutes>]
+# Usage: devaloy ram [--apply] [--paseo] [--t3] [--orphans] [--age <minutes>]
 #   --apply          actually restart and kill. Without it, this only reports.
 #   --paseo          only the Paseo daemon restart
+#   --t3             the T3 Code server restart. It cancels running turns.
 #   --orphans        only the orphaned language-server reap
 #   --age <minutes>  an orphan must be idle this long to qualify. Default 60.
 #
-# With neither --paseo nor --orphans, both run.
+# With neither --paseo nor --orphans, both run. --t3 never runs by default.
 
 RAM_DO_PASEO=0
+RAM_DO_T3=0
 RAM_DO_ORPHANS=0
 RAM_ORPHAN_AGE_MIN=60
 
@@ -42,20 +44,25 @@ ram_args() {
     case "$1" in
       --apply) APPLY=1; shift ;;
       --paseo) RAM_DO_PASEO=1; shift ;;
+      --t3) RAM_DO_T3=1; shift ;;
       --orphans) RAM_DO_ORPHANS=1; shift ;;
       --age) RAM_ORPHAN_AGE_MIN="${2:?--age needs a number of minutes, e.g. 120}"; shift 2 ;;
       -h | --help) ram_usage; exit 0 ;;
       *) die "ram: unknown argument: $1" ;;
     esac
   done
-  if [ "${RAM_DO_PASEO}" -eq 0 ] && [ "${RAM_DO_ORPHANS}" -eq 0 ]; then
+  # The T3 Code restart is opt-in, unlike the other two. It cancels every turn
+  # running in the server, and a plain `devaloy ram --apply` (or `a` in the
+  # TUI) is a memory reclaim nobody expects to stop an agent mid-task.
+  if [ "${RAM_DO_PASEO}" -eq 0 ] && [ "${RAM_DO_T3}" -eq 0 ] &&
+     [ "${RAM_DO_ORPHANS}" -eq 0 ]; then
     RAM_DO_PASEO=1
     RAM_DO_ORPHANS=1
   fi
 }
 
 ram_usage() {
-  sed -n '2,30p' "${DEVALOY_LIB}/ram.sh" | sed 's/^# \{0,1\}//'
+  sed -n '2,31p' "${DEVALOY_LIB}/ram.sh" | sed 's/^# \{0,1\}//'
 }
 
 # --- the scan -------------------------------------------------------------
@@ -87,11 +94,33 @@ ram_scan() {
     local roots pids pid rss
     roots="$(paseo_pids)"
     if [ -n "${roots}" ]; then
-      pids="$(paseo_tree "${roots}")"
+      pids="$(proc_tree "${roots}")"
       for pid in ${pids}; do
         rss="$(awk '/^VmRSS:/ {print $2}' "/proc/${pid}/status" 2>/dev/null || true)"
         [ -n "${rss}" ] || continue
         printf 'paseo\t%s\t%s\t%s\t%s\n' \
+          "${pid}" "${rss}" "$(proc_started "${pid}")" \
+          "$(ps -o comm= -p "${pid}" 2>/dev/null || echo '?')" >>"${out}"
+      done
+    fi
+  fi
+
+  # --- the T3 Code server -------------------------------------------------
+  #
+  # The same trade as the Paseo daemon: the server parents every agent session
+  # it opened, entrypoint.sh restarts it 10 seconds after it exits, and the
+  # apps reconnect on their own. WHAT YOU LOSE: every turn running at the time.
+  # Threads and history survive in SQLite. A turn resumes only when
+  # "continue threads after a server update" is on in the app.
+  if [ "${RAM_DO_T3}" -eq 1 ]; then
+    local roots pids pid rss
+    roots="$(t3_pids)"
+    if [ -n "${roots}" ]; then
+      pids="$(proc_tree "${roots}")"
+      for pid in ${pids}; do
+        rss="$(awk '/^VmRSS:/ {print $2}' "/proc/${pid}/status" 2>/dev/null || true)"
+        [ -n "${rss}" ] || continue
+        printf 't3\t%s\t%s\t%s\t%s\n' \
           "${pid}" "${rss}" "$(proc_started "${pid}")" \
           "$(ps -o comm= -p "${pid}" 2>/dev/null || echo '?')" >>"${out}"
       done
@@ -157,6 +186,10 @@ rows_ram() {
   emit_rule
   emit_row '🪟' 'paseo daemon tree' \
     "$(ram_count paseo) process(es), $(($(ram_sum_kb paseo) / 1024)) MiB — restart reclaims all of it"
+  if [ "${RAM_DO_T3}" -eq 1 ]; then
+    emit_row '🧵' 't3 server tree' \
+      "$(ram_count t3) process(es), $(($(ram_sum_kb t3) / 1024)) MiB — restart cancels running turns"
+  fi
   emit_row '👻' 'orphaned lsp servers' \
     "$(ram_count orphan) process(es), $(($(ram_sum_kb orphan) / 1024)) MiB"
   emit_row '🚧' 'dev servers' \
@@ -220,6 +253,20 @@ ram_report() {
       if in_paseo_pane; then
         echo "devaloy ram: WARNING — this session is a Paseo pane. A restart kills it."
       fi
+    fi
+  fi
+
+  if [ "${RAM_DO_T3}" -eq 1 ]; then
+    echo
+    if [ "$(ram_count t3)" -eq 0 ]; then
+      echo "devaloy ram: no T3 Code server running (WITH_T3CODE off, or it is down)"
+    else
+      printf 'devaloy ram: the T3 Code server and its children hold %s MiB across %s process(es)\n' \
+        "$(($(ram_sum_kb t3) / 1024))" "$(ram_count t3)"
+      echo "devaloy ram: the largest of them"
+      awk -F'\t' '$1 == "t3" { printf "  %6d MiB  pid %-7s %s\n", int($3/1024), $2, $5 }' \
+        "$(target_file ram)" | sort -rn | head -5
+      echo "devaloy ram: WARNING — a restart cancels every turn running in T3 Code."
     fi
   fi
 
@@ -336,6 +383,39 @@ ram_apply_targets() {
     fi
   fi
 
+  # --- the T3 Code restart ------------------------------------------------
+  #
+  # By pattern, for the reason given at the Paseo restart. -u for the same
+  # reason too: the root-owned su that entrypoint.sh starts the server through
+  # is not ours to signal. SIGTERM lets the server close its sessions and delete
+  # its runtime file; a -9 would leave the file behind (harmless to `t3 serve`,
+  # but `t3 pair` would then probe a dead server first).
+  if [ "${RAM_DO_T3}" -eq 1 ] && [ "$(ram_count t3)" -gt 0 ]; then
+    echo
+    if [ "${APPLY}" -eq 0 ]; then
+      echo "devaloy ram: would restart the T3 Code server (--apply to do it)"
+    else
+      echo "devaloy ram: stopping the T3 Code server — every running turn is cancelled"
+      pkill -u "$(id -u)" -f "${T3_SERVE_PATTERN}" || true
+
+      # Waits past the supervisor's 10s sleep, then confirms, as above.
+      local t3_waited=0
+      while [ "${t3_waited}" -lt 40 ]; do
+        sleep 2
+        t3_waited=$((t3_waited + 2))
+        if [ -n "$(t3_pids)" ]; then
+          echo "devaloy ram: T3 Code server back up after ${t3_waited}s"
+          break
+        fi
+      done
+      if [ -z "$(t3_pids)" ]; then
+        echo "devaloy ram: WARNING — the T3 Code server has not come back after ${t3_waited}s." >&2
+        echo "devaloy ram: check 'docker logs' for this container; the supervisor" >&2
+        echo "devaloy ram: retries every 10s and logs each failure." >&2
+      fi
+    fi
+  fi
+
   if [ "${APPLY}" -eq 1 ]; then
     # The kernel does not return freed pages to memory.current instantly, and a
     # TERMed process takes a moment to actually leave. Without this pause the
@@ -352,6 +432,10 @@ ram_apply() {
   if [ "$(ram_count paseo)" -gt 0 ]; then
     lines+=("It will also restart the Paseo daemon, killing every open pane and every")
     lines+=("agent mid-turn in one, to reclaim $(($(ram_sum_kb paseo) / 1024)) MiB.")
+  fi
+  if [ "$(ram_count t3)" -gt 0 ]; then
+    lines+=("It will also restart the T3 Code server, cancelling every running turn,")
+    lines+=("to reclaim $(($(ram_sum_kb t3) / 1024)) MiB. Threads and history are kept.")
   fi
   if in_paseo_pane; then
     lines+=("")

@@ -17,7 +17,7 @@
 #
 # Modes
 #   devaloy                  the picker
-#   devaloy status           the box's disk, RAM, Paseo and toolset, as text
+#   devaloy status           the box's disk, RAM, Paseo, T3 Code and toolset, as text
 #   devaloy doctor           what this box was built with, and what is broken
 #   devaloy disk [flags]     the home-volume reclaim
 #   devaloy ram [flags]      the RAM reclaim

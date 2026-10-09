@@ -60,9 +60,25 @@ status_paseo_line() {
     fi
     return
   fi
-  pids="$(paseo_tree "${roots}")"
+  pids="$(proc_tree "${roots}")"
   printf 'up, %s MiB across %s process(es)' \
-    "$(paseo_rss_mib "${pids}")" "$(printf '%s\n' "${pids}" | wc -l | tr -d ' ')"
+    "$(proc_rss_mib "${pids}")" "$(printf '%s\n' "${pids}" | wc -l | tr -d ' ')"
+}
+
+status_t3_line() {
+  local roots pids
+  roots="$(t3_pids)"
+  if [ -z "${roots}" ]; then
+    if [ "$(runtime_flag WITH_T3CODE)" = "true" ]; then
+      bad 'DOWN — WITH_T3CODE is on but no server is running'
+    else
+      printf 'not running'
+    fi
+    return
+  fi
+  pids="$(proc_tree "${roots}")"
+  printf 'up, %s MiB across %s process(es)' \
+    "$(proc_rss_mib "${pids}")" "$(printf '%s\n' "${pids}" | wc -l | tr -d ' ')"
 }
 
 status_docker_line() {
@@ -90,6 +106,7 @@ rows_status() {
   emit_row '🧠' 'ram (cgroup)' "$(status_ram_line)" ram
   emit_row '💤' 'swap' "$(status_swap_line)" ram
   emit_row '🪟' 'paseo daemon' "$(status_paseo_line)" ram
+  emit_row '🧵' 't3 server' "$(status_t3_line)" ram
   emit_row '🐳' 'docker' "$(status_docker_line)" prune
   emit_row '🔧' 'toolset' "$(toolset_revision)" tools
   emit_rule actions
@@ -112,6 +129,7 @@ do_status() {
   printf '  ram     %s\n' "$(status_ram_line)"
   printf '  swap    %s\n' "$(status_swap_line)"
   printf '  paseo   %s\n' "$(status_paseo_line)"
+  printf '  t3      %s\n' "$(status_t3_line)"
   printf '  docker  %s\n' "$(status_docker_line)"
   printf '  toolset %s\n' "$(toolset_revision)"
 }

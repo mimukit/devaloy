@@ -13,9 +13,10 @@
 # That is the distinction CLAUDE.md keeps making in prose ("say so rather than
 # trying to install Docker"), written down once where a script can branch on it.
 #
-# WITH_PASEO is not in the flags file on purpose. It is a runtime variable that
-# `docker compose up -d` can flip without a rebuild, so an image-baked answer
-# would be wrong; it comes from the runtime flags file entrypoint.sh writes.
+# WITH_PASEO and WITH_T3CODE are not in the flags file on purpose. They are
+# runtime variables that `docker compose up -d` can flip without a rebuild, so
+# an image-baked answer would be wrong; they come from the runtime flags file
+# entrypoint.sh writes.
 
 DOCTOR_FAILURES=0
 
@@ -102,6 +103,24 @@ doctor_collect() {
       doctor_row ok 'paseo cli' "$(command -v paseo)"
     else
       doctor_row broken 'paseo cli' 'missing from PATH, so run devaloy update'
+    fi
+  fi
+
+  # The T3 Code server, by the same rules as the Paseo rows above: a running
+  # server outranks the key, and the CLI gets its own row because a pruned
+  # install leaves a running server untouched.
+  if [ -n "$(t3_pids)" ]; then
+    doctor_row ok 't3 server' 'up'
+  elif [ "$(runtime_flag WITH_T3CODE)" = "true" ]; then
+    doctor_row broken 't3 server' 'WITH_T3CODE=true but no server is running'
+  else
+    doctor_row off 't3 server' 'not running, and WITH_T3CODE is off'
+  fi
+  if [ "$(runtime_flag WITH_T3CODE)" = "true" ] || [ -n "$(t3_pids)" ]; then
+    if command -v t3 >/dev/null 2>&1; then
+      doctor_row ok 't3 cli' "$(command -v t3)"
+    else
+      doctor_row broken 't3 cli' 'missing from PATH, so run devaloy update'
     fi
   fi
 

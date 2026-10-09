@@ -159,6 +159,8 @@ paseo_pids() {
   pgrep -xf "${PASEO_DAEMON_TITLE}" 2>/dev/null || true
 }
 
+# Shared by the Paseo daemon and the T3 Code server.
+#
 # The supervisor's own RSS is a rounding error — measured at 66 MiB on a box
 # where the restart reclaimed 3.2 GiB. The memory is in its CHILDREN: the daemon
 # parents every pane, every agent session and every worker it spawns, and those
@@ -167,7 +169,7 @@ paseo_pids() {
 #
 # Walks the tree breadth-first from the supervisor PIDs. A depth cap is not
 # needed — ps output is a finite set and each PID is visited once.
-paseo_tree() { # paseo_tree <root pids>
+proc_tree() { # proc_tree <root pids>
   local frontier="$1" seen="" next pid
   while [ -n "${frontier}" ]; do
     seen="${seen} ${frontier}"
@@ -180,13 +182,35 @@ paseo_tree() { # paseo_tree <root pids>
   echo "${seen}" | tr ' ' '\n' | grep -v '^$' | sort -un
 }
 
-paseo_rss_mib() { # paseo_rss_mib <pid list>
+proc_rss_mib() { # proc_rss_mib <pid list>
   local pid rss total=0
   for pid in $1; do
     rss="$(awk '/^VmRSS:/ {print $2}' "/proc/${pid}/status" 2>/dev/null || true)"
     [ -n "${rss}" ] && total=$((total + rss))
   done
   printf '%s' "$((total / 1024))"
+}
+
+# --- the T3 Code server ----------------------------------------------------
+#
+# Read by the same three modules as paseo_pids. T3 Code sets no process title,
+# so the match is on the command line node runs: `<node> <path>/t3 serve ...`.
+# The pattern is anchored at both ends of the program and the verb for the two
+# reasons paseo_pids spells out above, plus one of its own:
+#
+#   Self-match.  The su and sh that entrypoint.sh starts the server through
+#                carry `t3 serve` in their command lines too. Anchoring on node
+#                as the first word skips them, and skips devaloy's own shell.
+#   Other verbs. Every agent session the server opens spawns `t3 acp-mcp-bridge`
+#                from the same binary. Matching `t3 ` alone would count each
+#                one as a second server.
+#
+# The script is `bin/t3` when node runs it through its shebang, and
+# `dist/bin.mjs` when something resolves the symlink first, so both count.
+T3_SERVE_PATTERN='^[^ ]*node [^ ]*/(t3|bin\.mjs) serve( |$)'
+
+t3_pids() {
+  pgrep -f "${T3_SERVE_PATTERN}" 2>/dev/null || true
 }
 
 # This process runs inside a Paseo pane, so a Paseo restart kills the terminal
@@ -213,9 +237,9 @@ proc_started() { # proc_started <pid>
 # --- the build flags ------------------------------------------------------
 #
 # Written by the Dockerfile, because the build args are only in scope there.
-# WITH_PASEO is deliberately NOT in the file: it is a runtime variable that
-# `docker compose up -d` can flip without a rebuild, so reading it from a file
-# baked into the image would report the wrong answer.
+# WITH_PASEO and WITH_T3CODE are deliberately NOT in the file: they are runtime
+# variables that `docker compose up -d` can flip without a rebuild, so reading
+# them from a file baked into the image would report the wrong answer.
 BUILD_FLAGS_FILE="${BUILD_FLAGS_FILE:-/opt/devaloy/build-flags}"
 
 build_flag() { # build_flag <name>
