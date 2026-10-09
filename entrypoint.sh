@@ -1065,7 +1065,7 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
       # Paseo block is non-fatal by design — the same reason the Orca block
       # warns rather than exits — and aborting here would stop a container that
       # is otherwise up and reachable over SSH.
-      PASEO_START_ARGS=""
+      PASEO_START_ENV=""
       mkdir -p "${DEV_HOME}/.paseo" 2>/dev/null || true
       chown "${DEV_USER}:${DEV_USER}" "${DEV_HOME}/.paseo" 2>/dev/null || true
       if [ -n "${PASEO_MERGED}" ] &&
@@ -1081,9 +1081,9 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         log "WARNING: could not write ~/.paseo/config.json. Starting the daemon"
         log "WARNING: from flags instead — it will bind the right address, but"
         log "WARNING: 'paseo ls' on the box needs --host ${PASEO_IP}:${PASEO_PORT}."
-        PASEO_START_ARGS="--no-relay --listen '${PASEO_IP}:${PASEO_PORT}'"
+        PASEO_START_ENV="export PASEO_RELAY_ENABLED=false PASEO_LISTEN='${PASEO_IP}:${PASEO_PORT}';"
         if [ "${PASEO_WEB_UI}" = "true" ]; then
-          PASEO_START_ARGS="${PASEO_START_ARGS} --web-ui --hostnames '${TS_HOSTNAME:-devaloy},.ts.net'"
+          PASEO_START_ENV="${PASEO_START_ENV} export PASEO_WEB_UI_ENABLED=true PASEO_HOSTNAMES='${TS_HOSTNAME:-devaloy},.ts.net';"
         fi
       fi
 
@@ -1095,14 +1095,18 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         # tailscaled.
         echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
 
-        # A SECOND supervision layer, on purpose. `paseo daemon start
-        # --foreground` execs Paseo's own supervisor, which restarts its worker
-        # on crash and holds a PID lock under ~/.paseo. Nothing but this loop
-        # restarts the supervisor itself, and it costs nothing while the inner
-        # layer is doing its job. --foreground is also what keeps the daemon's
-        # output in `docker compose logs`: without it Paseo detaches and writes
-        # to a file, and the container log is the recovery surface when the
-        # tailnet is down.
+        # A SECOND supervision layer, on purpose. `paseo daemon run` execs
+        # Paseo's own supervisor, which restarts its worker on crash and holds a
+        # PID lock under ~/.paseo. Nothing but this loop restarts the supervisor
+        # itself, and it costs nothing while the inner layer is doing its job.
+        # `run` is also what keeps the daemon's output in `docker compose logs`:
+        # `paseo daemon start` detaches and writes to a file, and the container
+        # log is the recovery surface when the tailnet is down.
+        #
+        # Paseo 0.10.3 removed `daemon start --foreground`, the command this
+        # loop used before. It now exits at once with an error, so every pass
+        # of the loop failed and the daemon never came up. `daemon run` takes
+        # no listen or relay flags; overrides are environment variables.
         #
         # Sourcing the secrets file is load-bearing and not decoration. Agents
         # the daemon spawns inherit ITS environment, and as_dev runs
@@ -1122,7 +1126,7 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         # such a box never starts the daemon and this loop warns every 10s
         # forever.
         #
-        # PASEO_START_ARGS is EMPTY on a healthy boot. The listen address, the
+        # PASEO_START_ENV is EMPTY on a healthy boot. The listen address, the
         # relay switch, the web UI and the hostnames all come from
         # ~/.paseo/config.json, so a `paseo daemon restart` you run over SSH
         # brings the daemon back exactly as this line starts it. The variable
@@ -1139,9 +1143,9 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         # which takes no assignment prefix. The -s /bin/sh itself has to stay —
         # see as_dev.
         while true; do
-          as_dev "export SHELL=/usr/bin/zsh; \
+          as_dev "export SHELL=/usr/bin/zsh; ${PASEO_START_ENV} \
             if [ -f '${SECRETS_SNIPPET}' ]; then . '${SECRETS_SNIPPET}'; fi; \
-            paseo daemon start --foreground ${PASEO_START_ARGS}" || true
+            paseo daemon run" || true
           log "WARNING: the Paseo daemon exited — restarting in 10s"
           sleep 10
         done
