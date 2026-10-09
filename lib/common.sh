@@ -194,20 +194,27 @@ proc_rss_mib() { # proc_rss_mib <pid list>
 # --- the T3 Code server ----------------------------------------------------
 #
 # Read by the same three modules as paseo_pids. T3 Code sets no process title,
-# so the match is on the command line node runs: `<node> <path>/t3 serve ...`.
+# so the match is on a command line. The npm package runs as two processes:
+#
+#   node <path>/t3/bin/t3.js serve ...                     the launcher
+#   <path>/@t3code/t3-linux-x64/t3 serve ...               the native server
+#
+# The pattern matches the native server, not the launcher. The launcher runs it
+# with spawnSync and forwards no signal, so a TERM to node kills node alone and
+# leaves the server holding port 3773. A TERM to the server shuts it down, the
+# launcher exits with it, and the supervisor loop starts both again.
+#
 # The pattern is anchored at both ends of the program and the verb for the two
 # reasons paseo_pids spells out above, plus one of its own:
 #
-#   Self-match.  The su and sh that entrypoint.sh starts the server through
-#                carry `t3 serve` in their command lines too. Anchoring on node
-#                as the first word skips them, and skips devaloy's own shell.
+#   Self-match.  The su and sh that entrypoint.sh starts the server through,
+#                and the node launcher, carry `t3 serve` or `t3.js serve` in
+#                their command lines too. Requiring the FIRST word to end in
+#                /t3 skips them, and skips devaloy's own shell.
 #   Other verbs. Every agent session the server opens spawns `t3 acp-mcp-bridge`
 #                from the same binary. Matching `t3 ` alone would count each
 #                one as a second server.
-#
-# The script is `bin/t3` when node runs it through its shebang, and
-# `dist/bin.mjs` when something resolves the symlink first, so both count.
-T3_SERVE_PATTERN='^[^ ]*node [^ ]*/(t3|bin\.mjs) serve( |$)'
+T3_SERVE_PATTERN='^[^ ]*/t3 serve( |$)'
 
 t3_pids() {
   pgrep -f "${T3_SERVE_PATTERN}" 2>/dev/null || true
