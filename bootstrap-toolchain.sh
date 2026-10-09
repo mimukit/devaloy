@@ -146,15 +146,33 @@ pin_tool() {
 pin_tool node "${MISE_NODE_VERSION:-}"
 pin_tool herdr "${MISE_HERDR_VERSION:-}"
 
+# A clone pulled before a fragment was added does not have it, while the image
+# that turned the key on does. Fall back to the image snapshot for that one
+# file, so a stale clone cannot stop the whole bootstrap under `set -e`.
+stage_fragment() {
+  local name="$1" src
+  for src in "${CONFIG_SRC}" /opt/devaloy/config; do
+    if [ -f "${src}/mise/optional/${name}" ]; then
+      if [ "${src}" != "${CONFIG_SRC}" ]; then
+        echo "WARNING: ${CONFIG_SRC}/mise/optional/${name} is missing; using" >&2
+        echo "WARNING: the image copy. Pull the clone at ${CONFIG_SRC%/config}." >&2
+      fi
+      cp "${src}/mise/optional/${name}" "${STAGE}/conf.d/${name}"
+      return 0
+    fi
+  done
+  echo "WARNING: no mise/optional/${name} in the clone or the image — skipped." >&2
+}
+
 if [ "${SEED}" -eq 1 ]; then
   if [ "${WITH_PASEO}" = "true" ]; then
-    cp "${CONFIG_SRC}/mise/optional/paseo.toml" "${STAGE}/conf.d/paseo.toml"
+    stage_fragment paseo.toml
   fi
   if [ "${WITH_BROWSER}" = "true" ]; then
-    cp "${CONFIG_SRC}/mise/optional/browser.toml" "${STAGE}/conf.d/browser.toml"
+    stage_fragment browser.toml
   fi
   if [ "${WITH_T3CODE}" = "true" ]; then
-    cp "${CONFIG_SRC}/mise/optional/t3code.toml" "${STAGE}/conf.d/t3code.toml"
+    stage_fragment t3code.toml
   fi
 fi
 
