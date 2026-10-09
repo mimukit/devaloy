@@ -133,6 +133,18 @@ pages:
       - docker-compose.yml
       - .env.example
 
+  - path: connect-the-t3-code-apps.md
+    mode: how-to
+    documents:
+      - entrypoint.sh
+      - bootstrap-toolchain.sh
+      - config/mise/optional/t3code.toml
+      - docker-compose.yml
+      - .env.example
+      - lib/doctor.sh
+      - lib/status.sh
+      - lib/ram.sh
+
   - path: push-notifications.md
     mode: how-to
     adopted: true

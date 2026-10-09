@@ -114,6 +114,16 @@ profile in the app and the next boot drops it. Add it to
 `config/paseo/config.json` and it holds. See
 [Connect the Paseo apps](connect-the-paseo-apps.md) for the profile lists.
 
+### T3 Code server
+
+Off by default. See [Connect the T3 Code apps](connect-the-t3-code-apps.md).
+
+| Variable | Default | Effect |
+|---|---|---|
+| `WITH_T3CODE` | `false` | Installs the `t3` CLI through mise (`config/mise/optional/t3code.toml`), links `~/.t3/worktrees` to `~/worktrees`, and starts `t3 serve` on `<tailnet-ip>:3773`. A **runtime** variable: `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the server on the next boot, and the next `devaloy update` removes the CLI. |
+
+The server runs with `T3CODE_TELEMETRY_ENABLED=false` and `T3CODE_SERVER_BROWSER_SANDBOX=0`. devaloy writes no T3 Code settings; `~/.t3/userdata/settings.json` belongs to the apps. There is no pin variable, for the same reason as Paseo: edit `config/mise/optional/t3code.toml` to hold a version.
+
 ### Toolchain pins
 
 | Variable | Default | Effect |
@@ -123,7 +133,7 @@ profile in the app and the next boot drops it. Add it to
 | `CODERABBIT_VERSION` | `latest` | Pin the CodeRabbit CLI, for example `v1.2.3`. Not a `MISE_*` name on purpose — mise reads any `MISE_<TOOL>_VERSION` as a tool declaration, and there is no `coderabbit` in its registry. |
 
 Everything else in the toolchain (`pnpm`, `gh`, `turbo`, `lazygit`, `claude`,
-`codex`, `command-code`, `skills`, `@getpaseo/cli`) tracks `latest` and is pinned by editing
+`codex`, `command-code`, `skills`, `@getpaseo/cli`, `t3`) tracks `latest` and is pinned by editing
 `bootstrap-toolchain.sh`, not by a variable.
 
 Do not add a variable here whose tool name is not a real mise registry entry.
@@ -213,7 +223,7 @@ Every management verb belongs to one command, `devaloy`. The five older names ar
 | Command | Effect |
 |---|---|
 | `devaloy` | Opens the picker. With no terminal and no verb, prints `devaloy status` as plain text and exits `0`. Needs fzf 0.65+ to draw; below that it refuses and names `devaloy update`, while every verb still runs. Modules live in `/usr/local/lib/devaloy/`, overridable with `DEVALOY_LIB`. |
-| `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, Docker, and the toolset revision. |
+| `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, the T3 Code server, Docker, and the toolset revision. |
 | `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes. |
 | `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, refreshes the `/usr/local/bin` mirror, then runs `mise prune` to delete tool versions no tracked config still asks for. A failed prune warns and does not fail the update. Refuses to run as root. |
 | `bootstrap-toolchain.sh` | Seeds `config/mise/` into `~/.config/mise` and installs the toolchain, but **skips itself** if the home volume already records the hash of that config. |
@@ -221,7 +231,7 @@ Every management verb belongs to one command, `devaloy`. The five older names ar
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |
 | `devaloy nvim-sync` (`devaloy-nvim-sync`) | Copies the repo's LazyVim config from `/opt/devaloy/config/nvim` over `~/.config/nvim`, then runs a headless `Lazy! sync`. Moves the current directory to `~/.config/nvim.bak-<timestamp>` first, unless given `--no-backup`. Refuses to run as root. See [The editor config](#the-editor-config). |
 | `devaloy prune` (`devaloy-prune`) | Reclaims disk from the nested Docker daemon. Only on a `WITH_DOCKER=true` build. **Reports by default; needs `--apply` to act** — a change from the old `devaloy-prune`, which pruned immediately. Takes `--all` (also images no container is running) and `--age <duration>` (default `168h`). Never touches a running container, and never runs on a timer. |
-| `devaloy ram` (`devaloy-ram`) | Reclaims RAM inside the box. **Reports by default; needs `--apply` to act.** Restarts the Paseo daemon and its worker tree, and TERMs orphaned language servers (`ppid` 1, idle past `--age <minutes>`, default 60). Dev servers are listed, never killed. Takes `--paseo` or `--orphans` to run one half. Never touches `drop_caches`, which is not namespaced and would hit the whole host. |
+| `devaloy ram` (`devaloy-ram`) | Reclaims RAM inside the box. **Reports by default; needs `--apply` to act.** Restarts the Paseo daemon and its worker tree, and TERMs orphaned language servers (`ppid` 1, idle past `--age <minutes>`, default 60). Dev servers are listed, never killed. Takes `--paseo` or `--orphans` to run one half. `--t3` restarts the T3 Code server, which cancels its running turns; it never runs by default. Never touches `drop_caches`, which is not namespaced and would hit the whole host. |
 | `devaloy disk` (`devaloy-disk`) | Reclaims disk from the home volume, which `devaloy prune` does not cover. **Dry run by default; needs `--apply` to act.** Removes `node_modules` untouched for `--age <days>` (default 30), prunes dead git worktree records, and with `--caches` prunes the pnpm/npm/turbo caches. `--docker` hands off to `devaloy prune`, and `mise prune` reaps the stale tool versions that are usually the largest share. Lists linked worktrees but never deletes one, since it cannot tell a stale checkout from uncommitted work. |
 | `playwright-cli` | Drives a headless Chromium. Only with `WITH_BROWSER=true`. `open <url>`, `screenshot` (prints a path under `/tmp/playwright-cli/`), `close`; `close-all` ends every session. Pinned to `@playwright/cli` 0.1.18 in `bootstrap-toolchain.sh`, the newest release with npm provenance. |
 
@@ -378,6 +388,7 @@ One more key is rewritten rather than set: `credential.https://<host>.helper`, f
 |---|---|---|
 | 22 | Tailnet address only, inside the container's network namespace | Always. Not changeable — Tailscale SSH assumes 22. |
 | 6768 | `0.0.0.0` inside the container | Only on a `WITH_ORCA=true` build |
+| 3773 | Tailnet address only | Only with `WITH_T3CODE=true`. The T3 Code server. |
 | whatever a project stack publishes | `0.0.0.0` inside the container | Only on a `WITH_DOCKER=true` build. Reachable at `http://<tailnet-name>:<port>` and, like 6768, from the Docker host. |
 
 There is no `ports:` key in `docker-compose.yml`, so nothing is published to the

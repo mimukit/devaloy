@@ -10,7 +10,7 @@ The five older commands still work. `devaloy-update`, `devaloy-disk`, `devaloy-r
 
 ## The picker
 
-It opens on a status screen: disk on the home volume, memory against the container's ceiling, swap, the Paseo daemon, Docker, and the toolset revision. Below a rule are the five things you can do.
+It opens on a status screen: disk on the home volume, memory against the container's ceiling, swap, the Paseo daemon, the T3 Code server, Docker, and the toolset revision. Below a rule are the five things you can do.
 
 | Key | What it does |
 |---|---|
@@ -41,6 +41,7 @@ devaloy disk --apply --docker     # node_modules, mise versions, logs, Docker
 devaloy disk --apply --caches     # also the pnpm/npm/turbo caches
 devaloy ram                       # report: what is holding the memory
 devaloy ram --apply               # restart Paseo, TERM orphaned language servers
+devaloy ram --t3 --apply          # restart the T3 Code server, cancelling running turns
 devaloy prune --apply --all       # also images no container is running
 ```
 
@@ -50,9 +51,11 @@ devaloy prune --apply --all       # also images no container is running
 
 `devaloy ram --apply` restarts the Paseo daemon, and every pane the daemon owns dies with it, including an agent mid-turn. When you run it *from* a Paseo pane, the confirm says so before you type `yes`. It does not refuse: that is the terminal you are most likely sitting in, and the reclaim is usually why you came.
 
+The T3 Code server is not in that run. Restarting it cancels every turn running in T3 Code, so it needs its own flag: `devaloy ram --t3 --apply`. Threads and history are kept, and the apps reconnect on their own.
+
 ## `devaloy doctor`
 
-One screen of what this box was built with and what is actually working: the Docker daemon, the Orca runtime, browser capture, the Paseo daemon, `GITHUB_TOKEN`, Tailscale, the mise shim mirror, fzf, and the `devaloy` modules themselves.
+One screen of what this box was built with and what is actually working: the Docker daemon, the Orca runtime, browser capture, the Paseo daemon, the T3 Code server, `GITHUB_TOKEN`, Tailscale, the mise shim mirror, fzf, and the `devaloy` modules themselves.
 
 The exit code is the useful part for a script or an agent:
 
@@ -61,7 +64,7 @@ The exit code is the useful part for a script or an agent:
 | `0` | nothing built into this image is broken. A row marked `·` is off by design. |
 | `1` | something the image *was* built with is not working. |
 
-"Docker is not reachable" means opposite things on a box built without `WITH_DOCKER` and on one built with it, and the probe cannot tell them apart. So the build writes the flags it was given to `/opt/devaloy/build-flags`, and doctor reads that file before it judges. `WITH_PASEO` is not in the file on purpose, because it is a runtime variable that `docker compose up -d` can change without a rebuild; doctor takes that one from the environment and from whether the daemon is running.
+"Docker is not reachable" means opposite things on a box built without `WITH_DOCKER` and on one built with it, and the probe cannot tell them apart. So the build writes the flags it was given to `/opt/devaloy/build-flags`, and doctor reads that file before it judges. `WITH_PASEO` and `WITH_T3CODE` are not in the file on purpose, because they are runtime variables that `docker compose up -d` can change without a rebuild. doctor reads them from `/opt/devaloy/runtime-flags`, which the entrypoint writes on every boot, and from whether the daemon or the server is running.
 
 An image built before the flags file existed reports "build flags unknown" and never fails on a missing capability, since there is no way to know what was asked for.
 

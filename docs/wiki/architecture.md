@@ -40,7 +40,8 @@ down and `restart: unless-stopped` brings it back.
 9. **Authenticate `gh`**, then set the git identity, then install the signing key.
 10. **Start `orca serve`**, only if the binary is present.
 11. **Start the Paseo daemon** under a supervision loop, only when `WITH_PASEO=true`.
-12. **`wait` on `tailscaled`.**
+12. **Start the T3 Code server** (`t3 serve` on the tailnet address, port 3773) under a supervision loop, only when `WITH_T3CODE=true`.
+13. **`wait` on `tailscaled`.**
 
 Three orderings in there matter more than they look.
 
@@ -115,7 +116,7 @@ package manager rather than three.
 
 The tool list is declarative: `config/mise/config.toml` in the repo, copied to
 `~/.config/mise/config.toml` by `bootstrap-toolchain.sh`, which then runs
-`mise install`. The two optional tools ship as fragments under
+`mise install`. The optional tools (Paseo, browser capture, T3 Code) ship as fragments under
 `config/mise/optional/` and land in `~/.config/mise/conf.d/` only while their
 `WITH_*` key is on.
 
@@ -236,10 +237,10 @@ Three trades are worth knowing before running this anywhere sensitive:
 Compose sets the container to `oom_score_adj: -500`, keeping `tailscaled` off the
 kernel's kill list — losing it severs the only route back in. `oom_score_adj` is
 inherited, so four processes raise themselves back up: interactive shells to `0`,
-and the Orca server, `dockerd`, and the Paseo supervisor to `-250`.
+and the Orca server, `dockerd`, the Paseo supervisor and the T3 Code server to `-250`.
 
-The resulting kill order is a runaway build first, then Orca, `dockerd`, and
-Paseo, then `tailscaled` last. Raising an inherited value is unprivileged; only lowering needs
+The resulting kill order is a runaway build first, then Orca, `dockerd`, Paseo
+and T3 Code, then `tailscaled` last. Raising an inherited value is unprivileged; only lowering needs
 `CAP_SYS_RESOURCE`, which is why this works without extra capabilities. It is
 also what makes a memory limit safe to set aggressively — see
 [Size the container resource limits](vm-resource-limits.md).

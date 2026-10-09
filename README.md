@@ -59,6 +59,7 @@ From the image, available the moment you can log in:
 | Agent sandbox | `bubblewrap` (`bwrap`), what Codex confines its shell with |
 | Optional | the Orca runtime (`orca-ide`), only when built with `WITH_ORCA=true` — see [(Optional) the Orca apps](#optional-the-orca-apps) |
 | Optional | the Paseo daemon (`paseo`), only when run with `WITH_PASEO=true` — see [(Optional) the Paseo apps](#optional-the-paseo-apps). Installed from `mise`, not the image. |
+| Optional | the T3 Code server (`t3`), only when run with `WITH_T3CODE=true`. See [(Optional) the T3 Code apps](#optional-the-t3-code-apps). Installed from `mise`, not the image. |
 | Optional | Docker Engine and Compose (`docker`, `docker compose`, `docker buildx`), only when built with `WITH_DOCKER=true` — see [(Optional) Docker and Compose](#optional-docker-and-compose) |
 | Optional | headless browser capture (`playwright-cli` and a Chromium), only when built and run with `WITH_BROWSER=true` — see [(Optional) headless browser capture](#optional-headless-browser-capture). Libraries from the image, the CLI and the browser from `mise` into the home volume. |
 
@@ -534,7 +535,7 @@ WITH_PASEO=true
 docker compose up -d
 ```
 
-**No `--build` here.** That is the one thing to keep straight across the three
+**No `--build` here.** That is the one thing to keep straight across the
 optional keys, because they look alike and are not:
 
 | Key | What it decides | Needs `--build`? |
@@ -542,9 +543,10 @@ optional keys, because they look alike and are not:
 | `WITH_ORCA` | what goes into the image | **Yes** |
 | `WITH_DOCKER` | what goes into the image | **Yes** |
 | `WITH_PASEO` | what `bootstrap-toolchain.sh` installs into the home volume, and whether the entrypoint starts a daemon | No |
+| `WITH_T3CODE` | the same as `WITH_PASEO`, for the T3 Code server | No |
 
-A plain `up -d` picks up `WITH_PASEO` and silently ignores a change to either of
-the other two, which is the single easiest thing to get wrong here.
+A plain `up -d` picks up `WITH_PASEO` and `WITH_T3CODE` and silently ignores a
+change to `WITH_ORCA` or `WITH_DOCKER`, which is the single easiest thing to get wrong here.
 
 The first boot after you flip it re-runs the toolchain bootstrap, because the
 revision marker records the key alongside the revision. That is quick: the boot
@@ -631,7 +633,7 @@ the hosted web client reach a daemon it is not served from.
   much of the point, but it means a session started through Paseo has a
   different tool list from one you started over SSH.
 - **Turning it off stops the daemon and undeclares the CLI.** `WITH_PASEO=false` stops the daemon on the next boot and drops the mise fragment that declares `npm:@getpaseo/cli`. The installed copy stays on the home volume until the next `devaloy update`, whose `mise prune` reclaims it. Nothing rewrites `~/.paseo/config.json`, so your paired clients and settings are still there when you turn it back on.
-- **`devaloy update` reads the key from a file, not from your shell.** `WITH_PASEO` only ever reaches PID 1's environment, so no shell on the box inherits it. `entrypoint.sh` writes it and `WITH_BROWSER` to `/opt/devaloy/runtime-flags` on every boot, and `bootstrap-toolchain.sh` reads that file when the variable is absent. Without it an update read both optional keys as `false`, undeclared Paseo and the browser CLI, and then let `mise prune` delete both from the home volume. What that leaves behind is a running daemon and no `paseo` on `PATH`.
+- **`devaloy update` reads the key from a file, not from your shell.** `WITH_PASEO` only ever reaches PID 1's environment, so no shell on the box inherits it. `entrypoint.sh` writes it, `WITH_BROWSER` and `WITH_T3CODE` to `/opt/devaloy/runtime-flags` on every boot, and `bootstrap-toolchain.sh` reads that file when the variable is absent. Without it an update read both optional keys as `false`, undeclared Paseo and the browser CLI, and then let `mise prune` delete both from the home volume. What that leaves behind is a running daemon and no `paseo` on `PATH`.
 - **Upgrading is `devaloy update`,** unlike Orca. Paseo always tracks `latest`
   through mise, like `claude` and `codex` do. There is no environment variable
   to pin it. `MISE_PASEO_VERSION` would look like the obvious name, but mise
@@ -643,6 +645,49 @@ the hosted web client reach a daemon it is not served from.
   server, but it routes by hostnames like `web-feature-x-myapp.localhost`, and
   those do not resolve from a phone on the tailnet. Agents, terminals, diffs and
   git are unaffected. This is a DNS limit, not a Paseo one.
+
+## (Optional) the T3 Code apps
+
+[T3 Code](https://github.com/pingdotgg/t3code) is a GUI for coding agents. A server on the box runs Claude Code and Codex, and the T3 Code desktop app on your laptop and the T3 Code phone app connect to it over Tailscale. Agent threads run on the box, so they keep going while the laptop sleeps, and the phone can follow them.
+
+It is shaped like Paseo: an npm package (`t3`) that mise installs into the home volume, behind a runtime key.
+
+```sh
+# in .env
+WITH_T3CODE=true
+```
+
+```sh
+docker compose up -d
+```
+
+No `--build`. The entrypoint starts `t3 serve` on the tailnet address, port 3773, after the toolchain bootstrap has installed it.
+
+### Pairing your laptop and your phone
+
+Both devices need Tailscale on and joined to the same tailnet. The apps talk plain HTTP to the tailnet address, which is fine because WireGuard already encrypts every tailnet packet. Each device pairs once, with its own one-time link.
+
+1. Find the first link in the container log. Run `docker compose logs devaloy | grep -A3 -i "pairing"`.
+2. In the desktop app on the laptop, open **Settings → Connections → Add environment** and paste the link.
+3. For the phone, run `ssh devaloy t3 pair` on the laptop. It prints a fresh link and a QR code.
+4. In the phone app, open **Settings → Environments → Add environment** and scan the code.
+
+The apps save the route and reconnect on their own after a restart, with no new link. To revoke a device, use **Settings → Connections** in the desktop app, or `t3 auth` on the box.
+
+If your tailnet policy has its own `acls` or `grants` instead of the default allow-all rule, it must let your laptop and phone reach port 3773 on the box.
+
+### What to know before you turn it on
+
+- **devaloy writes no T3 Code settings.** Unlike Paseo there is no repo config file. The apps own `~/.t3/userdata/settings.json`, so change settings there.
+- **Worktrees share `~/worktrees/` with Paseo.** The boot links `~/.t3/worktrees` to `~/worktrees`. If `~/.t3/worktrees` is already a real directory, the boot leaves it alone and logs a line. Both tools write into the same folder, so two worktrees with the same name would collide.
+- **Telemetry is off.** The server runs with `T3CODE_TELEMETRY_ENABLED=false`.
+- **Browser tabs are best effort.** The server runs its headless Chrome with `T3CODE_SERVER_BROWSER_SANDBOX=0`, because the container gives Chrome no user namespaces. The image carries no Chrome libraries unless you also built with `WITH_BROWSER=true`, so a tab may fail. A failed tab does not stop the server.
+- **A restart cancels running turns.** `devaloy ram --t3 --apply`, a crash or a container restart stops every turn that is running. A plain `devaloy ram --apply` leaves the server alone. Threads and history are kept. To resume interrupted turns, turn on "continue threads after a server update" in the app.
+- **Upgrading is `devaloy update`.** The server tracks `latest` through mise. When an app says the server is on a different version, run `devaloy update`. Do not run `t3 update` on the box. There is no pin variable, for the same reason as Paseo; edit `config/mise/optional/t3code.toml` to hold a version.
+- **`devaloy update` reads the key from `/opt/devaloy/runtime-flags`,** as it does for `WITH_PASEO`, so an update from your shell keeps the CLI installed.
+- **Turning it off** with `WITH_T3CODE=false` stops the server on the next boot, and the next `devaloy update` removes the CLI. `~/.t3` stays on the home volume, so paired devices still work when you turn it back on.
+
+Full guide: [Connect the T3 Code apps](docs/wiki/connect-the-t3-code-apps.md).
 
 ## (Optional) Docker and Compose
 
@@ -814,7 +859,7 @@ Everything you do *to* the box, rather than on it, is one command:
 devaloy
 ```
 
-It opens a picker on a status screen — disk on the home volume, memory against the container's ceiling, the Paseo daemon, Docker, the toolset revision — with the reclaims, the toolchain update and a `doctor` view underneath. `l` and `enter` open a view, `h` goes back, `a` applies, `q` quits.
+It opens a picker on a status screen — disk on the home volume, memory against the container's ceiling, the Paseo daemon, the T3 Code server, Docker, the toolset revision — with the reclaims, the toolchain update and a `doctor` view underneath. `l` and `enter` open a view, `h` goes back, `a` applies, `q` quits.
 
 Each reclaim shows you what it found before it touches anything, and the apply deletes from that exact list rather than scanning again. Run any verb straight from the command line when you already know what you want:
 

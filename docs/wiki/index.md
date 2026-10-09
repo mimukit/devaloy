@@ -38,6 +38,7 @@ it when it stops answering.
   runtime, for the desktop and mobile clients.
 - [Connect the Paseo apps](connect-the-paseo-apps.md) — the optional
   `WITH_PASEO=true` daemon, and how it differs from the Orca one.
+- [Connect the T3 Code apps](connect-the-t3-code-apps.md) — the optional `WITH_T3CODE=true` server, paired with the desktop app on your laptop and the phone app over Tailscale.
 
 ## When something is wrong
 
