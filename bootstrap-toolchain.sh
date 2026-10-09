@@ -23,7 +23,7 @@ MISE_CONFIG_DIR="${HOME}/.config/mise"
 # non-hidden TOML in that directory.
 #
 # The environment is only the answer on the boot path, where entrypoint.sh
-# forwards both keys. `devaloy update` runs from a shell, and no shell on the
+# forwards the keys. `devaloy update` runs from a shell, and no shell on the
 # box has them: they live in PID 1's environment and nothing exports them. A
 # plain `:-false` default therefore read "off" on every update, deleted the
 # fragments, and left `paseo` and `playwright-cli` as shims with no declared
@@ -38,6 +38,7 @@ runtime_flag() { # runtime_flag <name>
 }
 WITH_PASEO="${WITH_PASEO:-$(runtime_flag WITH_PASEO)}"
 WITH_BROWSER="${WITH_BROWSER:-$(runtime_flag WITH_BROWSER)}"
+WITH_T3CODE="${WITH_T3CODE:-$(runtime_flag WITH_T3CODE)}"
 
 FORCE=0
 case "${1:-}" in
@@ -152,6 +153,9 @@ if [ "${SEED}" -eq 1 ]; then
   if [ "${WITH_BROWSER}" = "true" ]; then
     cp "${CONFIG_SRC}/mise/optional/browser.toml" "${STAGE}/conf.d/browser.toml"
   fi
+  if [ "${WITH_T3CODE}" = "true" ]; then
+    cp "${CONFIG_SRC}/mise/optional/t3code.toml" "${STAGE}/conf.d/t3code.toml"
+  fi
 fi
 
 # One hash over every staged file, names included, so a fragment appearing or
@@ -185,7 +189,8 @@ if [ "${SEED}" -eq 1 ]; then
   mkdir -p "${MISE_CONFIG_DIR}/conf.d"
   cp "${STAGE}/config.toml" "${MISE_CONFIG_DIR}/config.toml"
   rm -f "${MISE_CONFIG_DIR}/conf.d/paseo.toml" \
-    "${MISE_CONFIG_DIR}/conf.d/browser.toml"
+    "${MISE_CONFIG_DIR}/conf.d/browser.toml" \
+    "${MISE_CONFIG_DIR}/conf.d/t3code.toml"
   for fragment in "${STAGE}"/conf.d/*.toml; do
     [ -f "${fragment}" ] || continue
     cp "${fragment}" "${MISE_CONFIG_DIR}/conf.d/$(basename "${fragment}")"

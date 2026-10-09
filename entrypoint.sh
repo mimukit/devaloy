@@ -484,8 +484,9 @@ fi
 # Sits beside build-flags and is rewritten on every boot, so a key flipped by
 # `docker compose up -d` is never stale. The home volume would be the wrong
 # place: a file there outlives the container that wrote it.
-printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\n' \
-  "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" > /opt/devaloy/runtime-flags
+printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\nWITH_T3CODE=%s\n' \
+  "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" "${WITH_T3CODE:-false}" \
+  > /opt/devaloy/runtime-flags
 chmod 644 /opt/devaloy/runtime-flags
 
 log "Checking the mise toolchain"
@@ -493,6 +494,7 @@ if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
     MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
     WITH_PASEO='${WITH_PASEO:-false}' \
     WITH_BROWSER='${WITH_BROWSER:-false}' \
+    WITH_T3CODE='${WITH_T3CODE:-false}' \
     CODERABBIT_VERSION='${CODERABBIT_VERSION:-}' \
     /usr/local/bin/bootstrap-toolchain.sh"; then
   log "Toolchain ready"
@@ -1275,6 +1277,105 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
     fi
   else
     log "WARNING: WITH_PASEO is true but paseo is not installed. The toolchain"
+    log "WARNING: bootstrap above did not finish — once you are in, re-run it"
+    log "WARNING: with: devaloy-update"
+  fi
+fi
+
+# --- T3 Code server (only when WITH_T3CODE=true) ---
+#
+# The T3 Code desktop app on a laptop and the T3 Code phone app both speak to
+# one server, `t3 serve`. It is a Paseo-shaped guest, and the block follows the
+# Paseo block above rather than the Orca one:
+#
+#   * The KEY IS A RUNTIME VARIABLE. `t3` is an npm package in the home volume
+#     (config/mise/optional/t3code.toml), so a missing binary with the key on
+#     is a fault and warns.
+#   * IT BINDS THE TAILNET ADDRESS. `--host <tailnet-ip>` keeps port 3773 off
+#     the docker bridge. Both apps accept plain HTTP to a tailnet address, and
+#     WireGuard already encrypts the traffic, so there is no Tailscale Serve
+#     and no HTTPS.
+#   * NO SETTINGS ARE WRITTEN. ~/.t3/userdata/settings.json belongs to the
+#     apps. The two environment variables below are the whole configuration.
+#
+# Pairing is one-time links, not a password. `t3 serve` prints one with a QR
+# code on every start, so the first device pairs from `docker compose logs`.
+# `t3 pair` on the box finds the running server through
+# ~/.t3/userdata/server-runtime.json and prints a fresh link with the same
+# tailnet address, which is how the second device pairs without a restart.
+# A link in the container log is a credential, but only to someone who can
+# already `docker exec` in as root.
+T3CODE_PORT=3773
+
+if [ "${WITH_T3CODE:-false}" = "true" ]; then
+  if as_dev "command -v t3 >/dev/null 2>&1"; then
+    T3CODE_IP="$(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1 || true)"
+    if [ -n "${T3CODE_IP}" ]; then
+      # --- one worktree root for Paseo and T3 Code ---
+      # T3 Code puts its worktrees under ~/.t3/worktrees, and the stable release
+      # has no setting to move them. A symlink moves them on every version and
+      # writes no setting. A real directory there means worktrees already exist
+      # in it, so it is left alone rather than moved under a live checkout.
+      T3CODE_WT="${DEV_HOME}/.t3/worktrees"
+      if [ -L "${T3CODE_WT}" ]; then
+        # Already linked. Recreate the target in case ~/worktrees was deleted
+        # since, because a dangling link fails every worktree T3 Code creates.
+        as_dev "mkdir -p '${DEV_HOME}/worktrees'" || true
+      elif [ -e "${T3CODE_WT}" ]; then
+        log "T3 Code: ~/.t3/worktrees is a real directory, so its worktrees stay"
+        log "T3 Code: there. Move them to ~/worktrees and delete it to share the root."
+      elif as_dev "mkdir -p '${DEV_HOME}/worktrees' '${DEV_HOME}/.t3' && \
+          ln -s '${DEV_HOME}/worktrees' '${T3CODE_WT}'"; then
+        log "T3 Code: ~/.t3/worktrees now points at ~/worktrees"
+      else
+        log "WARNING: could not link ~/.t3/worktrees to ~/worktrees. T3 Code"
+        log "WARNING: keeps its worktrees under ~/.t3 until the next boot."
+      fi
+
+      (
+        # -250, the same slot as the Paseo daemon and for the same reason: above
+        # a runaway build, below tailscaled. See the Orca block.
+        echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
+
+        # The only supervisor. `t3 service install` needs systemd user units,
+        # which this container does not run. A stale server-runtime.json after
+        # a crash does not block the restart: only `t3 start` checks it, and
+        # `t3 serve` does not.
+        #
+        # The secrets file is sourced for the reason spelt out at the Paseo
+        # loop: agents inherit the server's environment, and as_dev reads no
+        # shell rc file, so CLAUDE_CODE_OAUTH_TOKEN would not reach a Claude
+        # Code thread started from the phone. The `if [ -f ]` guard is
+        # load-bearing for the same dash reason. SHELL is exported for the same
+        # reason as there too, so terminals open in zsh rather than sh.
+        #
+        # T3CODE_TELEMETRY_ENABLED=false keeps T3 Code's analytics off this box.
+        # T3CODE_SERVER_BROWSER_SANDBOX=0 runs the server's headless Chrome
+        # without its own sandbox, which needs user namespaces this container
+        # does not give it. The container is the isolation layer. The browser
+        # downloads on the first tab only, and a tab that cannot start fails
+        # alone; the server keeps running.
+        while true; do
+          as_dev "export SHELL=/usr/bin/zsh; \
+            export T3CODE_TELEMETRY_ENABLED=false T3CODE_SERVER_BROWSER_SANDBOX=0; \
+            if [ -f '${SECRETS_SNIPPET}' ]; then . '${SECRETS_SNIPPET}'; fi; \
+            t3 serve --host '${T3CODE_IP}' --port '${T3CODE_PORT}' --no-browser" || true
+          log "WARNING: the T3 Code server exited — restarting in 10s"
+          sleep 10
+        done
+      ) &
+      log "T3 Code server on http://${T3CODE_IP}:${T3CODE_PORT} — pair the first device"
+      log "with the link it prints below. For the next one, run on your laptop:"
+      log "  ssh dev@${TS_HOSTNAME:-devaloy} t3 pair"
+      log "Keep Tailscale connected on the phone."
+    else
+      # Same call as the Paseo block: a server on an address nothing can route
+      # to fails at connect time rather than here, where the log can say why.
+      log "WARNING: no tailnet IPv4 — not starting the T3 Code server."
+      log "WARNING: fix the tailscale failure above, then restart the container."
+    fi
+  else
+    log "WARNING: WITH_T3CODE is true but t3 is not installed. The toolchain"
     log "WARNING: bootstrap above did not finish — once you are in, re-run it"
     log "WARNING: with: devaloy-update"
   fi

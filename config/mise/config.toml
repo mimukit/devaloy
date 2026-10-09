@@ -14,7 +14,7 @@
 #     re-resolves every `latest` pin below. That is the price of a toolset
 #     change; it is why the boot path never upgrades on its own.
 #
-# The two optional tools (WITH_PASEO, WITH_BROWSER) are NOT here. A key that is
+# The optional tools (WITH_PASEO, WITH_BROWSER, WITH_T3CODE) are NOT here. A key that is
 # off has to declare nothing at all, which one static file cannot express, so
 # each ships as its own fragment in optional/ and lands in
 # ~/.config/mise/conf.d/. See bootstrap-toolchain.sh.

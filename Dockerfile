@@ -387,10 +387,11 @@ RUN set -eux; \
 # second is a fault worth failing a script on. The probe alone cannot tell them
 # apart, so the build writes down what was asked for.
 #
-# WITH_PASEO is deliberately absent. It is a runtime variable that
-# `docker compose up -d` can flip without a rebuild, so a value baked in here
-# would go stale; entrypoint.sh records it in /opt/devaloy/runtime-flags on
-# every boot, and doctor reads it there and from whether the daemon is running.
+# WITH_PASEO and WITH_T3CODE are deliberately absent. They are runtime variables
+# that `docker compose up -d` can flip without a rebuild, so a value baked in
+# here would go stale; entrypoint.sh records them in /opt/devaloy/runtime-flags
+# on every boot, and doctor reads them there and from whether the daemon or the
+# server is running.
 RUN mkdir -p /opt/devaloy \
     && printf 'WITH_ORCA=%s\nWITH_DOCKER=%s\nWITH_BROWSER=%s\n' \
         "${WITH_ORCA}" "${WITH_DOCKER}" "${WITH_BROWSER}" \

@@ -91,6 +91,10 @@ services:
     # `--listen <tailnet-ip>:6767`. Port 6767 exists only on the tailnet
     # interface: it is not on the docker bridge and the Docker host cannot reach
     # it. Both runtimes can run at once — different ports, no clash.
+    #
+    # The T3 Code server (WITH_T3CODE=true) binds the same way: the entrypoint
+    # starts it with `--host <tailnet-ip> --port 3773`, so 3773 is also on the
+    # tailnet interface only. All three can run at once.
     cap_add:
       # tailscaled needs this to create and configure the tailscale0 interface.
       - NET_ADMIN
@@ -301,6 +305,18 @@ services:
       # config/paseo/config.json — that file records a plugin only after
       # `paseo plugin install` has fetched it.
       - PASEO_PLUGINS=${PASEO_PLUGINS:-}
+      # The optional T3 Code server, for the T3 Code desktop and phone apps.
+      # A RUNTIME variable like WITH_PASEO, not a build arg: `t3` is an npm
+      # package that bootstrap-toolchain.sh installs into the home volume, so
+      # `docker compose up -d` alone picks up a change. No --build needed.
+      #
+      # The entrypoint runs `t3 serve` on the tailnet address only, port 3773,
+      # and prints a pairing link to the container log. `ssh devaloy t3 pair`
+      # prints a fresh link for the next device. devaloy writes no T3 Code
+      # settings; the apps own ~/.t3/userdata/settings.json. Turning the key
+      # back off stops the server on the next boot, and the next
+      # `devaloy update` removes the CLI. See the README.
+      - WITH_T3CODE=${WITH_T3CODE:-false}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
       # Only add one whose tool name is a real mise registry entry. mise treats
       # any MISE_<TOOL>_VERSION in the container environment as a declaration of

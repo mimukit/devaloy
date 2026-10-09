@@ -1,0 +1,26 @@
+# OPTIONAL: the T3 Code server (WITH_T3CODE=true).
+#
+# bootstrap-toolchain.sh copies this file to ~/.config/mise/conf.d/ when the key
+# is on and deletes it when the key is off, the same way it handles paseo.toml.
+# The reasons for the split are the same too: one static config.toml cannot say
+# "this tool only when a key is set".
+#
+# T3 Code is the npm package `t3`, and its bin is `t3`. It is a plain npm
+# package like Paseo, so the key is a runtime variable and not a build argument:
+# the payload lands in the home volume and `docker compose up -d` is enough to
+# turn it on. Nothing enters the image. It needs Node ^22.16, ^23.11 or
+# >=24.10, which the `node = "24"` line in config.toml satisfies.
+#
+# It tracks latest, refreshed only by `devaloy update`. The T3 Code apps refuse
+# a server on a different protocol version, and the store apps update on their
+# own, so a pin here falls behind them within a week. When an app reports a
+# version mismatch, run `devaloy update`. Do not run `t3 update` on the box: it
+# moves the version behind mise's back.
+#
+# It has NO pin variable, for the same name-collision reason as Paseo: a
+# MISE_T3_VERSION would declare a tool named `t3`, which is not in mise's
+# registry, and every mise call would fail. To hold a version, edit the line
+# below.
+
+[tools]
+"npm:t3" = "latest"
