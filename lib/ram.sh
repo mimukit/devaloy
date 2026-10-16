@@ -385,34 +385,13 @@ ram_apply_targets() {
 
   # --- the T3 Code restart ------------------------------------------------
   #
-  # By pattern, for the reason given at the Paseo restart. -u for the same
-  # reason too: the root-owned su that entrypoint.sh starts the server through
-  # is not ours to signal. SIGTERM lets the server close its sessions and delete
-  # its runtime file; a -9 would leave the file behind (harmless to `t3 serve`,
-  # but `t3 pair` would then probe a dead server first).
+  # restart_t3 in common.sh, shared with `devaloy update`.
   if [ "${RAM_DO_T3}" -eq 1 ] && [ "$(ram_count t3)" -gt 0 ]; then
     echo
     if [ "${APPLY}" -eq 0 ]; then
       echo "devaloy ram: would restart the T3 Code server (--apply to do it)"
     else
-      echo "devaloy ram: stopping the T3 Code server — every running turn is cancelled"
-      pkill -u "$(id -u)" -f "${T3_SERVE_PATTERN}" || true
-
-      # Waits past the supervisor's 10s sleep, then confirms, as above.
-      local t3_waited=0
-      while [ "${t3_waited}" -lt 40 ]; do
-        sleep 2
-        t3_waited=$((t3_waited + 2))
-        if [ -n "$(t3_pids)" ]; then
-          echo "devaloy ram: T3 Code server back up after ${t3_waited}s"
-          break
-        fi
-      done
-      if [ -z "$(t3_pids)" ]; then
-        echo "devaloy ram: WARNING — the T3 Code server has not come back after ${t3_waited}s." >&2
-        echo "devaloy ram: check 'docker logs' for this container; the supervisor" >&2
-        echo "devaloy ram: retries every 10s and logs each failure." >&2
-      fi
+      restart_t3 ram || true
     fi
   fi
 

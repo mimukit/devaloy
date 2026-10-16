@@ -218,6 +218,34 @@ do_update() {
   fi
 
   echo "devaloy: toolchain updated."
+
+  # Last, because it can end this very session: a terminal or an agent turn
+  # inside T3 Code is a child of the server, and the restart takes it down.
+  restart_stale_t3
+}
+
+# restart_stale_t3 — restart the T3 Code server when it runs an older t3 than
+# the one now on PATH.
+#
+# `mise upgrade` swaps the files, not the process. The server keeps the binary
+# it started from, so without this the apps go on talking to the old version
+# until the next container restart, and refuse it once they update themselves.
+#
+# /proc/<pid>/exe still runs after the prune above deletes the old version's
+# directory, because it names the inode the process holds open. So
+# `--version` on it reports the version the server is actually running, and
+# a same-version update restarts nothing and cancels no turn.
+restart_stale_t3() {
+  local pid running installed
+  pid="$(t3_pids | head -1)"
+  [ -n "${pid}" ] || return 0
+  installed="$(t3 --version 2>/dev/null)" || return 0
+  running="$("/proc/${pid}/exe" --version 2>/dev/null || true)"
+  [ "${running}" = "${installed}" ] && return 0
+
+  echo
+  echo "devaloy: the T3 Code server runs ${running:-an unknown version}, and PATH has ${installed}."
+  restart_t3 update || warn "update: the T3 Code server still runs ${running:-the old version}."
 }
 
 # --- the toolchain view ---------------------------------------------------
@@ -241,7 +269,9 @@ tools_apply() { # tools_apply <row value>
       if ! confirm \
         "devaloy update seeds config/ over your dotfiles, then re-runs" \
         "bootstrap-toolchain.sh --force. It re-resolves every pin, so tools" \
-        "tracking latest may move. It takes several minutes and prints as it goes."; then
+        "tracking latest may move. A T3 Code server on an older t3 restarts at" \
+        "the end, which cancels its running turns. It takes several minutes" \
+        "and prints as it goes."; then
         printf '\n  cancelled\n'
         sleep 1
         return 0

@@ -21,6 +21,8 @@ It runs `bootstrap-toolchain.sh --force` (which skips the toolset gate and runs 
 
 It finishes with `mise prune`, which deletes every installed version no tracked config asks for any more. `mise upgrade` installs the new version beside the old one and never removes the old directory, so without the prune the home volume keeps a copy of every claude, codex and pnpm you have ever run. A failed prune only warns: it costs disk, not a working toolchain. To see what would go before you run it, use `mise ls --prunable` or `mise prune --dry-run`.
 
+If the T3 Code server runs an older `t3` than the one the upgrade installed, `devaloy update` restarts it as its last step. The restart cancels the server's running turns and closes its terminals, including the one that ran the update when you ran it from T3 Code.
+
 Because it can move `claude` and `codex`, run it between agent sessions, not under one.
 
 ## Publish a skill to the box

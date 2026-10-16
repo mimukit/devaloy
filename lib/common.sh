@@ -220,6 +220,37 @@ t3_pids() {
   pgrep -f "${T3_SERVE_PATTERN}" 2>/dev/null || true
 }
 
+# restart_t3 <caller> — TERM the T3 Code server and wait for the supervisor.
+#
+# By pattern, for the reason given at the Paseo restart in ram.sh. -u for the
+# same reason too: the root-owned su that entrypoint.sh starts the server through
+# is not ours to signal. SIGTERM lets the server close its sessions and delete
+# its runtime file; a -9 would leave the file behind (harmless to `t3 serve`,
+# but `t3 pair` would then probe a dead server first).
+#
+# The supervisor loop in entrypoint.sh starts `t3 serve` again from PATH, so the
+# new server runs whatever version mise holds now. That is what makes this the
+# second half of an upgrade, and not only a way to reclaim memory.
+restart_t3() {
+  local caller="$1" waited=0
+  echo "devaloy ${caller}: stopping the T3 Code server — every running turn is cancelled"
+  pkill -u "$(id -u)" -f "${T3_SERVE_PATTERN}" || true
+
+  # Waits past the supervisor's 10s sleep, then confirms.
+  while [ "${waited}" -lt 40 ]; do
+    sleep 2
+    waited=$((waited + 2))
+    if [ -n "$(t3_pids)" ]; then
+      echo "devaloy ${caller}: T3 Code server back up after ${waited}s"
+      return 0
+    fi
+  done
+  echo "devaloy ${caller}: WARNING — the T3 Code server has not come back after ${waited}s." >&2
+  echo "devaloy ${caller}: check 'docker logs' for this container; the supervisor" >&2
+  echo "devaloy ${caller}: retries every 10s and logs each failure." >&2
+  return 1
+}
+
 # This process runs inside a Paseo pane, so a Paseo restart kills the terminal
 # reading its output. The confirm in the TUI says so; it does not refuse.
 in_paseo_pane() {
