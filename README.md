@@ -70,8 +70,7 @@ From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `infisical` (see [(Optional) Infisical secrets](#optional-infisical-secrets)),
 plus
 [Claude Code](https://claude.com/claude-code)
-(`claude`), [Codex](https://github.com/openai/codex) (`codex`) and
-`command-code` — and
+(`claude`) and [Codex](https://github.com/openai/codex) (`codex`) — and
 [`skills`](https://www.skills.sh), which then installs the agent skills both
 CLIs share. See [Agent skills](#agent-skills).
 

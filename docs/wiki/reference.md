@@ -133,7 +133,7 @@ The server runs with `T3CODE_TELEMETRY_ENABLED=false` and `T3CODE_SERVER_BROWSER
 | `CODERABBIT_VERSION` | `latest` | Pin the CodeRabbit CLI, for example `v1.2.3`. Not a `MISE_*` name on purpose — mise reads any `MISE_<TOOL>_VERSION` as a tool declaration, and there is no `coderabbit` in its registry. |
 
 Everything else in the toolchain (`pnpm`, `gh`, `turbo`, `lazygit`, `claude`,
-`codex`, `command-code`, `skills`, `@getpaseo/cli`, `t3`) tracks `latest` and is pinned by editing
+`codex`, `skills`, `@getpaseo/cli`, `t3`) tracks `latest` and is pinned by editing
 `bootstrap-toolchain.sh`, not by a variable.
 
 Do not add a variable here whose tool name is not a real mise registry entry.

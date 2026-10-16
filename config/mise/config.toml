@@ -75,11 +75,6 @@ herdr = "latest"
 # redeploy swapping them mid-session.
 claude = "latest"
 codex = "latest"
-# command-code, a third agent CLI. It has no mise registry entry, so it comes
-# through mise's npm backend, the same route as turbo and skills. Do not install
-# it with `npm i -g`: that lands outside the shims path, so `ssh devaloy '<cmd>'`
-# would not see it until the next link-shims run.
-"npm:command-code" = "latest"
 # The skills.sh CLI, which installs the agent skills. It is a tool like any
 # other here, so it lands in the home volume and survives a redeploy.
 "npm:skills" = "latest"

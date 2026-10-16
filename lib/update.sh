@@ -173,6 +173,19 @@ do_update() {
   # installed, so it would never notice a skill you authored yesterday.
   /usr/local/bin/bootstrap-toolchain.sh --force
 
+  # `mise upgrade` installs the new version beside the old one and leaves the
+  # old directory on the home volume forever. Prune drops every version no
+  # tracked config asks for, which is the only thing reclaiming that disk. It
+  # also drops a tool deleted from config.toml, and the reshim drops its shim.
+  # Non-fatal: a failed prune costs disk, not a working toolchain.
+  #
+  # Before link-shims, so the mirror sees the pruned shim set and removes the
+  # link of a tool that is gone.
+  if ! "${HOME}/.local/bin/mise" prune --yes; then
+    warn "update: mise prune failed, so old tool versions still hold disk."
+  fi
+  "${HOME}/.local/bin/mise" reshim || warn "update: mise reshim failed."
+
   # Refresh the /usr/local/bin mirror so anything newly installed (including
   # `npm i -g` tools) resolves for non-interactive sessions too — scp, rsync,
   # git-over-ssh and `ssh devaloy '<cmd>'`. This also picks up Claude Code and
@@ -182,7 +195,7 @@ do_update() {
 
   # An upgrade of gh breaks `git push` over HTTPS unless this runs. `gh auth
   # setup-git` records the helper as the absolute path of the gh binary it ran
-  # as, which is the versioned mise install directory — and `mise prune` below
+  # as, which is the versioned mise install directory — and `mise prune` above
   # deletes exactly that directory once the new version lands. git then reports
   # "gh: not found" and falls back to asking for a username, which an
   # unattended agent cannot answer.
@@ -202,14 +215,6 @@ do_update() {
     done'; then
     warn "update: could not repoint gh's git credential helper — 'git push'"
     warn "update: over HTTPS may now ask for a username. Run 'gh auth setup-git'."
-  fi
-
-  # `mise upgrade` installs the new version beside the old one and leaves the
-  # old directory on the home volume forever. Prune drops every version no
-  # tracked config asks for, which is the only thing reclaiming that disk.
-  # Non-fatal: a failed prune costs disk, not a working toolchain.
-  if ! "${HOME}/.local/bin/mise" prune --yes; then
-    warn "update: mise prune failed, so old tool versions still hold disk."
   fi
 
   echo "devaloy: toolchain updated."

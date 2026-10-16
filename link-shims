@@ -46,6 +46,21 @@ link_one() {
   count=$((count + 1))
 }
 
+# Drop the links whose tool is gone. A tool deleted from config/mise/config.toml
+# loses its shim at the next `mise prune`, and its link here would dangle on PATH
+# for good. Only links into the two source directories are touched, so a
+# dangling link someone else made stays theirs to clean up.
+removed=0
+for link in /usr/local/bin/*; do
+  [ -L "${link}" ] && [ ! -e "${link}" ] || continue
+  case "$(readlink "${link}")" in
+    "${SHIM_DIR}"/* | "${DEV_HOME}/.local/bin/"*)
+      rm -f "${link}"
+      removed=$((removed + 1))
+      ;;
+  esac
+done
+
 if [ -d "${SHIM_DIR}" ]; then
   for shim in "${SHIM_DIR}"/*; do
     [ -x "${shim}" ] || continue
@@ -61,4 +76,4 @@ for name in ${EXTRA_BINS}; do
   link_one "${bin}"
 done
 
-echo "link-shims: linked ${count} tool(s) into /usr/local/bin."
+echo "link-shims: linked ${count} tool(s) into /usr/local/bin, removed ${removed} stale link(s)."
