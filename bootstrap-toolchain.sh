@@ -7,7 +7,7 @@
 # that config into ~/.config/mise and runs `mise install`; adding or dropping a
 # tool is an edit to the TOML and nothing here. What is left below is the work
 # a declaration cannot do: the optional keys, the install gate, agent skills,
-# the LazyVim seed, the Chromium download, the herdr integrations.
+# the LazyVim seed, the Chromium download.
 #
 # Usage: bootstrap-toolchain.sh [--force]
 #   no args   install only if the home volume is behind the declared toolset
@@ -116,7 +116,7 @@ else
   SEED=1
 fi
 
-# The two pin variables from compose, applied to the staged copy rather than
+# The pin variable from compose, applied to the staged copy rather than
 # left in the environment. mise does read MISE_<TOOL>_VERSION as an override,
 # but only in a process that HAS it — the boot path would install one version
 # and every later shell would read another out of the config. Writing the pin
@@ -130,9 +130,9 @@ fi
 # "add tool <TOOL> at this version", so a MISE_PASEO_VERSION declared a tool
 # literally named `paseo`. There is no `paseo` in mise's registry — the package
 # is npm:@getpaseo/cli — so every mise call warned and exited 1, which under
-# `set -e` killed this script before the marker, the skills and the herdr
-# integrations. `node` and `herdr` are safe from that trap only because both ARE
-# registry entries. To hold Paseo, edit the pin in optional/paseo.toml.
+# `set -e` killed this script before the marker and the skills. `node` is safe
+# from that trap only because it IS a registry entry. To hold Paseo, edit the
+# pin in optional/paseo.toml.
 pin_tool() {
   local tool="$1" version="$2"
   [ -n "${version}" ] || return 0
@@ -144,7 +144,6 @@ pin_tool() {
   echo "pinned ${tool} to ${version} from the environment"
 }
 pin_tool node "${MISE_NODE_VERSION:-}"
-pin_tool herdr "${MISE_HERDR_VERSION:-}"
 
 # A clone pulled before a fragment was added does not have it, while the image
 # that turned the key on does. Fall back to the image snapshot for that one
@@ -264,37 +263,15 @@ export PATH="${HOME}/.local/share/mise/shims:${PATH}"
 echo "installing agent skills from mimukit/skills"
 skills add mimukit/skills --global --skill '*' -a claude-code -a codex -y
 
-# --- the CodeRabbit CLI ------------------------------------------------------
-# `coderabbit review` runs an AI code review over the working tree from the
-# terminal, and `--prompt-only` gives an agent on this box a findings list to
-# act on. It is not a mise tool: there is no registry entry and no npm package,
-# so it comes from CodeRabbit's own install script, which drops the binary and
-# its `cr` alias into ~/.local/bin — the home volume, so it survives a redeploy.
-#
-# CI=1 is what keeps this safe to run unattended. Without it the installer ends
-# with an interactive login prompt, and on a headless box that prompt is a boot
-# that never finishes. Authentication happens elsewhere: entrypoint.sh stores
-# CODERABBIT_API_KEY with `cr auth login --api-key` once the binary is on PATH.
-# A browser login is the only other route, and there is no browser here.
-#
-# The installer appends a PATH line to a shell profile only when ~/.local/bin is
-# missing from one, and entrypoint.sh has already put it there, so on this box it
-# writes nothing (verified: no CodeRabbit line in ~/.zshrc after a run).
-#
-# Pinned by CODERABBIT_VERSION when set; empty means latest. config/mise/config.toml
-# carries the declaration that moves the install marker — see the comment there.
-#
-# Non-fatal, like the herdr block below. A box with no reviewer CLI is still a
-# working box, and an outage at CodeRabbit's CDN must not cost the volume its
-# marker and re-run the whole toolset install on the next boot.
-echo "installing the CodeRabbit CLI"
-if CI=1 CODERABBIT_VERSION="${CODERABBIT_VERSION:-}" \
-  sh -c 'curl -fsSL https://cli.coderabbit.ai/install.sh | sh' >/dev/null 2>&1; then
-  echo "coderabbit installed at ${HOME}/.local/bin/coderabbit"
-else
-  echo "WARNING: the CodeRabbit CLI install failed. Re-run devaloy-update, or" >&2
-  echo "WARNING: run the installer by hand. Nothing else is affected." >&2
-fi
+# --- retired tools -----------------------------------------------------------
+# The CodeRabbit CLI and herdr are gone from the toolset. herdr was a mise tool,
+# so `devaloy prune --apply` reclaims its payload. These are the files mise does
+# not own: the CodeRabbit binary, its alias and its stored credential, and the
+# agent-state hook scripts herdr wrote. link-shims drops the dangling links in
+# /usr/local/bin on its next run. Safe to delete once every box has run it.
+rm -f "${HOME}/.local/bin/coderabbit" "${HOME}/.local/bin/cr" \
+  "${HOME}/.claude/hooks/herdr-agent-state.sh" "${HOME}/.codex/herdr-agent-state.sh"
+rm -rf "${HOME}/.coderabbit"
 
 # --- LazyVim ----------------------------------------------------------------
 # The LazyVim config in config/nvim/, copied into the home volume. It is a
@@ -313,7 +290,7 @@ fi
 # (plus the ~/.local/share/nvim, ~/.local/state/nvim and ~/.cache/nvim state
 # directories) and run devaloy-update.
 #
-# Non-fatal, like the herdr block below and unlike the skills install. A box
+# Non-fatal, unlike the skills install. A box
 # with no editor config still has vim from the apt list, and it is not worth
 # costing the volume its revision marker.
 NVIM_CONFIG_SRC="/opt/devaloy/config/nvim"
@@ -381,31 +358,6 @@ if [ "${WITH_BROWSER}" = "true" ]; then
   echo "installing the Playwright Chromium build"
   playwright-cli install-browser chromium
 fi
-
-# --- herdr agent-state integrations -----------------------------------------
-# What makes a herdr pane show working/idle instead of nothing. herdr installs
-# and versions these scripts itself (`herdr integration status` reports the
-# version per agent), so they are NOT vendored into config/ — a copy in this
-# repo would freeze one version and need re-copying after every herdr upgrade.
-# Running it here means a herdr upgrade re-installs the matching integration on
-# the next devaloy-update, with nothing to maintain.
-#
-# The scripts land in ~/.claude/hooks/ and ~/.codex/ inside the home volume; the
-# SessionStart entries that *call* them are ours, in config/claude/settings.json
-# and config/codex/hooks.json, because this repo overwrites both files on every
-# boot and would otherwise drop whatever herdr wired up.
-#
-# Non-fatal, unlike the skills install: a missing pane indicator is cosmetic,
-# and it is not worth costing the volume its revision marker.
-for _target in claude codex; do
-  if herdr integration install "${_target}" >/dev/null 2>&1; then
-    echo "herdr integration installed for ${_target}"
-  else
-    echo "WARNING: herdr integration install ${_target} failed — panes will not" >&2
-    echo "WARNING: show agent state. Re-run it by hand; nothing else is affected." >&2
-  fi
-done
-unset _target
 
 # Written last, and only on success: a bootstrap that died halfway through must
 # leave the volume behind the declared toolset so the next boot retries it.

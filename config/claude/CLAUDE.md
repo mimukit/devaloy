@@ -95,7 +95,7 @@ If that prints nothing, the box was built without `WITH_ORCA=true` and `orca-cli
 
 ## The toolchain
 
-Node, pnpm, gh, turbo and herdr come from `mise` and resolve through shims in `~/.local/share/mise/shims`. To add or upgrade one, edit `bootstrap-toolchain.sh` in the devaloy repo and run `devaloy update` — do not install a second copy with `apt` or a raw `curl | sh`.
+Node, pnpm, gh and turbo come from `mise` and resolve through shims in `~/.local/share/mise/shims`. To add or upgrade one, edit `bootstrap-toolchain.sh` in the devaloy repo and run `devaloy update` — do not install a second copy with `apt` or a raw `curl | sh`.
 
 After any `npm i -g`, run `devaloy update` so the new binary is visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh).
 

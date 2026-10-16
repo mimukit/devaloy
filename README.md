@@ -39,10 +39,8 @@ ground in shorter, task-shaped pages:
   Tailscale SSH spawns the shell in whichever container runs the daemon, so a
   sidecar sharing only the network namespace would log you into the sidecar
   ([tailscale/tailscale#5215](https://github.com/tailscale/tailscale/issues/5215)).
-- [herdr](https://herdr.dev/) gives you a persistent, reattachable terminal
-  session across devices — start it once, reattach from anywhere.
-- `mise` installs and pins the rest of the toolchain (node, pnpm, gh, turbo,
-  herdr) into the persistent home volume.
+- `tmux` gives you a persistent, reattachable terminal session across devices. Start it once, reattach from anywhere.
+- `mise` installs and pins the rest of the toolchain (node, pnpm, gh, turbo) into the persistent home volume.
 - `zsh` is the login shell, configured from [`config/zsh/zshrc`](config/zsh/zshrc)
   in this repo rather than from something you set up by hand on the box.
 
@@ -66,20 +64,13 @@ From the image, available the moment you can log in:
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `lazygit`, `neovim` (seeded with the LazyVim config in
 `config/nvim/`, and what `v` and `$EDITOR` point at — see
-[The editor config](docs/wiki/reference.md#the-editor-config)), `herdr`,
+[The editor config](docs/wiki/reference.md#the-editor-config)),
 `infisical` (see [(Optional) Infisical secrets](#optional-infisical-secrets)),
 plus
 [Claude Code](https://claude.com/claude-code)
 (`claude`) and [Codex](https://github.com/openai/codex) (`codex`) — and
 [`skills`](https://www.skills.sh), which then installs the agent skills both
 CLIs share. See [Agent skills](#agent-skills).
-
-One tool on the box does not come from `mise`. The
-[CodeRabbit CLI](https://docs.coderabbit.ai/cli/) (`coderabbit`, aliased `cr`)
-has no registry entry, so the boot bootstrap runs CodeRabbit's own install
-script; the binary lands in `~/.local/bin` in the home volume like everything
-else. It needs `CODERABBIT_API_KEY` in `.env` before it will review anything —
-see [(Optional) CodeRabbit reviews](#optional-coderabbit-reviews).
 
 The agent CLIs come from `mise` rather than their own installers because
 `mise`'s registry fetches the same upstream artifacts — Claude Code's binary
@@ -321,7 +312,7 @@ If MagicDNS is off, use the node's `100.x.y.z` address instead of `devaloy`.
 Then start (or reattach) your session:
 
 ```sh
-herdr
+tmux new -A -s main
 ```
 
 Detach and reconnect from a different device — the session picks up where you
@@ -362,42 +353,6 @@ Redeploy, then subscribe to that topic in the ntfy app. Off by default; metadata
 only, never prompt or code. Full details — security model, quota, tuning, and the
 Android-16 caveat — are in
 [docs/wiki/push-notifications.md](docs/wiki/push-notifications.md).
-
-## (Optional) CodeRabbit reviews
-
-The [CodeRabbit CLI](https://docs.coderabbit.ai/cli/) (`coderabbit`, aliased
-`cr`) reviews the working tree from the terminal. It is installed on every box,
-but it does nothing until it has a key:
-
-```sh
-CODERABBIT_API_KEY=cr-xxxxxxxxxxxxxxxx
-```
-
-Generate the key in the CodeRabbit web app under Organization Settings → API
-Keys, put it in `.env`, and redeploy. The entrypoint stores it with
-`cr auth login --api-key`, which writes `~/.coderabbit/auth.json`, and also
-writes the variable to `~/.devaloy_secrets` for a caller that wants to pass
-`--api-key "$CODERABBIT_API_KEY"` by hand. **The home volume holds a live
-credential**; clearing the variable plus a redeploy deletes `auth.json` and is
-what revokes it.
-
-The key is the only route that works here. `cr auth login` with no key opens a
-browser and waits on a localhost callback, and this box has neither. The CLI
-does *not* read `CODERABBIT_API_KEY` at review time — the stored credential is
-what an unattended `cr review` reads. On the EU region, log in by hand once with
-`cr auth login --region eu --api-key "$CODERABBIT_API_KEY"`.
-
-```sh
-cd ~/projects/some-repo
-cr review               # review the changes against the base branch
-cr review --uncommitted # review staged and unstaged edits only
-cr review --agent       # structured JSON, to hand to an agent on the box
-```
-
-The CLI comes from CodeRabbit's own install script rather than `mise`, which has
-no registry entry for it, and lands in `~/.local/bin` in the home volume. Pin it
-with `CODERABBIT_VERSION` in `.env`; empty means latest. `devaloy update`
-re-runs the installer, so that is also how you upgrade it.
 
 ## (Optional) Infisical secrets
 
@@ -882,8 +837,7 @@ devaloy update
 
 The tool list and its pins live in `config/mise/config.toml`, a plain mise
 global config the bootstrap copies to `~/.config/mise`. Node is pinned to an LTS
-major; `gh`, `pnpm` and `turbo` track latest. To pin herdr too, set
-`MISE_HERDR_VERSION` in your `.env` and re-run `devaloy update`.
+major; `gh`, `pnpm` and `turbo` track latest.
 
 It also reinstalls the agent skills, so it doubles as the publish loop — see
 [Agent skills](#agent-skills). Use `skmi` when you want only that.
@@ -947,15 +901,7 @@ persistent state is `/home/dev`, and the agent instructions in
 `config/claude/CLAUDE.md` and `config/codex/AGENTS.md` spell out the paths to
 leave alone. Push your work; that is the backup.
 
-Two things are deliberately **not** shipped from `config/`, because something
-else already owns them and a copy here would fork on the next upgrade:
-
-- **Skills** — installed from `mimukit/skills` by the skills.sh CLI. See
-  [Agent skills](#agent-skills).
-- **herdr agent-state hooks** — installed by `herdr integration install`, which
-  `bootstrap-toolchain.sh` runs for both agents so a herdr pane shows
-  working/idle. The `SessionStart` entries that call them are ours; the scripts
-  are herdr's. `herdr integration status` shows what is installed.
+Agent skills are deliberately **not** shipped from `config/`. The skills.sh CLI installs them from `mimukit/skills`, and a copy here would fork on the next upgrade. See [Agent skills](#agent-skills).
 
 **The repo wins.** Every file shipped under `config/` is copied over its
 counterpart on each boot, so editing one here and redeploying actually changes
@@ -1059,7 +1005,7 @@ re-cloning your repos and re-running `mise install`.
 ## Non-goals
 
 - No browser-based IDE — SSH only.
-- No mosh — herdr's reattach covers the reconnect case.
+- No mosh — `tmux` reattach covers the reconnect case.
 - No host Docker socket access — devaloy can't control the host's other
   containers.
 - No public HTTPS domain, no Traefik, no Let's Encrypt.

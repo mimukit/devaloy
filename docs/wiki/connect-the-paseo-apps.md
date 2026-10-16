@@ -3,7 +3,7 @@
 This walks through running the [Paseo](https://paseo.sh) daemon on devaloy and
 connecting the phone, desktop, browser and CLI clients to it over your tailnet.
 
-devaloy's default story is a terminal: Tailscale SSH plus `herdr`. The Paseo
+devaloy's default story is a terminal: Tailscale SSH plus `tmux`. The Paseo
 apps are a different shape, the same way the Orca apps are. They talk to a
 **daemon** that owns agent processes, worktrees and terminals, so reaching them
 from a phone means running one on the box.
@@ -47,8 +47,8 @@ image.
 The first boot after you flip the key re-runs the toolchain bootstrap. The
 revision marker records the key alongside the revision, so a volume that already
 finished revision 5 still notices that it now wants `5+paseo`. That re-run is
-quick: the boot path installs and never upgrades, so `claude`, `codex` and
-`herdr` stay exactly where they were.
+quick: the boot path installs and never upgrades, so `claude` and `codex`
+stay exactly where they were.
 
 ## 2. Find the address
 

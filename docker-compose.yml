@@ -216,25 +216,11 @@ services:
       # the 0600 file in the home volume, and clearing it here plus a redeploy
       # is what revokes it.
       - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
-      # Authenticates the CodeRabbit CLI (`coderabbit`, `cr`) with no browser
-      # login — there is no browser here, and `cr auth login` without a key waits
-      # on a localhost callback that never arrives. Generate the key in the
-      # CodeRabbit web app under Organization Settings -> API Keys. The entrypoint
-      # stores it with `cr auth login --api-key` (the CLI does not read this
-      # variable itself) and copies it into the 0600 file in the home volume.
-      # Clearing it here plus a redeploy deletes the stored credential.
-      - CODERABBIT_API_KEY=${CODERABBIT_API_KEY:-}
-      # Pins the CodeRabbit CLI, which bootstrap-toolchain.sh installs from
-      # CodeRabbit's own script rather than mise. Empty means latest. NOT a
-      # MISE_* name on purpose: mise would read that as a tool declaration and
-      # break every mise call, the same trap the pins below carry.
-      - CODERABBIT_VERSION=${CODERABBIT_VERSION:-}
       # The Infisical machine identity, for a repo whose env loader pulls its
       # values from Infisical Cloud. `infisical login` with no arguments opens a
       # browser and waits on a localhost callback — neither exists here — so
-      # universal auth is the only route that works, the same constraint the
-      # CodeRabbit key above carries. The entrypoint copies both into the 0600
-      # file in the home volume and stores nothing else: the caller runs the
+      # universal auth is the only route that works. The entrypoint copies both
+      # into the 0600 file in the home volume and stores nothing else: the caller runs the
       # `infisical login --method=universal-auth` exchange itself. Clearing them
       # here plus a redeploy is what revokes them.
       #
@@ -325,7 +311,6 @@ services:
       # `paseo` is not a registry name (the package is npm:@getpaseo/cli), and
       # the CLI now tracks latest with no variable.
       - MISE_NODE_VERSION=${MISE_NODE_VERSION:-}
-      - MISE_HERDR_VERSION=${MISE_HERDR_VERSION:-}
       # Read by entrypoint.sh to decide whether to start the nested daemon. The
       # build arg at the top of this file is what puts dockerd in the image;
       # this is what turns it on. Both come from the same .env key, so there is

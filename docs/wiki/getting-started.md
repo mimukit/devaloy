@@ -76,7 +76,7 @@ docker compose logs -f devaloy
 ```
 
 The tailnet comes up *before* the toolchain installs, so you will see this line
-while node, pnpm, gh, herdr, Claude Code and Codex are still downloading:
+while node, pnpm, gh, Claude Code and Codex are still downloading:
 
 ```
 [entrypoint] devaloy is up. Connect with: ssh dev@devaloy
@@ -112,17 +112,17 @@ If MagicDNS is off, use the node's `100.x.y.z` address instead of `devaloy`.
 ## 9. Start a session that survives disconnects
 
 ```sh
-herdr
+tmux new -A -s main
 ```
 
-Detach, reconnect from a different device, run `herdr` again — the session picks
+Detach, reconnect from a different device, run the same command again — the session picks
 up where you left off. This is what makes the box usable from a phone.
 
 ## What you have now
 
 A container with `zsh`, `git`, `python3`, `vim`, `tmux`, `bat`, `htop`/`btop`
 and `build-essential` from the image, plus `node`, `pnpm`, `gh`, `turbo`,
-`lazygit`, `herdr`, `claude`, `codex` and `skills` installed into
+`lazygit`, `claude`, `codex` and `skills` installed into
 `/home/dev` by `mise`.
 
 `/home/dev` is a named volume, so clones, shell history and tool credentials

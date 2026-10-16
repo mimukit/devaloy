@@ -61,10 +61,6 @@ neovim = "latest"
 # The tree-sitter CLI, which `:checkhealth lazyvim` reports as an error without.
 # nvim-treesitter needs it to build a grammar that ships no prebuilt parser.
 "tree-sitter" = "latest"
-# herdr tracks latest by design: the boot path is gated behind the toolset
-# marker, so an ordinary redeploy cannot swap it under a live session. Set
-# MISE_HERDR_VERSION in compose to pin it, like MISE_NODE_VERSION above.
-herdr = "latest"
 
 # --- the AI agents ------------------------------------------------------------
 # mise's registry entries fetch the same upstream artifacts the agents' own
@@ -95,14 +91,3 @@ codex = "latest"
 # two variables in docker-compose.yml for why.
 infisical = "latest"
 
-# --- not from mise ------------------------------------------------------------
-# The CodeRabbit CLI (`coderabbit`, alias `cr`) has no mise registry entry and no
-# npm package. It comes from its own install script, in bootstrap-toolchain.sh,
-# and lands in ~/.local/bin inside the home volume.
-#
-# It is named here anyway, and the reason is the install gate above: the marker
-# is a hash of THIS FILE, so a tool the script installs but the config never
-# mentions cannot invalidate it. Bumping CODERABBIT_VERSION in the line below is
-# what makes a redeploy pick up a change to that block.
-#
-# CODERABBIT_VERSION = latest

@@ -29,7 +29,6 @@ except `TS_AUTHKEY` on a first boot.
 |---|---|---|
 | `GITHUB_TOKEN` | empty | Authenticates `gh` and `git push` over HTTPS from first boot. Written to `~/.devaloy_secrets` **and** stored via `gh auth login --with-token`. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | Authenticates Claude Code with no interactive `/login`. Generate with `claude setup-token` on a machine that has a browser. |
-| `CODERABBIT_API_KEY` | empty | Authenticates the CodeRabbit CLI (`coderabbit`, `cr`). Generate it in the CodeRabbit web app under Organization Settings → API Keys. Stored with `cr auth login --api-key` into `~/.coderabbit/auth.json`, and written to `~/.devaloy_secrets` for a hand-passed `--api-key`. The CLI does not read the variable at review time. |
 | `INFISICAL_CLIENT_ID` | empty | Client ID of the Infisical machine identity the `infisical` CLI authenticates with. Written to `~/.devaloy_secrets` only; nothing is stored at boot, because the caller runs the `infisical login --method=universal-auth --plain --silent` exchange itself. Give this box the **`dev`** identity, never `prod` — see below. |
 | `INFISICAL_CLIENT_SECRET` | empty | Client secret of that identity. Same handling as the ID above. |
 | `GIT_AUTHOR_NAME` | empty | `user.name`. Falls back to the `GITHUB_TOKEN` account's name. |
@@ -129,8 +128,6 @@ The server runs with `T3CODE_TELEMETRY_ENABLED=false` and `T3CODE_SERVER_BROWSER
 | Variable | Default | Effect |
 |---|---|---|
 | `MISE_NODE_VERSION` | `24` | Node **major**, not mise's floating `lts` alias — that alias rolls across majors. |
-| `MISE_HERDR_VERSION` | `latest` | Pin herdr. |
-| `CODERABBIT_VERSION` | `latest` | Pin the CodeRabbit CLI, for example `v1.2.3`. Not a `MISE_*` name on purpose — mise reads any `MISE_<TOOL>_VERSION` as a tool declaration, and there is no `coderabbit` in its registry. |
 
 Everything else in the toolchain (`pnpm`, `gh`, `turbo`, `lazygit`, `claude`,
 `codex`, `skills`, `@getpaseo/cli`, `t3`) tracks `latest` and is pinned by editing
@@ -251,7 +248,6 @@ devaloy-specific, from `config/zsh/zshrc`. The file also carries the usual
 | `clc` | `claude --model "claude-opus-5[1m]"` |
 | `clcy` | `claude --allow-dangerously-skip-permissions` |
 | `cx` | `codex` |
-| `h` | `herdr` |
 | `gg` | `lazygit` |
 | `v` | `nvim`, or `vim` when `nvim` is not installed yet |
 | `reload` | `exec zsh` |
@@ -330,9 +326,8 @@ on the box is pointless — the change is gone at the next redeploy.
 | Path | Mode | Contents |
 |---|---|---|
 | `~/.devaloy_env` | default | `PATH`, the mise release-age exclusion, sources `~/.devaloy_secrets`, resets `oom_score_adj`; plus the three `PLAYWRIGHT_MCP_*` exports when `WITH_BROWSER=true` |
-| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CODERABBIT_API_KEY`, `PASEO_PASSWORD`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` — each only written when set. Do not hand-edit it: the entrypoint deletes and rewrites it on every boot, which is what makes clearing a value in `.env` a real revocation. |
+| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `PASEO_PASSWORD`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` — each only written when set. Do not hand-edit it: the entrypoint deletes and rewrites it on every boot, which is what makes clearing a value in `.env` a real revocation. |
 | `~/.config/agent-push.env` | **600** | `PUSH_NTFY_*` — only written when `NTFY_TOPIC` is set |
-| `~/.coderabbit/auth.json` | **600** | The CodeRabbit credential, written by `cr auth login --api-key`. Deleted on every boot and rewritten only when `CODERABBIT_API_KEY` is set. |
 | `~/.zshrc` | default | Copied from `config/zsh/zshrc` |
 | `~/.ssh/devaloy_signing` | **600** | The private signing key. Its `.pub` is derived beside it at the default mode. |
 | `~/.config/git/allowed_signers` | **600** | Local `git log --show-signature` only; GitHub does not read it |

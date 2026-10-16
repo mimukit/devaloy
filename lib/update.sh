@@ -73,8 +73,8 @@ config_src() {
 # belong in /home/dev at all.
 #
 # config/mise is not here either: bootstrap-toolchain.sh seeds it, because the
-# copy is not a plain copy — it applies the MISE_NODE_VERSION and
-# MISE_HERDR_VERSION pins and prunes conf.d to the optional keys that are on.
+# copy is not a plain copy — it applies the MISE_NODE_VERSION pin and prunes
+# conf.d to the optional keys that are on.
 # So `--config-only` leaves ~/.config/mise alone, and a changed tool list needs
 # the toolchain half, which is the half that would install it anyway.
 do_config_seed() {

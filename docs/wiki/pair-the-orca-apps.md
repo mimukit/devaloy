@@ -3,7 +3,7 @@
 This walks through running the [Orca](https://www.onorca.dev/) runtime on
 devaloy and pairing the desktop and mobile apps with it, over your tailnet.
 
-devaloy's default story is a terminal: Tailscale SSH plus `herdr`, which is
+devaloy's default story is a terminal: Tailscale SSH plus `tmux`, which is
 everything a laptop or a phone with an SSH client needs. The Orca apps are a
 different shape — they talk to a **runtime**, not a terminal — so reaching them
 from a phone means running one on the box.

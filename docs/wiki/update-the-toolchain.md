@@ -1,6 +1,6 @@
 # Update the toolchain
 
-Every tool on the box — node, pnpm, gh, turbo, lazygit, herdr, claude, codex, the skills CLI — is installed by `bootstrap-toolchain.sh` through mise, into the home volume. Which command updates it depends on what kind of change you are making, and picking the wrong one is how a tool ends up half-installed: visible in your shell but missing from `ssh devaloy '<cmd>'`, or upgraded on your laptop's copy of the repo but never on the box.
+Every tool on the box — node, pnpm, gh, turbo, lazygit, claude, codex, the skills CLI — is installed by `bootstrap-toolchain.sh` through mise, into the home volume. Which command updates it depends on what kind of change you are making, and picking the wrong one is how a tool ends up half-installed: visible in your shell but missing from `ssh devaloy '<cmd>'`, or upgraded on your laptop's copy of the repo but never on the box.
 
 | You want to | Run |
 |---|---|
@@ -11,7 +11,7 @@ Every tool on the box — node, pnpm, gh, turbo, lazygit, herdr, claude, codex, 
 
 ## Upgrade what tracks `latest`
 
-Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, herdr, claude, codex, skills, and Paseo when `WITH_PASEO=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy update` is what runs it:
+Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, claude, codex, skills, Paseo when `WITH_PASEO=true`, and `playwright-cli` when `WITH_BROWSER=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy update` is what runs it:
 
 ```sh
 devaloy update
@@ -40,7 +40,7 @@ devaloy update    # the same install, plus the full toolchain refresh
 
 The tool list lives in one place: `config/mise/config.toml`, a plain mise global config. `bootstrap-toolchain.sh` copies it to `~/.config/mise/config.toml` and runs `mise install`, so the script itself needs no edit. To change the list:
 
-1. Edit `config/mise/config.toml` in the repo. Add, remove, or re-pin a line under `[tools]`. Use mise's own naming: a registry entry is bare (`lazygit = "latest"`), an npm package is prefixed (`"npm:turbo" = "latest"`). Node's major is also settable as `MISE_NODE_VERSION` in `.env` (default `24`), and herdr's pin as `MISE_HERDR_VERSION`; the bootstrap writes either into the seeded copy.
+1. Edit `config/mise/config.toml` in the repo. Add, remove, or re-pin a line under `[tools]`. Use mise's own naming: a registry entry is bare (`lazygit = "latest"`), an npm package is prefixed (`"npm:turbo" = "latest"`). Node's major is also settable as `MISE_NODE_VERSION` in `.env` (default `24`); the bootstrap writes it into the seeded copy.
 2. Nothing to bump. The bootstrap hashes the config it is about to install, plus the optional fragments the `WITH_*` keys turn on, and compares that against the marker in the home volume. Any edit to the file moves the hash, so an already-provisioned box re-runs on its next boot. The `TOOLSET_REVISION` constant this replaced had to be bumped by hand, and forgetting it left provisioned boxes skipping the bootstrap forever.
 3. Redeploy **with a rebuild**. The config is baked into the image (`COPY config /opt/devaloy/config` in the Dockerfile), so `docker compose up -d` alone still installs the old list:
 

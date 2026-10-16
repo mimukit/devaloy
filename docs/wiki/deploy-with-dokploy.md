@@ -149,7 +149,7 @@ interpolation — so there is nothing to add to the compose file itself, and no
 what they buy you and what they cost (a live credential lands in the home
 volume). Generate the Claude one on your laptop with `claude setup-token` —
 there is no browser on the box to complete `/login` with.
-`TS_HOSTNAME`, `TS_ACCEPT_DNS`, `MISE_NODE_VERSION` and `MISE_HERDR_VERSION`
+`TS_HOSTNAME`, `TS_ACCEPT_DNS` and `MISE_NODE_VERSION`
 are optional overrides and can go here too.
 
 For Docker on the box, add both of these and redeploy **with a rebuild**:
@@ -193,14 +193,14 @@ Then, from any device on your tailnet:
 
 ```sh
 ssh dev@devaloy
-herdr
+tmux new -A -s main
 ```
 
 ## 5. Autodeploy and Watch Paths
 
 The **Autodeploy** toggle sits in that same button row and redeploys on every
 push to `main`. That is convenient and it has a real cost: a redeploy recreates
-the container, killing every running process — including the `herdr` server
+the container, killing every running process — including the `tmux` server
 holding your session. Files in `/home/dev` survive; the session you were mid-way
 through does not.
 

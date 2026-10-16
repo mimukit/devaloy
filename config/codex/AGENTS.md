@@ -134,7 +134,7 @@ start a runtime — that needs an image rebuild you cannot do from inside.
 
 ## The toolchain
 
-Node, pnpm, gh, turbo and herdr come from `mise` and resolve through shims in
+Node, pnpm, gh and turbo come from `mise` and resolve through shims in
 `~/.local/share/mise/shims`. Add or upgrade one by editing
 `bootstrap-toolchain.sh` in the devaloy repo and running `devaloy update` —
 not with `apt` or a raw `curl | sh`. Run `devaloy update` after any `npm i -g`

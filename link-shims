@@ -26,10 +26,8 @@ SHIM_DIR="${DEV_HOME}/.local/share/mise/shims"
 # in ~/.local/bin, put there by its own installer in bootstrap-toolchain.sh, so
 # the loop over SHIM_DIR below cannot see it. Named one by one on purpose:
 # mirroring all of ~/.local/bin would also drag in mise itself and the agent
-# scripts, which resolve fine already.
-#
-# coderabbit and cr are the CodeRabbit CLI and its alias.
-EXTRA_BINS="coderabbit cr"
+# scripts, which resolve fine already. Empty for now.
+EXTRA_BINS=""
 
 count=0
 

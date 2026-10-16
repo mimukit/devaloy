@@ -163,18 +163,9 @@ write_secret CLAUDE_CODE_OAUTH_TOKEN "${CLAUDE_CODE_OAUTH_TOKEN:-}"
 # with no --host. Note the scope — Paseo's password is DAEMON-wide, not web-UI
 # only, so setting this also makes the phone's direct connection ask for it.
 write_secret PASEO_PASSWORD "${PASEO_PASSWORD:-}"
-# Authenticates the CodeRabbit CLI. `cr auth login` with no key opens a browser
-# and waits on a localhost callback, neither of which exists on this box, so the
-# key is the only route that works here. Generate it in the CodeRabbit web app
-# under Organization Settings -> API Keys; it starts `cr-`. The CLI does not read
-# this variable — the block further down stores the key with `cr auth login
-# --api-key`, and what is here is for a caller passing `--api-key` by hand. Same
-# lifecycle as the tokens above: clearing it in .env and redeploying revokes it.
-write_secret CODERABBIT_API_KEY "${CODERABBIT_API_KEY:-}"
 # The Infisical machine identity. `infisical login` with no arguments opens a
 # browser and waits on a localhost callback, neither of which exists here, so
-# universal auth is the only route — the same constraint as the CodeRabbit key
-# above. Nothing is stored at boot, unlike that key: the caller reads these two
+# universal auth is the only route. Nothing is stored at boot: the caller reads these two
 # and runs `infisical login --method=universal-auth --client-id ... --plain
 # --silent` itself, which is why this file is the whole wiring. Same lifecycle
 # as the tokens above: clearing them in .env and redeploying revokes them.
@@ -461,8 +452,8 @@ fi
 # declaration, so forwarding one for a tool it does not know makes every mise
 # call in the child fail. That is what a MISE_PASEO_VERSION did here: Paseo
 # ships as npm:@getpaseo/cli and there is no `paseo` in the registry, so the
-# bootstrap died at `mise use` and never wrote its marker. `node` and `herdr`
-# are registry entries, which is why those two are safe. Paseo now tracks latest
+# bootstrap died at `mise use` and never wrote its marker. `node` is a
+# registry entry, which is why it is safe. Paseo now tracks latest
 # with no variable at all — see the comment in bootstrap-toolchain.sh.
 # WITH_BROWSER is the one key here that is ALSO a build argument. The bootstrap
 # below installs the CLI and the browser into the home volume on this key alone,
@@ -491,11 +482,9 @@ chmod 644 /opt/devaloy/runtime-flags
 
 log "Checking the mise toolchain"
 if as_dev "MISE_NODE_VERSION='${MISE_NODE_VERSION:-}' \
-    MISE_HERDR_VERSION='${MISE_HERDR_VERSION:-}' \
     WITH_PASEO='${WITH_PASEO:-false}' \
     WITH_BROWSER='${WITH_BROWSER:-false}' \
     WITH_T3CODE='${WITH_T3CODE:-false}' \
-    CODERABBIT_VERSION='${CODERABBIT_VERSION:-}' \
     /usr/local/bin/bootstrap-toolchain.sh"; then
   log "Toolchain ready"
 else
@@ -524,32 +513,6 @@ fi
 # Make the toolchain resolvable from sessions that never source .bashrc.
 DEV_HOME="${DEV_HOME}" /usr/local/bin/link-shims || \
   log "WARNING: link-shims failed — non-interactive commands may not find the toolchain."
-
-# --- the CodeRabbit CLI via CODERABBIT_API_KEY ---
-# Run after link-shims, which is what mirrors `coderabbit` into /usr/local/bin.
-#
-# The CLI does NOT read CODERABBIT_API_KEY at review time — checked against the
-# binary, which knows no such variable. Only its installer does. So the key has
-# to be *stored*, and `auth login --api-key` is what stores it, in
-# ~/.coderabbit/auth.json inside the home volume. This is the same shape as the
-# gh block below: the variable in ~/.devaloy_secrets is for a caller that wants
-# to pass `--api-key "$CODERABBIT_API_KEY"` by hand; the stored credential is
-# what an unattended `cr review` actually reads.
-#
-# auth.json is deleted first and unconditionally, ABOVE the key check, so
-# clearing the variable in .env and redeploying really does revoke it. Nothing
-# is lost by that on this box: the only other way to fill the file is
-# `cr auth login` with a browser, which does not exist here.
-rm -f "${DEV_HOME}/.coderabbit/auth.json"
-if [ -n "${CODERABBIT_API_KEY:-}" ] && [ -x /usr/local/bin/coderabbit ]; then
-  if as_dev '. "$HOME/.devaloy_secrets" && \
-      coderabbit auth login --api-key "${CODERABBIT_API_KEY}"' >/dev/null 2>&1; then
-    log "CodeRabbit CLI authenticated (~/.coderabbit/auth.json written)"
-  else
-    log "WARNING: coderabbit auth login failed — check CODERABBIT_API_KEY."
-    log "WARNING: 'cr review' will ask for a browser login it cannot open."
-  fi
-fi
 
 # --- gh and git over HTTPS via GITHUB_TOKEN ---
 # Run after link-shims because that is what puts gh on root's PATH.

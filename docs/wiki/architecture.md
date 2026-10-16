@@ -104,7 +104,7 @@ to a remote is the backup, and unpushed work on the box is work that can be lost
 ## Where the toolchain comes from
 
 The image ships the OS-level tools. Everything a dev session actually reaches
-for — `node`, `pnpm`, `gh`, `turbo`, `lazygit`, `herdr`, `claude`, `codex`,
+for — `node`, `pnpm`, `gh`, `turbo`, `lazygit`, `claude`, `codex`,
 `skills` — comes from **mise**, into the home volume, on first boot.
 
 That placement is the point: an upgrade persists across a redeploy instead of
@@ -184,11 +184,7 @@ destroying the other.
 only the individual keys it owns (`user.name`, `user.email`, and the signing
 keys), so aliases and diff tools you add survive.
 
-Two things are deliberately not shipped from `config/`, because something else
-already owns them and a vendored copy would fork at the next upgrade: **agent
-skills**, installed from `mimukit/skills` by the skills.sh CLI, and **herdr's
-agent-state hooks**, installed by `herdr integration install`. The `SessionStart`
-entries that *call* those hooks are in `config/`; the scripts themselves are not.
+Agent skills are deliberately not shipped from `config/`. The skills.sh CLI installs them from `mimukit/skills`, and a vendored copy would fork at the next upgrade.
 
 ## Security posture
 
