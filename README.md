@@ -842,11 +842,7 @@ other shell child, so under a memory ceiling it dies before tailscaled does.
   Screenshots default to `.playwright-cli/` under the current directory, which
   is a repo in the home volume, so `PLAYWRIGHT_MCP_OUTPUT_DIR=/tmp/playwright-cli`
   moves them out.
-- **The CLI is pinned**, not tracking latest like Paseo. `@playwright/cli`
-  0.1.19 was published without npm provenance, and `mise` refuses that as a
-  trust downgrade from the releases before it. The pin in
-  `bootstrap-toolchain.sh` is the newest release with provenance; move it by
-  hand when a later one carries it again.
+- **The CLI tracks latest**, like Paseo, so `devaloy update` upgrades it. `mise` refuses an `@playwright/cli` release without npm provenance as a trust downgrade, which is what happened to 0.1.19. If a later release repeats that, `devaloy update` fails at `mise upgrade`; pin the last good release in `config/mise/optional/browser.toml` until upstream fixes it.
 - **Turning it back off needs a rebuild**, like `WITH_ORCA`. The CLI and the
   browser stay in the home volume; only the exports and the warning go away.
 

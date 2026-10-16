@@ -321,11 +321,7 @@ guide answers with `--ipc=host`, which would share the host's IPC namespace,
 and a 512 MB tmpfs answers it without that. An unwritten tmpfs is free, so the
 default applies to every box.
 
-The CLI is pinned rather than tracking latest, and not by choice: `mise`'s npm
-backend refuses `@playwright/cli` 0.1.19 as a trust downgrade, because every
-release before it carried npm provenance and that one does not. The pin is the
-newest release that does. Waiving the check would waive it for every release
-after, so the pin moves by hand instead.
+The CLI tracks latest. `mise`'s npm backend refuses an `@playwright/cli` release that lacks npm provenance as a trust downgrade, and 0.1.19 was one, so the CLI sat pinned at 0.1.18 until 0.1.20 restored provenance. If a later release drops it again, pin the last good one in `config/mise/optional/browser.toml` rather than waiving the check, which would waive it for every release after.
 
 ## See also
 
