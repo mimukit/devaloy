@@ -109,10 +109,10 @@ All T3 Code state is in `~/.t3` on the `home` volume. A redeploy keeps it, and p
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| The app says the server is on a different version | The store app updated and the box did not | Run `devaloy update` on the box. Do not run `t3 update`. |
+| The app says the server is on a different version | The store app updated and the box did not | Redeploy the container, or run `devaloy update` on the box. Each boot upgrades `t3` before it starts the server. `devaloy update` upgrades it and then restarts a server left on the older version. Do not run `t3 update`. |
 | The log says `WITH_T3CODE is true but t3 is not installed` | The toolchain bootstrap did not finish | Run `devaloy update`, then restart the container. |
 | The log says `no tailnet IPv4 — not starting the T3 Code server` | Tailscale did not come up | Fix the Tailscale error above it in the log, then restart the container. |
-| A turn stopped after `devaloy ram --t3 --apply` or a restart | A server restart cancels running turns | Threads and history are kept. Turn on "continue threads after a server update" in the app to resume interrupted turns. |
+| A turn stopped after `devaloy update`, `devaloy ram --t3 --apply` or a restart | A server restart cancels running turns | Threads and history are kept. Turn on "continue threads after a server update" in the app to resume interrupted turns. |
 | A browser tab fails to open | The image has no Chrome libraries | Work without browser tabs; the server keeps running. A `WITH_BROWSER=true` build adds the Chromium libraries Playwright needs, which may also cover T3 Code's browser. This is not tested. |
 | The phone cannot connect | Tailscale is off on the phone, or the tailnet policy blocks port 3773 | Connect Tailscale on the phone. Check the policy. |
 | `ssh devaloy t3 pair` finds no server | The server is down | Run `devaloy doctor`. Check the `t3 server` row. |

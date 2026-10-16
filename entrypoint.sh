@@ -503,6 +503,24 @@ else
   log "WARNING: once you are in, re-run it with: devaloy-update"
 fi
 
+# --- T3 Code upgrades on every boot ---
+# The one exception to the install-only boot path above. The T3 Code apps
+# update themselves from the stores and refuse a server on another protocol
+# version, so a box that keeps its t3 until someone runs `devaloy update` goes
+# dark on the phone a few days after each release. The server starts fresh at
+# boot anyway, further down, so there is no live session to swap it under.
+#
+# npm:t3 only. Every other tool keeps the install-only rule, and `devaloy
+# update` stays the way to move them. Non-fatal: an offline boot keeps the
+# version already on the volume.
+if [ "${WITH_T3CODE:-false}" = "true" ]; then
+  if as_dev "MISE_MINIMUM_RELEASE_AGE=0 '${DEV_HOME}/.local/bin/mise' upgrade npm:t3"; then
+    log "T3 Code: $(as_dev "'${DEV_HOME}/.local/share/mise/shims/t3' --version" 2>/dev/null || echo 't3') is current"
+  else
+    log "WARNING: could not upgrade t3, so the server starts on the version it has."
+  fi
+fi
+
 # Make the toolchain resolvable from sessions that never source .bashrc.
 DEV_HOME="${DEV_HOME}" /usr/local/bin/link-shims || \
   log "WARNING: link-shims failed — non-interactive commands may not find the toolchain."

@@ -11,11 +11,13 @@
 # turn it on. Nothing enters the image. It needs Node ^22.16, ^23.11 or
 # >=24.10, which the `node = "24"` line in config.toml satisfies.
 #
-# It tracks latest, refreshed only by `devaloy update`. The T3 Code apps refuse
-# a server on a different protocol version, and the store apps update on their
-# own, so a pin here falls behind them within a week. When an app reports a
-# version mismatch, run `devaloy update`. Do not run `t3 update` on the box: it
-# moves the version behind mise's back.
+# It tracks latest, and unlike every other tool it upgrades on each boot too:
+# entrypoint.sh runs `mise upgrade npm:t3` before it starts the server. The T3
+# Code apps refuse a server on a different protocol version, and the store apps
+# update on their own, so a pin here falls behind them within a week. Between
+# two boots, run `devaloy update`, which also restarts a server left on the old
+# version. Do not run `t3 update` on the box: it moves the version behind
+# mise's back.
 #
 # It has NO pin variable, for the same name-collision reason as Paseo: a
 # MISE_T3_VERSION would declare a tool named `t3`, which is not in mise's
