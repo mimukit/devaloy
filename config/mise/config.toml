@@ -91,3 +91,16 @@ codex = "latest"
 # two variables in docker-compose.yml for why.
 infisical = "latest"
 
+# --- cloudflare --------------------------------------------------------------
+# Wrangler, the Workers CLI, and `cf`, Cloudflare's newer CLI for the whole
+# platform (it also answers to `cloudflare`). Both are plain npm packages that
+# need node >= 22, which the pin above already meets.
+#
+# `cf` has only shipped 1.0.0 betas so far, and its npm `latest` tag points at
+# one, so `latest` here means a beta until 1.0.0 lands.
+#
+# `wrangler login` opens a browser and waits on a localhost callback. This box
+# has neither, so authenticate with an API token in CLOUDFLARE_API_TOKEN (and
+# CLOUDFLARE_ACCOUNT_ID when the token can see more than one account).
+"npm:wrangler" = "latest"
+"npm:cf" = "latest"
