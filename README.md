@@ -66,7 +66,7 @@ From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `config/nvim/`, and what `v` and `$EDITOR` point at — see
 [The editor config](docs/wiki/reference.md#the-editor-config)),
 `infisical` (see [(Optional) Infisical secrets](#optional-infisical-secrets)),
-the Cloudflare CLIs `wrangler` and `cf`,
+the Cloudflare CLIs `wrangler` and `cf` (see [(Optional) Cloudflare API token](#optional-cloudflare-api-token)),
 plus
 [Claude Code](https://claude.com/claude-code)
 (`claude`) and [Codex](https://github.com/openai/codex) (`codex`) — and
@@ -395,6 +395,19 @@ Both variables are optional and inert while empty; the entrypoint skips a secret
 with no value. Clearing them plus a redeploy revokes the box's access, since
 `~/.devaloy_secrets` is deleted and rewritten on every boot. Do not hand-edit
 that file — the next boot overwrites it.
+
+## (Optional) Cloudflare API token
+
+`wrangler` and `cf` are on every box. Their browser login waits on a `localhost` callback that a laptop browser cannot reach, and an agent running overnight needs a credential that does not expire under it. Both CLIs read one user API token from `.env`:
+
+```sh
+# in .env
+CLOUDFLARE_API_TOKEN=
+```
+
+Leave `CLOUDFLARE_ACCOUNT_ID` unset. Each project names its account in the `account_id` of its wrangler config, and the variable would override that and send every project to one account.
+
+Create a **user** token from the **Edit Cloudflare Workers** template, not an account API token, which covers one account only. This token can deploy production sites, and agents here run unattended in bypass permission mode, so give it only the accounts, zones and permissions the projects need. The steps, the permission tables, the check and the revocation are in [docs/wiki/set-up-the-cloudflare-token.md](docs/wiki/set-up-the-cloudflare-token.md).
 
 ## (Optional) the Orca apps
 

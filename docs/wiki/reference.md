@@ -31,6 +31,7 @@ except `TS_AUTHKEY` on a first boot.
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | Authenticates Claude Code with no interactive `/login`. Generate with `claude setup-token` on a machine that has a browser. |
 | `INFISICAL_CLIENT_ID` | empty | Client ID of the Infisical machine identity the `infisical` CLI authenticates with. Written to `~/.devaloy_secrets` only; nothing is stored at boot, because the caller runs the `infisical login --method=universal-auth --plain --silent` exchange itself. Give this box the **`dev`** identity, never `prod` — see below. |
 | `INFISICAL_CLIENT_SECRET` | empty | Client secret of that identity. Same handling as the ID above. |
+| `CLOUDFLARE_API_TOKEN` | empty | Cloudflare **user** API token that `wrangler` and `cf` use in place of a browser login. Written to `~/.devaloy_secrets` only. There is no `CLOUDFLARE_ACCOUNT_ID`: each project names its account in its wrangler config, and the variable would override that. Permissions and setup are in [Set up the Cloudflare API token](set-up-the-cloudflare-token.md). |
 | `GIT_AUTHOR_NAME` | empty | `user.name`. Falls back to the `GITHUB_TOKEN` account's name. |
 | `GIT_AUTHOR_EMAIL` | empty | `user.email`. Falls back to that account's `ID+login@users.noreply.github.com` address. |
 | `GIT_SIGNING_SSH_KEY` | empty | Base64 of a **passphrase-less OpenSSH private key**. Enables SSH commit and tag signing. |
@@ -326,7 +327,7 @@ on the box is pointless — the change is gone at the next redeploy.
 | Path | Mode | Contents |
 |---|---|---|
 | `~/.devaloy_env` | default | `PATH`, the mise release-age exclusion, sources `~/.devaloy_secrets`, resets `oom_score_adj`; plus the three `PLAYWRIGHT_MCP_*` exports when `WITH_BROWSER=true` |
-| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `PASEO_PASSWORD`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` — each only written when set. Do not hand-edit it: the entrypoint deletes and rewrites it on every boot, which is what makes clearing a value in `.env` a real revocation. |
+| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `PASEO_PASSWORD`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `CLOUDFLARE_API_TOKEN` — each only written when set. Do not hand-edit it: the entrypoint deletes and rewrites it on every boot, which is what makes clearing a value in `.env` a real revocation. |
 | `~/.config/agent-push.env` | **600** | `PUSH_NTFY_*` — only written when `NTFY_TOPIC` is set |
 | `~/.zshrc` | default | Copied from `config/zsh/zshrc` |
 | `~/.ssh/devaloy_signing` | **600** | The private signing key. Its `.pub` is derived beside it at the default mode. |

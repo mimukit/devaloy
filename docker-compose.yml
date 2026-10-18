@@ -231,6 +231,17 @@ services:
       # a production migration or deploy from a laptop instead.
       - INFISICAL_CLIENT_ID=${INFISICAL_CLIENT_ID:-}
       - INFISICAL_CLIENT_SECRET=${INFISICAL_CLIENT_SECRET:-}
+      # A Cloudflare user API token, for wrangler and cf. `wrangler login`
+      # waits on a localhost callback this box cannot receive, and an agent
+      # run overnight needs a credential that does not expire under it. Both
+      # CLIs read CLOUDFLARE_API_TOKEN and prefer it to an OAuth login.
+      #
+      # There is deliberately no CLOUDFLARE_ACCOUNT_ID. The projects here
+      # deploy to different accounts, and each one names its own in the
+      # account_id of its wrangler config. Both CLIs read that only when the
+      # variable is unset, so a box-wide value would send every deploy to
+      # one account. See docs/wiki/set-up-the-cloudflare-token.md.
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
       # Whitespace-separated repos to clone into ~/projects on each boot, as
       # owner/repo, an https:// URL, or git@host:path. The entrypoint skips a
       # repo already cloned there, so this is safe to re-run and cheap to grow.

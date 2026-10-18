@@ -180,6 +180,10 @@ write_secret PASEO_PASSWORD "${PASEO_PASSWORD:-}"
 # every boot, which is what makes clearing a value in .env a real revocation.
 write_secret INFISICAL_CLIENT_ID "${INFISICAL_CLIENT_ID:-}"
 write_secret INFISICAL_CLIENT_SECRET "${INFISICAL_CLIENT_SECRET:-}"
+# The Cloudflare user API token wrangler and cf read. No CLOUDFLARE_ACCOUNT_ID
+# beside it, on purpose: each project names its account in its wrangler
+# config, and the variable would override that. See docker-compose.yml.
+write_secret CLOUDFLARE_API_TOKEN "${CLOUDFLARE_API_TOKEN:-}"
 
 # --- ntfy push-notification config for hooks ---
 # agent-push reads ~/.config/agent-push.env rather than the shell environment,

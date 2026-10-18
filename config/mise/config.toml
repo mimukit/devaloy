@@ -100,7 +100,9 @@ infisical = "latest"
 # one, so `latest` here means a beta until 1.0.0 lands.
 #
 # `wrangler login` opens a browser and waits on a localhost callback. This box
-# has neither, so authenticate with an API token in CLOUDFLARE_API_TOKEN (and
-# CLOUDFLARE_ACCOUNT_ID when the token can see more than one account).
+# has neither, so both CLIs authenticate with CLOUDFLARE_API_TOKEN, which
+# entrypoint.sh writes to ~/.devaloy_secrets. CLOUDFLARE_ACCOUNT_ID stays unset
+# on purpose: each project names its account in its wrangler config. See
+# docs/wiki/set-up-the-cloudflare-token.md.
 "npm:wrangler" = "latest"
 "npm:cf" = "latest"

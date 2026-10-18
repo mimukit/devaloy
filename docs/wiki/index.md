@@ -32,6 +32,7 @@ it when it stops answering.
   `devaloy update`, `skmi`, or an edit to `bootstrap-toolchain.sh`.
 - [Migrate the box to a new host](migrate-to-a-new-host.md) — re-enroll fresh,
   or move the `home` and `tailscale-state` volumes across.
+- [Set up the Cloudflare API token](set-up-the-cloudflare-token.md) — one user token for `wrangler` and `cf`, the permissions it needs, and why the account comes from each project.
 - [Turn on phone push notifications](push-notifications.md) — one ntfy push per
   agent session when it blocks or finishes.
 - [Pair the Orca apps](pair-the-orca-apps.md) — the optional `WITH_ORCA=true`
