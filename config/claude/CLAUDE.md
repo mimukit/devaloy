@@ -32,7 +32,7 @@ Never hard-wrap Markdown. Write each paragraph and each list item as one continu
 
 ## Where you are
 
-You are running on **devaloy**, a headless remote dev box. It is an `ubuntu:24.04` container reached only over Tailscale SSH — no public IP, no published ports, no browser. Nobody is watching a GUI here, so anything that wants to open a browser window, print a QR code, or wait on a localhost callback will hang rather than fail.
+You are running on **devaloy**, a headless remote dev box. It is an `ubuntu:24.04` container reached only over Tailscale SSH — no public IP, no published ports, no desktop browser. Nobody is watching a GUI here, so anything that wants to open a browser window, print a QR code, or wait on a localhost callback will hang rather than fail.
 
 ## What persists and what does not
 
@@ -83,7 +83,15 @@ When it is there, it is a **real daemon inside this container**, not the host's.
 
 Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from this box's config. `skmi` installs or refreshes them all; `skup` only updates what is already installed, so a newly published skill needs `skmi`.
 
-Some are installed but **cannot work here**, and invoking them wastes a turn: `verifykit` (drives a real browser — there is none) and `orcakit` (needs the Orca desktop app on a Mac).
+Some are installed but **cannot work here**, and invoking them wastes a turn: `orcakit` (needs the Orca desktop app on a Mac).
+
+`verifykit`, and the browser checks in `qakit` and `afkkit`, depend on how this box was built. They drive a headless Chromium through `playwright-cli`, which the box has only when built with `WITH_BROWSER=true`. Check before assuming either way:
+
+```sh
+command -v playwright-cli >/dev/null && ls ~/.cache/ms-playwright | grep -q '^chromium' && echo "driver present"
+```
+
+If that prints nothing, the box has no browser driver. Say so, and leave the page checks to the human.
 
 `orca-cli` depends on how this box was built. It drives an Orca runtime, and this box may or may not have one — check before assuming either way:
 
