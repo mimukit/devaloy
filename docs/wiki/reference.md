@@ -188,7 +188,7 @@ The three exports, only present when the key is on:
 | Export | Value | Why |
 |---|---|---|
 | `PLAYWRIGHT_MCP_BROWSER` | `chromium` | The CLI defaults to Google Chrome, which the image does not carry. |
-| `PLAYWRIGHT_MCP_SANDBOX` | `true` | Playwright launches the bundled Chromium with `--no-sandbox` on Linux unless told otherwise. Measured: 8 Chromium processes carry the flag without this export, 0 with it. |
+| `PLAYWRIGHT_MCP_SANDBOX` | probed: `true` under runc, `false` under sysbox-runc | Playwright launches the bundled Chromium with `--no-sandbox` on Linux unless told otherwise. The sandbox needs a user namespace, so the entrypoint sets `true` only when `unshare -Ur true` passes as `dev`. Under sysbox-runc it fails, and `true` there stops every launch. |
 | `PLAYWRIGHT_MCP_OUTPUT_DIR` | `/tmp/playwright-cli` | A bare `screenshot` would otherwise write into `.playwright-cli/` under the current directory. |
 
 ## Build arguments

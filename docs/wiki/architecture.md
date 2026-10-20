@@ -305,10 +305,13 @@ The three exports exist because `playwright-cli` gets every default wrong for
 this box. It launches Google Chrome unless told `chromium`. On Linux it launches
 the bundled Chromium with `--no-sandbox` unless `PLAYWRIGHT_MCP_SANDBOX=true`;
 measured on the box, 8 Chromium processes carry the flag without the export and
-0 with it, and the capture succeeds either way. The sandbox works for the same
-reason Orca's does: compose sets `seccomp=unconfined` for Codex's bubblewrap,
-which is the user-namespace permission Chromium's sandbox needs (`Seccomp: 0`
-in `/proc/self/status` under runc). And it writes screenshots under the current
+0 with it. Under runc the sandbox works: compose sets `seccomp=unconfined` for
+Codex's bubblewrap, which is the user-namespace permission Chromium's sandbox
+needs (`Seccomp: 0` in `/proc/self/status`). Under sysbox-runc the dev user
+cannot create a user namespace (`unshare -Ur` fails writing `uid_map`), and
+`true` makes every launch fail on "Chromium sandboxing failed!". So the
+entrypoint probes with `unshare -Ur true` as `dev` at boot and exports the
+result. And it writes screenshots under the current
 directory unless `PLAYWRIGHT_MCP_OUTPUT_DIR` says `/tmp/playwright-cli`.
 
 `shm_size` is the one compose change that is not gated on the key. Docker's

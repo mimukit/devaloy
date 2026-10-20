@@ -805,9 +805,12 @@ other shell child, so under a memory ceiling it dies before tailscaled does.
   one corrects what `playwright-cli` would otherwise do here. The CLI launches
   Google Chrome by default, which the image does not carry, so
   `PLAYWRIGHT_MCP_BROWSER=chromium` points it at the bundled build. Playwright
-  turns Chromium's sandbox **off** by default for that build on Linux, so
-  `PLAYWRIGHT_MCP_SANDBOX=true` turns it back on; the sandbox works because the
-  compose file already sets `seccomp=unconfined` for Codex's bubblewrap.
+  turns Chromium's sandbox **off** by default for that build on Linux.
+  `PLAYWRIGHT_MCP_SANDBOX` turns it back on only when the boot probe
+  (`unshare -Ur true` as `dev`) passes. Under runc the probe passes, because the
+  compose file sets `seccomp=unconfined`. Under sysbox-runc it fails, so the
+  value is `false`; with `true` there, every launch dies on "Chromium
+  sandboxing failed!".
   Screenshots default to `.playwright-cli/` under the current directory, which
   is a repo in the home volume, so `PLAYWRIGHT_MCP_OUTPUT_DIR=/tmp/playwright-cli`
   moves them out.

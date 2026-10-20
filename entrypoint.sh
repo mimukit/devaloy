@@ -72,15 +72,20 @@ EOF
 #                                      Google Chrome, which this image does not
 #                                      carry. `chromium` selects the Chrome for
 #                                      Testing build the bootstrap downloaded.
-#   PLAYWRIGHT_MCP_SANDBOX=true        On Linux, for the bundled Chromium,
+#   PLAYWRIGHT_MCP_SANDBOX=probed      On Linux, for the bundled Chromium,
 #                                      Playwright sets chromiumSandbox=false by
 #                                      default and pushes --no-sandbox onto the
-#                                      launch. This keeps Chromium's own sandbox
-#                                      ON. It works because compose already sets
-#                                      seccomp=unconfined for Codex's bubblewrap,
-#                                      the same user-namespace permission the
-#                                      sandbox needs — the same fact the Orca
-#                                      block below relies on.
+#                                      launch. `true` keeps Chromium's own
+#                                      sandbox ON, which needs the dev user to
+#                                      create a user namespace. Under runc that
+#                                      works, because compose sets
+#                                      seccomp=unconfined. Under sysbox-runc it
+#                                      does not (measured: `unshare -Ur` fails
+#                                      writing uid_map), and with `true` every
+#                                      launch dies on "Chromium sandboxing
+#                                      failed!". So the value is whatever an
+#                                      `unshare -Ur true` probe as the dev user
+#                                      says, decided once per boot.
 #   PLAYWRIGHT_MCP_OUTPUT_DIR          A bare `screenshot` writes to
 #                                      .playwright-cli/ under the cwd, which is
 #                                      a repo in the home volume. /tmp is shared
@@ -91,13 +96,22 @@ EOF
 # Nothing here needs the libraries or the browser to be present, so it is
 # written before the toolchain check rather than after it.
 if [ "${WITH_BROWSER:-false}" = "true" ]; then
-  cat >> "${ENV_SNIPPET}" <<'EOF'
+  if as_dev 'unshare -Ur true' >/dev/null 2>&1; then
+    _pw_sandbox=true
+  else
+    _pw_sandbox=false
+    log "browser: no user namespace for ${DEV_USER}, so Chromium runs with --no-sandbox"
+  fi
+  cat >> "${ENV_SNIPPET}" <<EOF
 
 # Browser capture defaults (WITH_BROWSER=true) — see entrypoint.sh for why each.
+# PLAYWRIGHT_MCP_SANDBOX is probed at boot: true only when the dev user can
+# create a user namespace, which Chromium's sandbox needs.
 export PLAYWRIGHT_MCP_BROWSER=chromium
-export PLAYWRIGHT_MCP_SANDBOX=true
+export PLAYWRIGHT_MCP_SANDBOX=${_pw_sandbox}
 export PLAYWRIGHT_MCP_OUTPUT_DIR=/tmp/playwright-cli
 EOF
+  unset _pw_sandbox
 fi
 chown "${DEV_USER}:${DEV_USER}" "${ENV_SNIPPET}"
 
