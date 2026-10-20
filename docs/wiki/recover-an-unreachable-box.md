@@ -193,13 +193,8 @@ backup job and no snapshot on this stack.
 
 - **`Failed to connect to the bus`** in the log — there is no session bus in the
   container. Harmless.
-- **No mention of Orca at all** — silence is correct on a stock build.
-  `WITH_ORCA=false` is the default, so a missing `/usr/bin/orca-ide` is the
-  normal case, not a fault.
 - **`gh auth login` refuses to run** — expected while `GITHUB_TOKEN` is set. The
   environment would outrank a stored credential anyway.
-- **`[autoUpdater] Checking for update`** from Orca — it cannot apply anything;
-  `/opt` is root-owned and the server runs as `dev`.
 
 ## See also
 

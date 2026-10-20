@@ -82,7 +82,7 @@ Off by default. See [Connect the Paseo apps](connect-the-paseo-apps.md).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `WITH_PASEO` | `false` | Installs the `paseo` CLI through mise, writes `~/.paseo/config.json`, and starts the daemon on `<tailnet-ip>:6767`. A **runtime** variable, unlike `WITH_ORCA` — `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the daemon; it uninstalls nothing and stops rewriting the config. |
+| `WITH_PASEO` | `false` | Installs the `paseo` CLI through mise, writes `~/.paseo/config.json`, and starts the daemon on `<tailnet-ip>:6767`. A **runtime** variable, unlike `WITH_DOCKER` — `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the daemon; it uninstalls nothing and stops rewriting the config. |
 | `WITH_PASEO_WEB_UI` | `false` | Sets `features.webUi.enabled`, serving a browser client from the daemon's origin. Static files load without auth. |
 | `PASEO_PASSWORD` | empty | Optional, and **daemon-wide** rather than web-UI only: setting it makes the phone's direct connection ask for it too. Written to `~/.devaloy_secrets` (0600), never to the config file — `daemon.auth.password` takes a bcrypt hash only. Empty with `WITH_PASEO_WEB_UI=true` logs a warning and serves anyway. |
 | `PASEO_PLUGINS` | empty | Plugins to install once the daemon answers. Whitespace-separated; each entry is a git source (`owner/repo:plugins/name`) or a directory on the box, optionally prefixed `id=`. A plugin whose id is already installed is skipped. |
@@ -195,22 +195,21 @@ The three exports, only present when the key is on:
 
 | Argument | Default | Effect |
 |---|---|---|
-| `WITH_ORCA` | `false` | Builds in the `orca serve` runtime. Takes the image from 683 MB to 1.6 GB on arm64. |
 | `WITH_DOCKER` | `false` | Builds in Docker Engine, CLI, Compose and buildx, and adds `dev` to the `docker` group. About +460 MB on arm64 (918 MB to 1.38 GB, measured with Docker 29). Needs `DEVALOY_RUNTIME` or `DEVALOY_PRIVILEGED` set as well, or the daemon will not start. |
 | `WITH_BROWSER` | `false` | Builds in the shared libraries a headless Chromium needs, plus `ffmpeg`. About +430 MB on arm64 (660 MB to 1.09 GB, measured with Docker 29). The browser itself is not in the image: the same key, read at runtime, makes the bootstrap download it into the home volume (982 MB, measured). |
 
-All three are read from `.env` like the variables above, but they are **build
-arguments** — `docker compose up -d` alone will not pick up a change to any of
-them. You need `docker compose up -d --build`. `WITH_BROWSER` is also read at
+Both are read from `.env` like the variables above, but they are **build
+arguments** — `docker compose up -d` alone will not pick up a change to either
+of them. You need `docker compose up -d --build`. `WITH_BROWSER` is also read at
 runtime, and is listed above for that half.
 
 `WITH_PASEO` is the one to keep separate in your head. It looks like a sibling
 and is not: it is an environment variable listed above, because Paseo installs
 into the home volume rather than the image. It needs no `--build`.
 
-Two more are pinned in the `Dockerfile` itself rather than exposed through
-compose: `ORCA_VERSION` (`1.4.164`) and `ZSH_COMPLETIONS_VERSION` (`0.36.0`).
-Changing either means editing the file and rebuilding.
+One more is pinned in the `Dockerfile` itself rather than exposed through
+compose: `ZSH_COMPLETIONS_VERSION` (`0.36.0`). Changing it means editing the
+file and rebuilding.
 
 ## Commands on the box
 
@@ -383,15 +382,13 @@ One more key is rewritten rather than set: `credential.https://<host>.helper`, f
 | Port | Bound where | When |
 |---|---|---|
 | 22 | Tailnet address only, inside the container's network namespace | Always. Not changeable — Tailscale SSH assumes 22. |
-| 6768 | `0.0.0.0` inside the container | Only on a `WITH_ORCA=true` build |
 | 3773 | Tailnet address only | Only with `WITH_T3CODE=true`. The T3 Code server. |
-| whatever a project stack publishes | `0.0.0.0` inside the container | Only on a `WITH_DOCKER=true` build. Reachable at `http://<tailnet-name>:<port>` and, like 6768, from the Docker host. |
+| whatever a project stack publishes | `0.0.0.0` inside the container | Only on a `WITH_DOCKER=true` build. Reachable at `http://<tailnet-name>:<port>` and from the Docker host. |
 
 There is no `ports:` key in `docker-compose.yml`, so nothing is published to the
-Docker host or the internet. The exception worth knowing: `orca serve` binds
-`0.0.0.0` with no bind-address flag, so 6768 is reachable on the container's
-bridge IP from the Docker host — do not attach other containers to devaloy's
-network.
+Docker host or the internet. The exception worth knowing: a port a project
+stack publishes binds `0.0.0.0`, so it is reachable on the container's bridge IP
+from the Docker host — do not attach other containers to devaloy's network.
 
 ## Volumes
 

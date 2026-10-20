@@ -55,10 +55,6 @@ doctor_gated() { # doctor_gated <flag> <label> <probe command...>
   esac
 }
 
-orca_up() {
-  command -v orca-ide >/dev/null 2>&1 && pgrep -f "orca-ide.*serve" >/dev/null 2>&1
-}
-
 browser_up() {
   dpkg -s libnss3 >/dev/null 2>&1
 }
@@ -79,7 +75,6 @@ doctor_collect() {
   doctor_rows=()
 
   doctor_gated WITH_DOCKER 'docker daemon' docker info
-  doctor_gated WITH_ORCA 'orca runtime' orca_up
   doctor_gated WITH_BROWSER 'browser capture' browser_up
 
   # Paseo, from the runtime flags rather than the build flags, and the running

@@ -19,22 +19,13 @@ services:
     build:
       context: .
       args:
-        # Builds in the optional `orca serve` runtime for the Orca desktop and
-        # mobile apps. OFF by default: it takes the image from 683 MB to 1.6 GB,
-        # and most boxes want the SSH story alone.
-        #
-        # This is a BUILD arg, not an environment variable — it decides what
-        # goes into the image, so `docker compose up -d` alone will NOT pick up
-        # a change to it. You need `--build`. There is deliberately no runtime
-        # toggle; see the README.
-        WITH_ORCA: ${WITH_ORCA:-false}
         # Builds Docker Engine and Compose into the image, so a project's own
         # docker-compose.yml can start its development stack on this box. OFF by
         # default.
         #
-        # Also a BUILD arg, for the same reason as WITH_ORCA above: it decides
-        # what goes into the image, so `docker compose up -d` alone will NOT
-        # pick up a change. You need `--build`.
+        # This is a BUILD arg, not an environment variable: it decides what
+        # goes into the image, so `docker compose up -d` alone will NOT pick up
+        # a change. You need `--build`.
         #
         # This one key is not enough on its own. The daemon needs authority over
         # its own namespaces, which is what DEVALOY_RUNTIME or DEVALOY_PRIVILEGED
@@ -46,7 +37,7 @@ services:
         # to 1.09 GB on arm64, and the bootstrap then adds a 982 MB Chromium to
         # the home volume.
         #
-        # A BUILD arg like the two above, and for the same reason: it decides
+        # A BUILD arg like the one above, and for the same reason: it decides
         # what goes into the image, so `docker compose up -d` alone will NOT
         # pick up a change. You need `--build`.
         #
@@ -77,24 +68,15 @@ services:
     # interfaces. Tailscale SSH on the tailnet address — inside this container's
     # own network namespace — is the only *remote* way in.
     #
-    # One nuance, if you build WITH_ORCA=true: `orca serve` binds 0.0.0.0 and
-    # offers no bind-address flag, so port 6768 is also reachable on this
-    # container's docker bridge IP from the Docker host itself. That is accepted
-    # rather than firewalled — anyone on the host already holds the Docker
-    # socket and can `docker exec` in as root, so the port grants them nothing
-    # they did not already have. It does mean you should not attach other
-    # containers to this container's network.
-    #
-    # The Paseo daemon (WITH_PASEO=true) does NOT have that nuance, and the two
-    # are worth telling apart rather than assuming they behave alike. Paseo
-    # takes a bind address, so the entrypoint starts it with
-    # `--listen <tailnet-ip>:6767`. Port 6767 exists only on the tailnet
-    # interface: it is not on the docker bridge and the Docker host cannot reach
-    # it. Both runtimes can run at once — different ports, no clash.
+    # The Paseo daemon (WITH_PASEO=true) binds the tailnet address, not
+    # 0.0.0.0: the entrypoint starts it with `--listen <tailnet-ip>:6767`. Port
+    # 6767 exists only on the tailnet interface. It is not on the docker bridge
+    # and the Docker host cannot reach it.
     #
     # The T3 Code server (WITH_T3CODE=true) binds the same way: the entrypoint
     # starts it with `--host <tailnet-ip> --port 3773`, so 3773 is also on the
-    # tailnet interface only. All three can run at once.
+    # tailnet interface only. Both can run at once — different ports, no
+    # clash.
     cap_add:
       # tailscaled needs this to create and configure the tailscale0 interface.
       - NET_ADMIN
@@ -271,7 +253,7 @@ services:
       - NTFY_SERVER=${NTFY_SERVER:-}
       - NTFY_TOKEN=${NTFY_TOKEN:-}
       # The optional Paseo daemon, for the Paseo phone, desktop, browser and CLI
-      # clients. Read the contrast with WITH_ORCA in the build block above
+      # clients. Read the contrast with WITH_DOCKER in the build block above
       # carefully, because these look alike and are not: WITH_PASEO is an
       # ENVIRONMENT variable, not a build arg. Paseo is an npm package that
       # bootstrap-toolchain.sh installs into the home volume, so nothing goes

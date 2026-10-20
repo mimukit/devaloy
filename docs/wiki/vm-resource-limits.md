@@ -111,7 +111,7 @@ docker compose up -d
 ```
 
 No `--build` needed — these are runtime settings, not build arguments. (Contrast
-`WITH_ORCA`, which *is* a build argument and does need `--build`.)
+`WITH_DOCKER`, which *is* a build argument and does need `--build`.)
 
 ### 6. Confirm the limit engaged
 
@@ -208,12 +208,12 @@ So when the 4.5 GiB cap fires, the cgroup killer prefers a Claude Code session o
 
 The container starts at `oom_score_adj: -500`, which keeps `tailscaled` off the
 OOM killer's list — losing it severs the only route you would use to recover the
-box. Every interactive shell raises itself back to `0` on startup, and the
-optional Orca server, `dockerd`, and the Paseo supervisor sit at `-250`.
+box. Every interactive shell raises itself back to `0` on startup, and
+`dockerd`, the Paseo supervisor and the T3 Code server sit at `-250`.
 
 So the kill order inside devaloy is deliberate: a runaway build or agent session
-dies first, then Orca, `dockerd`, and the Paseo supervisor, and `tailscaled`
-last. **You stay connected while the
+dies first, then `dockerd`, the Paseo supervisor and the T3 Code server, and
+`tailscaled` last. **You stay connected while the
 thing that caused the problem is the thing that dies.** That ordering is why a
 `mem_limit` is safe to set aggressively.
 

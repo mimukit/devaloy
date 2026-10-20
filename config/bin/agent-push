@@ -60,9 +60,10 @@ esac
 
 # --- config -----------------------------------------------------------------
 # Sourced from ~/.config/agent-push.env (0600, rewritten each boot by
-# entrypoint.sh from .env's NTFY_* vars). Orca spawns panes via `su -l -s
-# /bin/sh`, which reads neither .zshenv nor .bashrc, so ~/.devaloy_secrets is
-# not reliably in a hook's environment — the file is. Pre-set env vars still win
+# entrypoint.sh from .env's NTFY_* vars). The Paseo daemon and the T3 Code
+# server spawn panes via `su -l -s /bin/sh`, which reads neither .zshenv nor
+# .bashrc, so ~/.devaloy_secrets is not reliably in a hook's environment — the
+# file is. Pre-set env vars still win
 # over the file, so a test harness or a one-off override beats the baked-in
 # values.
 
@@ -85,7 +86,7 @@ unset _k _pv push_keys
 PUSH_NTFY_URL="${PUSH_NTFY_URL:-https://ntfy.sh}"
 PUSH_NTFY_URL="${PUSH_NTFY_URL%/}"
 # Duration proxy for "am I sitting in front of this?". 0 disables it, falling
-# back to Orca's own model (event + cooldown only). Whether the proxy earns its
+# back to event + cooldown only. Whether the proxy earns its
 # keep depends on whether an in-place update re-buzzes the phone — pinned by the
 # Phase 0 spike; default is the conservative "suppress short turns".
 PUSH_MIN_TURN_SECONDS="${PUSH_MIN_TURN_SECONDS:-60}"

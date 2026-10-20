@@ -4,18 +4,18 @@ This guide runs the [T3 Code](https://github.com/pingdotgg/t3code) server on dev
 
 The server owns the agent threads, so they run on the box. Close the laptop and a Claude Code thread keeps going, and the phone can follow it. The setup is opt-in and off by default.
 
-## T3 Code, Paseo or Orca?
+## T3 Code or Paseo?
 
-All three give you a GUI client for agents on this box, and they can run side by side on different ports.
+Both give you a GUI client for agents on this box, and they can run side by side on different ports.
 
-| | Orca (`WITH_ORCA`) | Paseo (`WITH_PASEO`) | T3 Code (`WITH_T3CODE`) |
-|---|---|---|---|
-| Switch type | build argument, needs `--build` | environment variable, plain `up -d` | environment variable, plain `up -d` |
-| Image cost | 683 MB to 1.6 GB | none, home volume | none, home volume |
-| Upgrades | bump `ORCA_VERSION`, rebuild | `devaloy update` | `devaloy update` |
-| Port and bind | 6768 on `0.0.0.0` | 6767 on the tailnet address | 3773 on the tailnet address |
-| Connecting | pairing URL from the container log | direct connection typed into the app | one-time pairing link per device |
-| Settings | none | `config/paseo/config.json`, merged each boot | the apps own them; devaloy writes none |
+| | Paseo (`WITH_PASEO`) | T3 Code (`WITH_T3CODE`) |
+|---|---|---|
+| Switch type | environment variable, plain `up -d` | environment variable, plain `up -d` |
+| Image cost | none, home volume | none, home volume |
+| Upgrades | `devaloy update` | `devaloy update` |
+| Port and bind | 6767 on the tailnet address | 3773 on the tailnet address |
+| Connecting | direct connection typed into the app | one-time pairing link per device |
+| Settings | `config/paseo/config.json`, merged each boot | the apps own them; devaloy writes none |
 
 ## 1. Turn it on
 

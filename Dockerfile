@@ -45,35 +45,16 @@ RUN mkdir -p /out/usr/share/keyrings /out/etc/apt/sources.list.d \
 # add a keyring and a third-party repo to the *default* build — and make every
 # `apt-get update` on a box that never asked for Docker reach
 # download.docker.com. Keeping it in its own directory means the WITH_DOCKER
-# block below can bind-mount it, exactly as the Orca deb is bind-mounted, and a
-# default build carries no trace of it.
+# block below can bind-mount it, and a default build carries no trace of it.
 #
-# The architecture comes from dpkg rather than being hardcoded, same as the Orca
-# fetch below. Both stages are the same platform, so this resolves correctly on
-# an ARM VPS.
+# The architecture comes from dpkg rather than being hardcoded. Both stages are
+# the same platform, so this resolves correctly on an ARM VPS.
 RUN mkdir -p /out/docker \
     && curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
         -o /out/docker/docker.asc \
     && chmod a+r /out/docker/docker.asc \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable" \
         > /out/docker/docker.list
-
-# The Orca .deb, for the optional `orca serve` runtime (see WITH_ORCA below).
-# Upstream ships amd64 and arm64, so this stays ARM-VPS-compatible; the arch is
-# read from dpkg rather than hardcoded. Pinned deliberately — Orca has no
-# `--version` flag, so an unpinned "latest" URL would leave the box running a
-# build you cannot identify after the fact.
-#
-# This downloads even when WITH_ORCA=false. The bind mount that consumes it
-# makes this stage a build dependency regardless of the shell conditional
-# inside that RUN, so BuildKit cannot skip it. The cost is a one-time ~154 MB
-# that never enters the final image and is layer-cached thereafter; the
-# alternative (a scratch/real stage-alias dance keyed on the ARG) trades real
-# legibility for a cost paid once.
-ARG ORCA_VERSION=1.4.164
-RUN mkdir -p /out \
-    && curl -fsSL -o /out/orca.deb \
-        "https://github.com/stablyai/orca/releases/download/v${ORCA_VERSION}/orca-ide_${ORCA_VERSION}_$(dpkg --print-architecture).deb"
 
 # ---------------------------------------------------------------------------
 # Stage 2: the image itself, ordered least-volatile first.
@@ -176,70 +157,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 COPY --from=fetch /out/usr/share/zsh-completions/ /usr/share/zsh-completions/
 
 # ---------------------------------------------------------------------------
-# OPTIONAL: Orca headless runtime (`orca serve`). BEGIN
-#
-# Everything Orca needs lives in this one block, deliberately not folded into
-# the apt list above. Two reasons: swapping Orca for a different tool later is
-# deleting one contiguous unit, and flipping WITH_ORCA does not invalidate the
-# main apt layer. The cost is one extra apt-get update round trip, which is
-# cheap behind the cache mounts it shares with every other apt call here.
-#
-# OFF BY DEFAULT. This is an opt-in capability, not part of devaloy's baseline:
-# measured on arm64 it takes the image from 683 MB to 1.6 GB, and most boxes
-# want the SSH story alone. Turn it on with WITH_ORCA=true in .env — it is a
-# BUILD arg, so `docker compose up -d` alone will not pick up a change to it.
-# You need `--build`. There is no runtime toggle by design; see the README.
-#
-# Placed above the COPY lines below rather than at the very bottom so that
-# editing entrypoint.sh or config/ does not rebuild a 154 MB package install.
-# ---------------------------------------------------------------------------
-ARG WITH_ORCA=false
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    --mount=type=bind,from=fetch,source=/out/orca.deb,target=/tmp/orca.deb \
-    if [ "${WITH_ORCA}" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends \
-            # Declared by the deb, listed anyway so this block is self-contained
-            # and apt resolves everything in a single pass with the deb itself.
-            xvfb \
-            xdotool \
-            xclip \
-            python3-gi \
-            gir1.2-atspi-2.0 \
-            at-spi2-core \
-            # NOT declared by the deb, and not redundant — do not delete these.
-            # Its Depends field lists only the AT-SPI/X utilities above and omits
-            # Electron's entire Chromium runtime. Install it without these five
-            # and `ldd /opt/Orca/orca-ide` reports eight unresolved libraries
-            # (libatk-1.0, libatk-bridge-2.0, libcups, libgtk-3, libpango-1.0,
-            # libXcomposite, libXdamage, libXfixes, plus libnss3/libasound), and
-            # the binary refuses to start. libgtk-3-0t64 drags in pango, atk and
-            # the three libX* transitively, so these five close all of it.
-            # Upstream packaging bug; the ldd assertion below is what catches a
-            # regression if a future release changes the set.
-            libnss3 \
-            libasound2t64 \
-            libgtk-3-0t64 \
-            libatk-bridge2.0-0t64 \
-            libcups2t64 \
-            # apt (not dpkg -i) so the deb's own Depends resolve in the same
-            # transaction rather than needing an -f install afterwards.
-            /tmp/orca.deb \
-        # The deb's postinst is expected to setuid Chromium's sandbox helper and
-        # symlink the CLI shim onto PATH. Both are load-bearing — the sandbox is
-        # kept rather than disabled with --no-sandbox, and /usr/bin/orca-ide is
-        # what the entrypoint actually launches. Fail the build loudly here
-        # instead of at 3am on the box if a future release drops either.
-        && [ "$(stat -c '%a' /opt/Orca/chrome-sandbox)" = "4755" ] \
-        && [ -x /usr/bin/orca-ide ] \
-        # The whole reason this is a deb and not the AppImage upstream's headless
-        # guide recommends: on a minimal noble base the AppImage leaves 20 shared
-        # libs missing. Assert we are actually at zero.
-        && ! ldd /opt/Orca/orca-ide | grep -q "not found"; \
-    fi
-# --- OPTIONAL: Orca headless runtime. END ---
-
-# ---------------------------------------------------------------------------
 # OPTIONAL: nested Docker Engine and Compose (WITH_DOCKER). BEGIN
 #
 # Most projects you open on this box carry a docker-compose.yml and need it to
@@ -261,10 +178,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 #   DEVALOY_PRIVILEGED=true       for a host you own alone. All host devices.
 #   DEVALOY_RUNTIME=sysbox-runc   for a shared host. No privilege at all.
 #
-# OFF BY DEFAULT, like WITH_ORCA and for the same reason: it is an opt-in
-# capability, not part of devaloy's baseline. It is a BUILD arg, so
-# `docker compose up -d` alone will not pick up a change to it. You need
-# `--build`.
+# OFF BY DEFAULT: it is an opt-in capability, not part of devaloy's baseline.
+# It is a BUILD arg, so `docker compose up -d` alone will not pick up a change
+# to it. You need `--build`.
 #
 # Placed here, above the COPY lines below, so editing entrypoint.sh or config/
 # never rebuilds this package install.
@@ -293,8 +209,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         # cannot move up to the useradd line near the top of this stage. Without
         # it every docker call on the box needs sudo.
         && usermod -aG docker dev \
-        # Assert what the entrypoint will reach for, the way the Orca block
-        # asserts its own. All three run without a daemon, so they are safe in a
+        # Assert what the entrypoint will reach for, so a broken install fails
+        # the build rather than the first boot. All three run without a daemon, so they are safe in a
         # build: the first is the binary entrypoint.sh supervises, and the other
         # two are the plugins apt would happily leave out.
         && [ -x /usr/bin/dockerd ] \
@@ -315,9 +231,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # apt owns lives in the image, the part that moves with a `devaloy-update` lives
 # where an update can reach it.
 #
-# One contiguous block, deliberately not folded into the apt list above, for the
-# same two reasons as the Orca block: removing it later is deleting one unit,
-# and flipping WITH_BROWSER does not invalidate the main apt layer.
+# One contiguous block, deliberately not folded into the apt list above, for two
+# reasons: removing it later is deleting one unit, and flipping WITH_BROWSER
+# does not invalidate the main apt layer. The cost is one extra apt-get update
+# round trip, which is cheap behind the cache mounts it shares with every other
+# apt call here.
 #
 # The library set is what `playwright install-deps chromium` resolves on noble,
 # listed by hand so a build never runs an installer script as root. ffmpeg is
@@ -325,12 +243,12 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # recording, but that build only records, and a webm from `video-stop` needs
 # a real ffmpeg to become a GIF.
 #
-# No assertion at the end, unlike the Orca and Docker blocks, and that is not
+# No assertion at the end, unlike the Docker block, and that is not
 # an oversight: there is no binary in the image to `ldd`. The first launch on
 # the box is the check, and entrypoint.sh warns when this block is missing from
 # an image that the key says should carry it.
 #
-# OFF BY DEFAULT, like WITH_ORCA and WITH_DOCKER: an opt-in capability, not
+# OFF BY DEFAULT, like WITH_DOCKER: an opt-in capability, not
 # part of devaloy's baseline. Measured on arm64 it takes the image from 660 MB
 # to 1.09 GB; ffmpeg's dependency tree is most of that. It is a BUILD arg, so
 # `docker compose up -d` alone will not pick up a change to it. You need
@@ -393,8 +311,8 @@ RUN set -eux; \
 # on every boot, and doctor reads them there and from whether the daemon or the
 # server is running.
 RUN mkdir -p /opt/devaloy \
-    && printf 'WITH_ORCA=%s\nWITH_DOCKER=%s\nWITH_BROWSER=%s\n' \
-        "${WITH_ORCA}" "${WITH_DOCKER}" "${WITH_BROWSER}" \
+    && printf 'WITH_DOCKER=%s\nWITH_BROWSER=%s\n' \
+        "${WITH_DOCKER}" "${WITH_BROWSER}" \
         > /opt/devaloy/build-flags
 
 # Claude Code and Codex are not installed here. mise's registry covers both and

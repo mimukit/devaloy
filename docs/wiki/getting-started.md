@@ -1,8 +1,8 @@
 # Getting started
 
 From a clone to a shell on the box. This walks the required path only — the
-optional pieces (GitHub token, Claude Code token, signed commits, the Orca
-runtime) each have their own section in the [README](../../README.md) and none
+optional pieces (GitHub token, Claude Code token, signed commits, the Paseo
+daemon) each have their own section in the [README](../../README.md) and none
 of them are needed to log in.
 
 You need a Docker host you control and a Tailscale account. Budget a few

@@ -116,14 +116,6 @@ pages:
       - .env.example
       - scripts/host-firewall-lockdown.sh
 
-  - path: pair-the-orca-apps.md
-    mode: how-to
-    adopted: true
-    documents:
-      - Dockerfile
-      - docker-compose.yml
-      - entrypoint.sh
-
   - path: connect-the-paseo-apps.md
     mode: how-to
     adopted: true

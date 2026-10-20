@@ -21,8 +21,8 @@ project Claude is working in, not this directory:
 }
 ```
 
-Keep hooks portable. This box has no GUI, no `osascript`, no desktop
-notifications and no Orca — a hook copied from a Mac setup that shells out to
+Keep hooks portable. This box has no GUI, no `osascript` and no desktop
+notifications — a hook copied from a Mac setup that shells out to
 any of those will fail silently on every tool call.
 
 Mark scripts executable **in git** (`git update-index --chmod=+x`), because the

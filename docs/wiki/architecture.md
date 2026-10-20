@@ -38,10 +38,9 @@ down and `restart: unless-stopped` brings it back.
 7. **Run `bootstrap-toolchain.sh`** as the `dev` user.
 8. **Run `link-shims`** to mirror mise's shims into `/usr/local/bin`.
 9. **Authenticate `gh`**, then set the git identity, then install the signing key.
-10. **Start `orca serve`**, only if the binary is present.
-11. **Start the Paseo daemon** under a supervision loop, only when `WITH_PASEO=true`.
-12. **Start the T3 Code server** (`t3 serve` on the tailnet address, port 3773) under a supervision loop, only when `WITH_T3CODE=true`.
-13. **`wait` on `tailscaled`.**
+10. **Start the Paseo daemon** under a supervision loop, only when `WITH_PASEO=true`.
+11. **Start the T3 Code server** (`t3 serve` on the tailnet address, port 3773) under a supervision loop, only when `WITH_T3CODE=true`.
+12. **`wait` on `tailscaled`.**
 
 Three orderings in there matter more than they look.
 
@@ -51,10 +50,10 @@ box is reachable *during* that window rather than after it, so a bootstrap that
 hangs is something you can watch and interrupt rather than something that leaves
 you locked out.
 
-**Orca starts after `link-shims`.** Orca shells out to `claude` and `codex`
-through `su -l -s /bin/sh`, which does not get mise's shims on `PATH` — only
-`/usr/local/bin`, which is exactly what `link-shims` populates. Start it any
-earlier and agents launched from an Orca client die with `spawn codex ENOENT`.
+**Paseo and T3 Code start after `link-shims`.** Both shell out to `claude` and
+`codex` through `su -l -s /bin/sh`, which does not get mise's shims on `PATH` —
+only `/usr/local/bin`, which is exactly what `link-shims` populates. Start them
+any earlier and the agents they launch cannot find their binary.
 
 **`dockerd` starts early, and that is the opposite call.** It sits between
 `tailscale up` and the toolchain bootstrap, because it needs nothing from mise
@@ -80,7 +79,7 @@ was. The failure modes are enumerated in
 
 | Layer | Lifetime | Holds |
 |---|---|---|
-| The image | Rebuilt on `up --build` | `zsh`, `git`, `python3`, `vim`, `tmux`, `build-essential`, `bubblewrap`, `tailscale`, optionally Orca, optionally Docker Engine, optionally the Chromium runtime libraries and `ffmpeg` |
+| The image | Rebuilt on `up --build` | `zsh`, `git`, `python3`, `vim`, `tmux`, `build-essential`, `bubblewrap`, `tailscale`, optionally Docker Engine, optionally the Chromium runtime libraries and `ffmpeg` |
 | `home` volume → `/home/dev` | Survives redeploys, dies with `down -v` | Repos, shell history, mise + the whole toolchain, agent credentials, skills, and on a `WITH_BROWSER=true` box the Chromium builds under `~/.cache/ms-playwright` |
 | `tailscale-state` volume | Same | The node identity |
 | `docker-data` volume → `/var/lib/docker` | Same | The nested daemon's images, containers and volumes. Only used when built `WITH_DOCKER=true`. |
@@ -144,7 +143,7 @@ and they reach a shell two different ways because two kinds of session exist:
   and prepended to the top of `.bashrc` — above Ubuntu's early-return guard for
   non-interactive shells.
 - **Everything else** — `ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh, and
-  anything Orca spawns through `su -l -s /bin/sh` — finds them in
+  anything the Paseo daemon or T3 Code server spawns through `su -l -s /bin/sh` — finds them in
   `/usr/local/bin`, which `link-shims` mirrors and which is on every shell's
   default `PATH`.
 
@@ -232,34 +231,18 @@ Three trades are worth knowing before running this anywhere sensitive:
 
 Compose sets the container to `oom_score_adj: -500`, keeping `tailscaled` off the
 kernel's kill list — losing it severs the only route back in. `oom_score_adj` is
-inherited, so four processes raise themselves back up: interactive shells to `0`,
-and the Orca server, `dockerd`, the Paseo supervisor and the T3 Code server to `-250`.
+inherited, so the other processes raise themselves back up: interactive shells to `0`,
+and `dockerd`, the Paseo supervisor and the T3 Code server to `-250`.
 
-The resulting kill order is a runaway build first, then Orca, `dockerd`, Paseo
+The resulting kill order is a runaway build first, then `dockerd`, Paseo
 and T3 Code, then `tailscaled` last. Raising an inherited value is unprivileged; only lowering needs
 `CAP_SYS_RESOURCE`, which is why this works without extra capabilities. It is
 also what makes a memory limit safe to set aggressively — see
 [Size the container resource limits](vm-resource-limits.md).
 
-## The optional Orca runtime
-
-`WITH_ORCA` is a **build argument**, not an environment variable, so flipping it
-requires `docker compose up -d --build`. It is off by default because it takes
-the image from 683 MB to 1.6 GB, measured on arm64.
-
-When present, the entrypoint supervises `orca serve` in an unbounded restart loop
-behind `xvfb-run`. There is no runtime kill switch by design — stopping it means
-`docker compose stop` or a rebuild with `WITH_ORCA=false`. One toggle, one
-concept, at the cost of a rebuild to back out.
-
-Upgrading Orca is also a rebuild: it is pinned by `ARG ORCA_VERSION` in the
-`Dockerfile` and installed as a system package, which is a genuine break from how
-every other tool on this box upgrades. Details are in
-[Pairing the Orca apps](pair-the-orca-apps.md).
-
 ## The optional Docker runtime
 
-`WITH_DOCKER` is a **build argument**, like `WITH_ORCA` and unlike `WITH_PASEO`,
+`WITH_DOCKER` is a **build argument**, like `WITH_BROWSER` and unlike `WITH_PASEO`,
 so flipping it requires `docker compose up -d --build`. It is off by default and
 costs about 460 MB of image.
 

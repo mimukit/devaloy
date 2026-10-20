@@ -119,9 +119,6 @@ Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from
 this box's config. `skmi` installs or refreshes them all; `skup` only updates
 what is already installed, so a newly published skill needs `skmi`.
 
-Some are installed but **cannot work here**: `orcakit` (needs the Orca desktop
-app on a Mac).
-
 `verifykit`, and the browser checks in `qakit` and `afkkit`, depend on how this
 box was built. They drive a headless Chromium through `playwright-cli`, which
 the box has only when built with `WITH_BROWSER=true`. Check rather than assume:
@@ -132,16 +129,6 @@ command -v playwright-cli >/dev/null && ls ~/.cache/ms-playwright | grep -q '^ch
 
 If that prints nothing, the box has no browser driver. Say so, and leave the
 page checks to the human.
-
-`orca-cli` depends on how this box was built — it drives an Orca runtime, which
-this box has only when built with `WITH_ORCA=true`. Check rather than assume:
-
-```sh
-command -v orca-ide && pgrep -f "orca-ide.*serve" >/dev/null && echo "runtime up"
-```
-
-If that prints nothing, `orca-cli` is inert here. Say so rather than trying to
-start a runtime — that needs an image rebuild you cannot do from inside.
 
 ## The toolchain
 

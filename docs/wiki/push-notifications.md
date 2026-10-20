@@ -7,8 +7,7 @@ elapsed time, host — that **updates in place** so you get a single entry per
 session, not a pile.
 
 It is **off by default** and opt-in with one `.env` variable. This is a devaloy
-feature only: the laptop already has Orca's desktop toast, and `agent-push`
-never ships there.
+feature only: `agent-push` never ships to the laptop.
 
 ## Turn it on
 

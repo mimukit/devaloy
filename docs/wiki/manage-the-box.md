@@ -55,7 +55,7 @@ The T3 Code server is not in that run. Restarting it cancels every turn running 
 
 ## `devaloy doctor`
 
-One screen of what this box was built with and what is actually working: the Docker daemon, the Orca runtime, browser capture, the Paseo daemon, the T3 Code server, `GITHUB_TOKEN`, Tailscale, the mise shim mirror, fzf, and the `devaloy` modules themselves.
+One screen of what this box was built with and what is actually working: the Docker daemon, browser capture, the Paseo daemon, the T3 Code server, `GITHUB_TOKEN`, Tailscale, the mise shim mirror, fzf, and the `devaloy` modules themselves.
 
 The exit code is the useful part for a script or an agent:
 

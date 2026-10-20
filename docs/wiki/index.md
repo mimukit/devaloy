@@ -35,10 +35,8 @@ it when it stops answering.
 - [Set up the Cloudflare API token](set-up-the-cloudflare-token.md) — one user token for `wrangler` and `cf`, the permissions it needs, and why the account comes from each project.
 - [Turn on phone push notifications](push-notifications.md) — one ntfy push per
   agent session when it blocks or finishes.
-- [Pair the Orca apps](pair-the-orca-apps.md) — the optional `WITH_ORCA=true`
-  runtime, for the desktop and mobile clients.
 - [Connect the Paseo apps](connect-the-paseo-apps.md) — the optional
-  `WITH_PASEO=true` daemon, and how it differs from the Orca one.
+  `WITH_PASEO=true` daemon, for the phone, desktop, browser and CLI clients.
 - [Connect the T3 Code apps](connect-the-t3-code-apps.md) — the optional `WITH_T3CODE=true` server, paired with the desktop app on your laptop and the phone app over Tailscale.
 
 ## When something is wrong
@@ -52,7 +50,7 @@ it when it stops answering.
 
 The [README](../../README.md) is the long-form setup guide: it covers every
 optional step — the GitHub token, the Claude Code token, signed commits, the
-Orca build — in more detail than [Getting started](getting-started.md), which
+optional builds — in more detail than [Getting started](getting-started.md), which
 walks only the required path.
 
 Agent instructions live in `config/claude/CLAUDE.md` and `config/codex/AGENTS.md`

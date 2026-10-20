@@ -201,8 +201,8 @@ write_secret CLOUDFLARE_API_TOKEN "${CLOUDFLARE_API_TOKEN:-}"
 
 # --- ntfy push-notification config for hooks ---
 # agent-push reads ~/.config/agent-push.env rather than the shell environment,
-# because Orca spawns panes via `su -l -s /bin/sh`, which sources neither
-# .zshenv nor .bashrc — so ~/.devaloy_secrets is not reliably in a hook's env.
+# because the Paseo daemon and the T3 Code server spawn panes via
+# `su -l -s /bin/sh`, which sources neither .zshenv nor .bashrc — so ~/.devaloy_secrets is not reliably in a hook's env.
 # Rewritten from scratch every boot (like ~/.devaloy_secrets above), so clearing
 # NTFY_TOPIC in .env and redeploying really does turn the feature off. Only
 # written when a topic is set; absent, agent-push's own no-topic gate keeps it
@@ -359,8 +359,8 @@ fi
 # rule clash shows as a broken project stack; start dockerd first and it shows
 # as a box that never answers.
 #
-# It starts BEFORE the mise bootstrap, which is the opposite of Orca and Paseo.
-# Those two run last because they shell out through `su -l -s /bin/sh` and need
+# It starts BEFORE the mise bootstrap, which is the opposite of Paseo and T3
+# Code. Those two run last because they shell out through `su -l -s /bin/sh` and need
 # link-shims to have put `claude` and `codex` in /usr/local/bin first. dockerd
 # needs nothing from mise, so starting it up here lets a cold volume pull
 # project images while mise is still installing node.
@@ -376,7 +376,7 @@ if [ "${WITH_DOCKER:-false}" = "true" ]; then
     # The one failure mode worth a loud warning, because the key looks like it
     # was set and nothing happened. WITH_DOCKER is a BUILD argument: it decides
     # what goes into the image, so setting it in the environment alone changes
-    # nothing. Same trap as WITH_ORCA, and the opposite of WITH_PASEO.
+    # nothing. The opposite of WITH_PASEO, which is a runtime variable.
     log "WARNING: WITH_DOCKER=true but ${DOCKERD_BIN} is not in this image."
     log "WARNING: WITH_DOCKER is a BUILD argument — 'docker compose up -d' cannot"
     log "WARNING: add it. Redeploy with --build, or in Dokploy tick Rebuild."
@@ -396,15 +396,17 @@ if [ "${WITH_DOCKER:-false}" = "true" ]; then
     fi
 
     (
-      # Explicit, NOT inherited, for the same reason as the Orca block below.
-      # The container starts at -500 to keep tailscaled off the OOM killer's
-      # list; leaving that inherited would make dockerd exactly as protected as
-      # the only route back into the box. The ladder we want is: runaway build
-      # (0) dies first, then dockerd and Orca (-250), then tailscaled (-500).
+      # Explicit, NOT inherited, and the value is deliberate. The container
+      # starts at -500 to keep tailscaled off the OOM killer's list, and
+      # oom_score_adj is inherited by children, so leaving that alone would make
+      # dockerd exactly as protected as the only route back into the box.
+      # Interactive shells raise themselves to 0 (see .devaloy_env above), so
+      # the ladder we want is: runaway build (0) dies first, then dockerd, Paseo
+      # and T3 Code (-250), then tailscaled (-500). Raising above an inherited
+      # value is unprivileged, so this needs no CAP_SYS_RESOURCE.
       echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
 
-      # Unbounded restart loop with a sleep, copied from the Orca block. The
-      # sleep is what stops a crash-loop spinning hot on a daemon that cannot
+      # Unbounded restart loop with a sleep. The sleep is what stops a crash-loop spinning hot on a daemon that cannot
       # start at all — a missing runtime, say, which no amount of retrying will
       # fix but which must not also cost you the CPU.
       #
@@ -539,12 +541,11 @@ DEV_HOME="${DEV_HOME}" /usr/local/bin/link-shims || \
 # that is the whole point of this block. gh does read GITHUB_TOKEN by itself,
 # but only from a process that HAS it — and the token deliberately lives in
 # ~/.devaloy_secrets (see the tokens block above), which nothing sources except
-# .zshenv and .bashrc. Orca's headless server is started through
-# `su -l -s /bin/sh`, which reads neither and which clears the environment it
-# inherited from PID 1, so every `gh` that server shells out for — the mobile
-# app's repo, branch, PR and issue pickers — came back with "To get started with
-# GitHub CLI, please run: gh auth login" while an interactive terminal on the
-# same box worked fine. Storing it takes the environment out of the loop for
+# .zshenv and .bashrc. The Paseo daemon and the T3 Code server are started
+# through `su -l -s /bin/sh`, which reads neither and which clears the
+# environment it inherited from PID 1, so every `gh` such a server shells out
+# for would come back with "To get started with GitHub CLI, please run: gh auth
+# login" while an interactive terminal on the same box worked fine. Storing it takes the environment out of the loop for
 # every consumer at once, instead of teaching each one to source the file.
 #
 # hosts.yml is rebuilt from scratch on every boot, exactly like
@@ -563,15 +564,16 @@ if [ -n "${GITHUB_TOKEN:-}" ] && [ -x /usr/local/bin/gh ]; then
   if as_dev '. "$HOME/.devaloy_secrets"; _t="$GITHUB_TOKEN"; unset GITHUB_TOKEN GH_TOKEN; printf "%s" "$_t" | gh auth login --with-token' 2>/dev/null; then
     log "gh authenticated to GitHub (credential stored, not environment-bound)"
   else
-    log "WARNING: gh auth login failed — the Orca app's GitHub pickers, and any"
-    log "WARNING: other gh call from outside a login shell, will report that you"
-    log "WARNING: must run 'gh auth login' first."
+    log "WARNING: gh auth login failed — any gh call from outside a login shell,"
+    log "WARNING: such as one the Paseo daemon or T3 Code server makes, will"
+    log "WARNING: report that you must run 'gh auth login' first."
   fi
 
   # Teaches git to ask gh for credentials, so `git push` works without a second
   # login. The helper it installs re-invokes gh, which is why this runs after
   # the login above — with hosts.yml in place the helper answers from any
-  # process, including one Orca spawned, rather than only from a login shell.
+  # process, including one a remote runtime spawned, rather than only from a
+  # login shell.
   # Still sources the secrets itself so that a failed login above costs the
   # pickers but not `git push`, which the environment token alone can carry.
   # shellcheck disable=SC2016  # $HOME is expanded by the dev user's shell.
@@ -877,101 +879,30 @@ if [ -n "${DEVALOY_REPOS:-}" ]; then
   unset spec repo_url repo_name repo_dir
 fi
 
-# --- Orca headless runtime (only present when built with WITH_ORCA=true) ---
-# Lets the Orca desktop and mobile apps talk to this box, which Tailscale SSH
-# alone cannot do — they speak to a runtime, not a terminal.
-#
-# Silence is correct when the binary is absent: WITH_ORCA=false is the DEFAULT
-# build, so a missing /usr/bin/orca-ide is the normal case and not a fault. Do
-# not "improve" this into a warning — every stock box would nag about a package
-# it was never asked to install.
-#
-# Runs after link-shims on purpose: Orca shells out to `codex` and `claude`, and
-# `su -l -s /bin/sh` does NOT get the mise shims on PATH — only /usr/local/bin,
-# which is exactly what link-shims mirrors them into. Start this any earlier and
-# agents launched from an Orca client die with `spawn codex ENOENT`.
-ORCA_BIN="/usr/bin/orca-ide"
-ORCA_PORT=6768
-
-if [ -x "${ORCA_BIN}" ]; then
-  ORCA_IP="$(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1 || true)"
-  if [ -n "${ORCA_IP}" ]; then
-    (
-      # Explicit, NOT inherited — and the value is deliberate. The container
-      # starts at -500 to keep tailscaled off the OOM killer's list, and
-      # oom_score_adj is inherited by children, so leaving this alone would make
-      # Orca exactly as protected as the daemon that is your only way back in.
-      # Interactive shells raise themselves to 0 (see .devaloy_env above), so
-      # the ordering we want is: runaway build (0) dies first, then Orca (-250),
-      # and tailscaled (-500) last. Raising above an inherited value is
-      # unprivileged, so this needs no CAP_SYS_RESOURCE.
-      echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
-
-      # Unbounded restart loop: there is no runtime kill switch by design, and
-      # the sleep is what stops a crash-loop spinning hot. To actually stop it,
-      # `docker compose stop` or rebuild with WITH_ORCA=false — see the README.
-      #
-      # xvfb-run because Electron wants an X display even headless; the sandbox
-      # is KEPT (never --no-sandbox) and works because compose already sets
-      # seccomp=unconfined for Codex's bubblewrap, which is the same user
-      # namespace permission Chromium's sandbox needs.
-      # SHELL is set explicitly because as_dev runs `su -l -s /bin/sh`, and su
-      # exports whatever it was given with -s. Orca spawns its terminals from
-      # $SHELL rather than /etc/passwd, so without this every terminal opened
-      # from the desktop or mobile app lands in sh instead of the dev user's
-      # actual login shell. The -s /bin/sh itself has to stay — see as_dev.
-      while true; do
-        as_dev "SHELL=/usr/bin/zsh LIBGL_ALWAYS_SOFTWARE=1 xvfb-run -a '${ORCA_BIN}' serve \
-          --port '${ORCA_PORT}' --pairing-address '${ORCA_IP}'" || true
-        log "WARNING: orca serve exited — restarting in 10s"
-        sleep 10
-      done
-    ) &
-    # Both the desktop and the phone pair off this one server's own output —
-    # there is no second command to run. A second `orca serve` in this container
-    # hits Electron's single-instance lock and exits, and there is no `orca
-    # pair` subcommand. --mobile-pairing is a flag on THIS launch that swaps the
-    # code for a mobile-scoped one; adding it here costs the desktop's default
-    # link, which is why it is not here.
-    log "Orca server on ${ORCA_IP}:${ORCA_PORT} — pair both the desktop and the"
-    log "phone from this server's own log: the 'Pairing URL' line for the"
-    log "desktop, and the orca:// link or 'Web client URL' line for the phone."
-  else
-    # Same call as tailscale up's own failure path: an advertised address that
-    # nothing can route to is worse than no server at all, because the client
-    # fails at pairing time rather than here where the log explains why.
-    log "WARNING: no tailnet IPv4 — not starting orca serve."
-    log "WARNING: fix the tailscale failure above, then restart the container."
-  fi
-fi
-
 # --- Paseo daemon (only when WITH_PASEO=true) ---
-# The second remote runtime, next to Orca above and answering the same want: the
-# Paseo phone, desktop, browser and CLI clients speak to a daemon, not a
-# terminal. Everything else about the box is unchanged.
+# A remote runtime: the Paseo phone, desktop, browser and CLI clients speak to a
+# daemon, not a terminal, which Tailscale SSH alone cannot serve. Everything
+# else about the box is unchanged.
 #
-# Read the differences from the Orca block before editing this one — they are
-# deliberate, not drift:
+# Read these choices before editing this block. They are deliberate, not drift:
 #
 #   * The KEY IS A RUNTIME VARIABLE, not a build arg. Paseo is a plain npm
 #     package installed into the home volume by bootstrap-toolchain.sh, so there
 #     is no image payload to gate and `docker compose up -d` is enough to flip
-#     it. WITH_ORCA needs --build; this does not.
-#   * A MISSING BINARY IS A FAULT HERE, and warns. A missing orca-ide is the
-#     default build and so is silent. A missing paseo when the key is on means
-#     the bootstrap failed, and the log should say so.
-#   * IT BINDS THE TAILNET ADDRESS, not 0.0.0.0. Paseo takes a bind address
-#     (orca serve does not), and its own default is 127.0.0.1, so this widens
-#     it exactly as far as the tailnet and no further. Nothing lands on the
-#     docker bridge, unlike Orca's 6768.
-#   * IT IS CONFIGURED BY FILE, not by flags. Orca serve takes its settings on
-#     the command line and nothing else reads them. Paseo has a config file that
+#     it.
+#   * A MISSING BINARY IS A FAULT HERE, and warns. A missing paseo when the key
+#     is on means the bootstrap failed, and the log should say so.
+#   * IT BINDS THE TAILNET ADDRESS, not 0.0.0.0. Paseo's own default is
+#     127.0.0.1, so this widens it exactly as far as the tailnet and no
+#     further. Nothing lands on the docker bridge.
+#   * IT IS CONFIGURED BY FILE, not by flags. Paseo has a config file that
 #     every other `paseo` on the box reads too, so the settings live there. See
 #     the config block below.
 #
-# Runs after link-shims for the same reason Orca does: the daemon shells out to
-# `claude` and `codex`, and `su -l -s /bin/sh` gets /usr/local/bin but not mise's
-# shim directory.
+# Runs after link-shims on purpose: the daemon shells out to `claude` and
+# `codex`, and `su -l -s /bin/sh` does NOT get the mise shims on PATH, only
+# /usr/local/bin, which is exactly what link-shims mirrors them into. Start this
+# any earlier and the agents the daemon launches fail to find their binary.
 PASEO_PORT=6767
 
 if [ "${WITH_PASEO:-false}" = "true" ]; then
@@ -1061,8 +992,7 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
 
       # Every step here ends in `|| true` or sits inside the `if` condition, so
       # `set -e` cannot take the entrypoint down over a config file. The whole
-      # Paseo block is non-fatal by design — the same reason the Orca block
-      # warns rather than exits — and aborting here would stop a container that
+      # Paseo block is non-fatal by design, and aborting here would stop a container that
       # is otherwise up and reachable over SSH.
       PASEO_START_ENV=""
       mkdir -p "${DEV_HOME}/.paseo" 2>/dev/null || true
@@ -1087,7 +1017,7 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
       fi
 
       (
-        # Explicit, NOT inherited — see the identical note in the Orca block.
+        # Explicit, NOT inherited — see the identical note in the dockerd block.
         # The container starts at -500 to keep tailscaled off the OOM killer's
         # list, so an untouched daemon would be as protected as the only process
         # that keeps you connected. -250 sits above a runaway build and below
@@ -1131,9 +1061,8 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         # brings the daemon back exactly as this line starts it. The variable
         # only fills in when the config write above failed.
         #
-        # SHELL is exported for the same reason the Orca block sets it: su
-        # exports whatever it was given with -s, so as_dev hands the daemon
-        # SHELL=/bin/sh. Paseo opens a terminal from `env.SHELL || "/bin/sh"`
+        # SHELL is exported because su exports whatever it was given with -s,
+        # so as_dev hands the daemon SHELL=/bin/sh. Paseo opens a terminal from `env.SHELL || "/bin/sh"`
         # and never reads /etc/passwd, so without this line every pane from
         # cmd+t in the app lands in sh instead of the dev user's login shell.
         # There is no shell key in ~/.paseo/config.json, so this cannot move to
@@ -1272,7 +1201,7 @@ if [ "${WITH_PASEO:-false}" = "true" ]; then
         ) &
       fi
     else
-      # Same call as the Orca block and as tailscale up's own failure path: a
+      # Same call as tailscale up's own failure path: a
       # daemon on an address nothing can route to fails at connect time rather
       # than here, where the log can still explain why.
       log "WARNING: no tailnet IPv4 — not starting the Paseo daemon."
@@ -1288,8 +1217,8 @@ fi
 # --- T3 Code server (only when WITH_T3CODE=true) ---
 #
 # The T3 Code desktop app on a laptop and the T3 Code phone app both speak to
-# one server, `t3 serve`. It is a Paseo-shaped guest, and the block follows the
-# Paseo block above rather than the Orca one:
+# one server, `t3 serve`. It is a Paseo-shaped guest, and the block follows
+# the Paseo block above:
 #
 #   * The KEY IS A RUNTIME VARIABLE. `t3` is an npm package in the home volume
 #     (config/mise/optional/t3code.toml), so a missing binary with the key on
@@ -1337,7 +1266,7 @@ if [ "${WITH_T3CODE:-false}" = "true" ]; then
 
       (
         # -250, the same slot as the Paseo daemon and for the same reason: above
-        # a runaway build, below tailscaled. See the Orca block.
+        # a runaway build, below tailscaled. See the dockerd block.
         echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
 
         # The only supervisor. `t3 service install` needs systemd user units,

@@ -35,7 +35,7 @@ http://devaloy:3000            # from a phone or laptop with Tailscale connected
 
 Use the tailnet hostname you set as `TS_HOSTNAME`, or the `100.x.y.z` address from `tailscale ip -4`. MagicDNS on the client resolves the name; nothing needs to be configured on the box.
 
-Ports bind `0.0.0.0`, so they are also reachable from the Docker host itself. That is accepted rather than firewalled, for the same reason the compose file already records for Orca's port 6768: anyone on the Docker host already holds the Docker socket and can `docker exec` in as root, so the port grants them nothing new. What matters is what does **not** happen — the port never lands on the VPS public interfaces, which is what a host socket mount would have done.
+Ports bind `0.0.0.0`, so they are also reachable from the Docker host itself. That is accepted rather than firewalled: anyone on the Docker host already holds the Docker socket and can `docker exec` in as root, so the port grants them nothing new. What matters is what does **not** happen — the port never lands on the VPS public interfaces, which is what a host socket mount would have done.
 
 ## Stacks and redeploys
 

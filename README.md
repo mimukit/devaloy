@@ -55,7 +55,6 @@ From the image, available the moment you can log in:
 | Languages | `python3` (with `pip`, `venv`, and `python` aliased to it) |
 | Build | `build-essential`, `git`, `curl`, `jq` |
 | Agent sandbox | `bubblewrap` (`bwrap`), what Codex confines its shell with |
-| Optional | the Orca runtime (`orca-ide`), only when built with `WITH_ORCA=true` — see [(Optional) the Orca apps](#optional-the-orca-apps) |
 | Optional | the Paseo daemon (`paseo`), only when run with `WITH_PASEO=true` — see [(Optional) the Paseo apps](#optional-the-paseo-apps). Installed from `mise`, not the image. |
 | Optional | the T3 Code server (`t3`), only when run with `WITH_T3CODE=true`. See [(Optional) the T3 Code apps](#optional-the-t3-code-apps). Installed from `mise`, not the image. |
 | Optional | Docker Engine and Compose (`docker`, `docker compose`, `docker buildx`), only when built with `WITH_DOCKER=true` — see [(Optional) Docker and Compose](#optional-docker-and-compose) |
@@ -196,9 +195,8 @@ variable and redeploying deletes both files.
 
 The stored `gh` login is not redundant with the environment variable. Only
 `.zshenv` and `.bashrc` put `GITHUB_TOKEN` into a shell, so anything that runs
-`gh` outside a login shell — most visibly the Orca app's repo, branch, PR and
-issue pickers, which the headless server shells out for under `su -l -s /bin/sh`
-— sees no token at all and reports `To get started with GitHub CLI, please run:
+`gh` outside a login shell — the Paseo daemon and the T3 Code server, which the
+entrypoint starts under `su -l -s /bin/sh`, among them — sees no token at all and reports `To get started with GitHub CLI, please run:
 gh auth login`. The stored credential is what those callers read.
 
 Leave the variable empty to use `gh auth login` by hand instead; note that `gh`
@@ -409,90 +407,12 @@ Leave `CLOUDFLARE_ACCOUNT_ID` unset. Each project names its account in the `acco
 
 Create a **user** token from the **Edit Cloudflare Workers** template, not an account API token, which covers one account only. This token can deploy production sites, and agents here run unattended in bypass permission mode, so give it only the accounts, zones and permissions the projects need. The steps, the permission tables, the check and the revocation are in [docs/wiki/set-up-the-cloudflare-token.md](docs/wiki/set-up-the-cloudflare-token.md).
 
-## (Optional) the Orca apps
-
-Tailscale SSH gets you a terminal, which is everything a laptop or a phone with
-an SSH client needs. The [Orca](https://www.onorca.dev/) desktop and mobile apps
-are different — they talk to a *runtime*, not a terminal — so reaching them
-means running one on the box. That is what `WITH_ORCA` builds in:
-
-```sh
-# in .env
-WITH_ORCA=true
-```
-
-```sh
-docker compose up -d --build
-```
-
-**`--build` is not optional.** `WITH_ORCA` is a build argument, so a plain
-`docker compose up -d` will happily start the old image and leave you wondering
-why nothing changed. This is the single easiest thing to get wrong here.
-
-It is off by default because of what it costs: measured on `arm64`, the image
-goes from **683 MB to 1.6 GB**. A box you only ever SSH into should not pay
-900 MB for a runtime it never speaks to.
-
-### Pairing
-
-The server starts after the tailnet comes up and prints its pairing URL to the
-container log — a non-obvious place to look, so that is the first place to look:
-
-```sh
-docker compose logs devaloy | grep -i pairing
-```
-
-Open that URL in the Orca desktop app.
-
-For the phone, use the same log output — the server prints both an
-`orca://pair?code=…` link and a `Web client URL:` line, and the Tailscale app
-on the phone is what makes the address reachable.
-
-Note that `--mobile-pairing` is a flag on **the** server, not a second command
-you can run alongside it: Electron holds a single-instance lock per profile, so
-a second `orca serve` in this container exits with `[single-instance] Another
-Orca instance is already running`. There is no separate `orca pair` subcommand.
-If the phone turns out to need a mobile-scoped code specifically, getting one
-means changing the supervised launch in `entrypoint.sh` and rebuilding.
-
-Paired devices are recorded under `~/.config` in the home volume, so they
-survive `docker compose down && up` without re-pairing.
-
-Nothing is published to reach any of this: `orca serve` binds port 6768 inside
-the container's own network namespace, which the tailnet address already
-reaches — the same reason Tailscale SSH works with no `ports:` key.
-
-### What to know before you turn it on
-
-- **Upgrading is a rebuild, not `devaloy update`.** Orca is pinned by
-  `ARG ORCA_VERSION` in the `Dockerfile` and installed as a system package.
-  Bump it and rebuild. This is a genuine break from how every other tool on the
-  box upgrades, and it will surprise you in three months.
-- **There is no runtime kill switch.** Stopping a misbehaving Orca means
-  `docker compose stop`, or `WITH_ORCA=false` and a rebuild. The entrypoint
-  supervises it in an unbounded restart loop with a backoff, so killing the
-  process just restarts it. This is deliberate — one toggle, one concept — but
-  it does mean recovery costs a rebuild.
-- **The updater chatters.** Orca's docs say a headless server never
-  self-updates, but it logs `[autoUpdater] Checking for update` anyway. It
-  cannot apply anything — `/opt` is root-owned and the server runs as `dev` —
-  but the behaviour when an update *exists* is unobserved, and a check that
-  downloads would land ~160 MB in the home volume.
-- **Port 6768 is also reachable from the Docker host**, because `orca serve`
-  binds `0.0.0.0` and has no bind-address flag. Not internet-exposed, and no
-  worse than the Docker socket that host already has — but don't attach other
-  containers to devaloy's network. See the comment in `docker-compose.yml`.
-- **One box at a time.** Orca warns against two servers serving the same setup.
-  `WITH_ORCA=false` being the default is most of the guard here; nothing stops a
-  second devaloy from advertising itself if you deliberately turn it on twice.
-
 ## (Optional) the Paseo apps
 
-[Paseo](https://paseo.sh) is the other way to reach this box without a terminal.
-Like Orca it is a daemon that owns agent processes, worktrees and terminals,
-with phone, desktop, browser and CLI clients on the other end. Unlike Orca it is
-a plain npm package, so it costs the image nothing and the switch is a runtime
-one:
+[Paseo](https://paseo.sh) is one way to reach this box without a terminal. It
+is a daemon that owns agent processes, worktrees and terminals, with phone,
+desktop, browser and CLI clients on the other end. It is a plain npm package, so
+it costs the image nothing and the switch is a runtime one:
 
 ```sh
 # in .env
@@ -508,13 +428,12 @@ optional keys, because they look alike and are not:
 
 | Key | What it decides | Needs `--build`? |
 |---|---|---|
-| `WITH_ORCA` | what goes into the image | **Yes** |
 | `WITH_DOCKER` | what goes into the image | **Yes** |
 | `WITH_PASEO` | what `bootstrap-toolchain.sh` installs into the home volume, and whether the entrypoint starts a daemon | No |
 | `WITH_T3CODE` | the same as `WITH_PASEO`, for the T3 Code server | No |
 
 A plain `up -d` picks up `WITH_PASEO` and `WITH_T3CODE` and silently ignores a
-change to `WITH_ORCA` or `WITH_DOCKER`, which is the single easiest thing to get wrong here.
+change to `WITH_DOCKER`, which is the single easiest thing to get wrong here.
 
 The first boot after you flip it re-runs the toolchain bootstrap, because the
 revision marker records the key alongside the revision. That is quick: the boot
@@ -602,7 +521,7 @@ the hosted web client reach a daemon it is not served from.
   different tool list from one you started over SSH.
 - **Turning it off stops the daemon and undeclares the CLI.** `WITH_PASEO=false` stops the daemon on the next boot and drops the mise fragment that declares `npm:@getpaseo/cli`. The installed copy stays on the home volume until the next `devaloy update`, whose `mise prune` reclaims it. Nothing rewrites `~/.paseo/config.json`, so your paired clients and settings are still there when you turn it back on.
 - **`devaloy update` reads the key from a file, not from your shell.** `WITH_PASEO` only ever reaches PID 1's environment, so no shell on the box inherits it. `entrypoint.sh` writes it, `WITH_BROWSER` and `WITH_T3CODE` to `/opt/devaloy/runtime-flags` on every boot, and `bootstrap-toolchain.sh` reads that file when the variable is absent. Without it an update read both optional keys as `false`, undeclared Paseo and the browser CLI, and then let `mise prune` delete both from the home volume. What that leaves behind is a running daemon and no `paseo` on `PATH`.
-- **Upgrading is `devaloy update`,** unlike Orca. Paseo always tracks `latest`
+- **Upgrading is `devaloy update`.** Paseo always tracks `latest`
   through mise, like `claude` and `codex` do. There is no environment variable
   to pin it. `MISE_PASEO_VERSION` would look like the obvious name, but mise
   reads any `MISE_<TOOL>_VERSION` as a request for a tool called `<TOOL>`, and
@@ -673,7 +592,9 @@ DEVALOY_RUNTIME=sysbox-runc   # or DEVALOY_PRIVILEGED=true — read below first
 docker compose up -d --build
 ```
 
-**`--build` is not optional**, for the same reason as `WITH_ORCA`.
+**`--build` is not optional.** `WITH_DOCKER` is a build argument, so a plain
+`docker compose up -d` starts the old image and leaves you wondering why nothing
+changed.
 
 Then it is what you already know:
 
@@ -727,9 +648,8 @@ at start rather than quietly picking one.
 ### What to know before you turn it on
 
 - **The image grows by about 460 MB.** Measured on `arm64`: 918 MB without it,
-  1.38 GB with. (Those absolute numbers come from a Docker 29 host and read
-  higher than the 683 MB quoted for the Orca comparison above, which was
-  measured earlier; the ~460 MB delta is the part that transfers.)
+  1.38 GB with. (Those absolute numbers come from a Docker 29 host; the
+  ~460 MB delta is the part that transfers.)
 - **Nested images live in their own volume,** `docker-data`, mounted at
   `/var/lib/docker`. Deleting it reclaims every gigabyte of project images
   without touching a single repo. Do **not** turn on Dokploy volume backups for
@@ -743,13 +663,13 @@ at start rather than quietly picking one.
   Run `devaloy prune --apply` when the disk fills, or add `--all` to also take
   images no container is running.
 - **Published ports bind `0.0.0.0`,** so they are reachable from the Docker host
-  as well as the tailnet. This is the same call the compose file already records
-  for Orca's port 6768: whoever holds the Docker host already holds its socket.
+  as well as the tailnet. That is accepted: whoever holds the Docker host
+  already holds its socket.
   Narrowing to the tailnet address would break `curl localhost:3000`, which is
   how most people test.
 - **The daemon's log is `/var/log/dockerd.log`,** not the container log. `dockerd`
   is noisy at info level and would bury the entrypoint's own output.
-- **Turning it back off needs a rebuild**, like `WITH_ORCA`. `WITH_DOCKER=false`
+- **Turning it back off needs a rebuild.** `WITH_DOCKER=false`
   plus `up -d --build` removes the engine; the `docker-data` volume stays until
   you remove it by hand.
 
@@ -770,7 +690,7 @@ WITH_BROWSER=true
 docker compose up -d --build
 ```
 
-**`--build` is not optional**, for the same reason as `WITH_ORCA`. Set the key
+**`--build` is not optional**, for the same reason as `WITH_DOCKER`. Set the key
 without it and the boot log says so: the CLI installs, the browser downloads,
 and Chromium dies on a missing library the moment it starts.
 
@@ -815,7 +735,7 @@ other shell child, so under a memory ceiling it dies before tailscaled does.
   is a repo in the home volume, so `PLAYWRIGHT_MCP_OUTPUT_DIR=/tmp/playwright-cli`
   moves them out.
 - **The CLI tracks latest**, like Paseo, so `devaloy update` upgrades it. `mise` refuses an `@playwright/cli` release without npm provenance as a trust downgrade, which is what happened to 0.1.19. If a later release repeats that, `devaloy update` fails at `mise upgrade`; pin the last good release in `config/mise/optional/browser.toml` until upstream fixes it.
-- **Turning it back off needs a rebuild**, like `WITH_ORCA`. The CLI and the
+- **Turning it back off needs a rebuild**, like `WITH_DOCKER`. The CLI and the
   browser stay in the home volume; only the exports and the warning go away.
 
 ## Managing the box
@@ -981,12 +901,10 @@ skills use <owner>/<repo>@<skill>    # try one without installing it
 skills remove <skill>                # until the next skmi reinstalls it
 ```
 
-Some installed skills **cannot work on this box** and are documented as such in
-`CLAUDE.md`/`AGENTS.md` rather than filtered out: `verifykit` needs a real
-browser, and `orcakit` needs the Orca desktop app. `orca-cli` depends on the
-build — it drives an Orca runtime, so it is inert on a stock box and works when
-you build `WITH_ORCA=true`. An exclusion list would defeat the point of
-`--skill '*'`.
+Some installed skills depend on the build and are documented as such in
+`CLAUDE.md`/`AGENTS.md` rather than filtered out: `verifykit` needs the
+headless browser that `WITH_BROWSER=true` builds in. An exclusion list would
+defeat the point of `--skill '*'`.
 
 ## Recovering a box you can't reach
 
