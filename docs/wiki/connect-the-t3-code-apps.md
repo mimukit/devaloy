@@ -75,6 +75,28 @@ The phone needs the Tailscale app connected to the same tailnet, and the T3 Code
 
 Each link works once. Run `ssh devaloy t3 pair` again for each new device.
 
+## Open a thread on each new worktree
+
+gitkit, issuekit `start`, and mergekit `start` end with a `Workspace ready` block when they hand you a worktree. The block names no tool. In T3 Code, a short instruction file tells Claude to open an idle thread bound to that worktree. You type the first prompt in that thread yourself.
+
+The file is `config/claude/t3-workspaces.md` in this repo. The boot and `devaloy update` copy it to `~/.claude/t3-workspaces.md`. Claude Code does not load that file by itself, so it reaches only the sessions that T3 Code starts with the launch argument below.
+
+1. On the box, run `devaloy update` so the file is in `~/.claude/`.
+2. In the desktop app, open **Settings → Providers → Claude**.
+3. Set **Launch arguments** to:
+
+   ```
+   --append-system-prompt-file /home/dev/.claude/t3-workspaces.md
+   ```
+
+4. Start a new thread. A thread that already runs reads the file only after its session restarts.
+5. In a repo with a `ready` issue, run `issuekit start <n>`. Check that one idle thread opens on the worktree.
+6. Run `issuekit start <n>` again. Check that the reply links the same thread and opens no second one.
+
+Use an absolute path. T3 Code resolves a relative path against each thread's working directory, which changes from thread to thread.
+
+The launch argument lives in T3 Code's own settings under `~/.t3/userdata`, not in this repo. If you reset those settings, set it again. This setup covers the Claude provider only, so Codex threads in T3 Code do not open these threads.
+
 ## How the connection works
 
 The apps use plain HTTP to the tailnet address. That is safe here, because WireGuard encrypts every tailnet packet. The T3 Code phone app allows plain HTTP on purpose so that it can reach servers on a LAN or a tailnet.

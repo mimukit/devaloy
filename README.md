@@ -566,6 +566,7 @@ If your tailnet policy has its own `acls` or `grants` instead of the default all
 ### What to know before you turn it on
 
 - **devaloy writes no T3 Code settings.** Unlike Paseo there is no repo config file. The apps own `~/.t3/userdata/settings.json`, so change settings there.
+- **A worktree a skill prepares can get its own thread.** Set the Claude provider's launch arguments to `--append-system-prompt-file /home/dev/.claude/t3-workspaces.md`. The file comes from `config/claude/t3-workspaces.md`. See [Open a thread on each new worktree](docs/wiki/connect-the-t3-code-apps.md#open-a-thread-on-each-new-worktree).
 - **Worktrees share `~/worktrees/` with Paseo.** The boot links `~/.t3/worktrees` to `~/worktrees`. If `~/.t3/worktrees` is already a real directory, the boot leaves it alone and logs a line. Both tools write into the same folder, so two worktrees with the same name would collide.
 - **Telemetry is off.** The server runs with `T3CODE_TELEMETRY_ENABLED=false`.
 - **Browser tabs are best effort.** The server runs its headless Chrome with `T3CODE_SERVER_BROWSER_SANDBOX=0`, because the container gives Chrome no user namespaces. The image carries no Chrome libraries unless you also built with `WITH_BROWSER=true`, so a tab may fail. A failed tab does not stop the server.
