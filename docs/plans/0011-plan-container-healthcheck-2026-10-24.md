@@ -48,7 +48,7 @@ Add `devaloy health` next to `devaloy doctor`, record `WITH_DOCKER` in the runti
 
 Phases 1 to 3 can run unattended. Phase 4 needs the owner on the Docker host, because it redeploys the box and its fault test cuts Tailscale SSH. It comes last because it verifies the built image.
 
-### Phase 1: the `devaloy health` verb
+### Phase 1: the `devaloy health` verb (#2)
 
 - `lib/doctor.sh`: add `do_health` with the two probes from the decisions table. Print one stderr line per failure. Return 0 or 1.
 - `devaloy`: add `health` to both dispatch `case` blocks and one line to the header usage block. `usage()` prints `sed -n '2,35p'`, so move the end of that range down by one.
@@ -56,7 +56,7 @@ Phases 1 to 3 can run unattended. Phase 4 needs the owner on the Docker host, be
 
 Done when: `bash -n devaloy lib/doctor.sh entrypoint.sh` prints nothing; `DEVALOY_LIB=./lib ./devaloy health; echo $?` prints `0` on this box; `DEVALOY_LIB=./lib ./devaloy -h` lists `health` and its last line is the last usage line.
 
-### Phase 2: the Dockerfile `HEALTHCHECK`
+### Phase 2: the Dockerfile `HEALTHCHECK` (#2)
 
 - `Dockerfile`: add, after the build-flags `RUN` and before `ENTRYPOINT`:
 
@@ -70,7 +70,7 @@ Done when: `bash -n devaloy lib/doctor.sh entrypoint.sh` prints nothing; `DEVALO
 
 Done when: `docker build` of the repo succeeds on this box (it has a daemon), and `docker image inspect --format '{{json .Config.Healthcheck}}' <image>` shows the command and the five timings.
 
-### Phase 3: docs
+### Phase 3: docs (#2)
 
 - `README.md`, "Managing the box": add `devaloy health` to the verb list, and one sentence that the image defines a healthcheck and that unhealthy never restarts the box.
 - `docs/wiki/reference.md`, verb table near line 224: add a `health` row with its exit codes and how it differs from `doctor`.
