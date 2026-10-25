@@ -295,6 +295,10 @@ build_flag() { # build_flag <name>
 # writes them on every boot, because they live in PID 1's environment and no
 # shell on the box inherits it. The environment still wins when a key is set
 # there, so a one-off `WITH_PASEO=false devaloy ...` means what it says.
+#
+# WITH_DOCKER is in this file as well as in build-flags. The build flag says
+# dockerd is in the image; the runtime key says the entrypoint starts it.
+# `devaloy health` reads the second.
 RUNTIME_FLAGS_FILE="${RUNTIME_FLAGS_FILE:-/opt/devaloy/runtime-flags}"
 
 runtime_flag() { # runtime_flag <name>

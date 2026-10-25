@@ -19,6 +19,7 @@
 #   devaloy                  the picker
 #   devaloy status           the box's disk, RAM, Paseo, T3 Code and toolset, as text
 #   devaloy doctor           what this box was built with, and what is broken
+#   devaloy health           quiet reachability check; the Docker healthcheck
 #   devaloy disk [flags]     the home-volume reclaim
 #   devaloy ram [flags]      the RAM reclaim
 #   devaloy prune [flags]    the nested Docker reclaim
@@ -71,7 +72,7 @@ done
 unset _module
 
 usage() {
-  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # --- verb dispatch --------------------------------------------------------
@@ -97,7 +98,7 @@ main() {
 
   if [ -z "${verb}" ]; then
     case "${1:-}" in
-      status | doctor | disk | ram | prune | update | nvim-sync)
+      status | doctor | health | disk | ram | prune | update | nvim-sync)
         verb="$1"
         shift
         ;;
@@ -126,6 +127,7 @@ main() {
   case "${verb}" in
     status) do_status "$@" ;;
     doctor) do_doctor "$@" ;;
+    health) do_health "$@" ;;
     disk) do_disk "$@" ;;
     ram) do_ram "$@" ;;
     prune) do_prune "$@" ;;

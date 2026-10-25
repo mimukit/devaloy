@@ -13,10 +13,10 @@
 # That is the distinction CLAUDE.md keeps making in prose ("say so rather than
 # trying to install Docker"), written down once where a script can branch on it.
 #
-# WITH_PASEO and WITH_T3CODE are not in the flags file on purpose. They are
-# runtime variables that `docker compose up -d` can flip without a rebuild, so
-# an image-baked answer would be wrong; they come from the runtime flags file
-# entrypoint.sh writes.
+# WITH_PASEO, WITH_T3CODE and the runtime half of WITH_DOCKER are not in the
+# flags file on purpose. They are runtime variables that `docker compose up -d`
+# can flip without a rebuild, so an image-baked answer would be wrong; they come
+# from the runtime flags file entrypoint.sh writes.
 
 DOCTOR_FAILURES=0
 
@@ -201,4 +201,51 @@ do_doctor() {
   fi
   printf 'devaloy doctor: %s capability(ies) built in but not working.\n' "${DOCTOR_FAILURES}"
   return 1
+}
+
+# --- health ---------------------------------------------------------------
+#
+# The Docker HEALTHCHECK in the Dockerfile runs this, and it answers one
+# question: can you get into the box? Doctor answers a wider one, and that is
+# why this is not `doctor`. A healthcheck exec runs as root with HOME=/root, so
+# doctor's mise-shims row would fail on every box, and a failed toolchain
+# bootstrap leaves the box reachable and repairable with `devaloy update`.
+# Paseo and T3 Code stay out for the same reason: either can die while SSH
+# still works, and doctor reports them.
+#
+# Two probes, each bounded, because a hung probe should fail by name rather
+# than as an anonymous healthcheck timeout:
+#
+#   tailscale   BackendState is Running. Not .Health or .Self.Online, which
+#               flap during a DERP or control-plane outage while existing
+#               connections keep working.
+#   docker      `docker info` answers, but only where the entrypoint starts
+#               dockerd: the runtime key is on and the binary is in the image.
+#               Everywhere else the probe is skipped, not failed.
+#
+# Quiet on success, one line per failure on stderr, exit 0 or 1. Docker keeps
+# that output in .State.Health.Log, so the line has to name the fault.
+HEALTH_TIMEOUT=5
+
+health_tailscale() {
+  timeout "${HEALTH_TIMEOUT}" tailscale status --json 2>/dev/null |
+    jq -e '.BackendState == "Running"' >/dev/null 2>&1
+}
+
+health_docker_expected() {
+  [ "$(runtime_flag WITH_DOCKER)" = "true" ] && [ -x /usr/bin/dockerd ]
+}
+
+do_health() {
+  local failures=0
+  if ! health_tailscale; then
+    printf 'devaloy health: tailscale backend is not Running\n' >&2
+    failures=$((failures + 1))
+  fi
+  if health_docker_expected &&
+    ! timeout "${HEALTH_TIMEOUT}" docker info >/dev/null 2>&1; then
+    printf 'devaloy health: docker daemon is not answering\n' >&2
+    failures=$((failures + 1))
+  fi
+  [ "${failures}" -eq 0 ]
 }

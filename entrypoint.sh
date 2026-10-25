@@ -495,8 +495,15 @@ fi
 # Sits beside build-flags and is rewritten on every boot, so a key flipped by
 # `docker compose up -d` is never stale. The home volume would be the wrong
 # place: a file there outlives the container that wrote it.
-printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\nWITH_T3CODE=%s\n' \
+#
+# WITH_DOCKER is here too, although it is also a build arg. The build arg puts
+# dockerd in the image; this key is what the dockerd block above reads to start
+# it. `devaloy health` needs the second answer, and the Docker healthcheck gets
+# it from the container environment while an SSH shell does not. Recording it
+# here makes a manual `devaloy health` judge the same box the healthcheck does.
+printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\nWITH_T3CODE=%s\nWITH_DOCKER=%s\n' \
   "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" "${WITH_T3CODE:-false}" \
+  "${WITH_DOCKER:-false}" \
   > /opt/devaloy/runtime-flags
 chmod 644 /opt/devaloy/runtime-flags
 
