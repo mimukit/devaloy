@@ -32,6 +32,14 @@ Then check what Tailscale itself thinks:
 docker compose exec devaloy tailscale status
 ```
 
+Docker keeps the result of the image's healthcheck, `devaloy health`. The last five runs, with the reason for each failure, are one command away:
+
+```sh
+docker inspect --format '{{json .State.Health}}' devaloy | jq
+```
+
+`Status` is `starting` for up to three minutes after a boot, then `healthy` or `unhealthy`. In `.Log`, a `tailscale backend is not Running` line points at the Tailscale fixes below, and a `docker daemon is not answering` line points at the end of `/var/log/dockerd.log` inside the container. An unhealthy box keeps running, because nothing restarts it on a failed check.
+
 ## Symptom table
 
 | Symptom | Cause | Fix |

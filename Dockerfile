@@ -333,4 +333,26 @@ COPY config /opt/devaloy/config
 # empty named volume from the image either way. Declaring it here would only
 # force an anonymous volume on a plain `docker run`.
 
+# The Docker health state, for `docker ps`, `docker inspect` and dashboards such
+# as Beszel. Without it Docker reports health as "none".
+#
+# `devaloy health` answers one question: can you get into the box? Tailscale's
+# backend is Running, and where the entrypoint starts dockerd, `docker info`
+# answers. It uses nothing from mise, so a slow or failed toolchain bootstrap on
+# a cold volume never makes the box unhealthy; `devaloy doctor` reports that.
+#
+# The start period covers `tailscale up` (90 s timeout) and the dockerd socket
+# wait (30 s). The start interval probes every 5 s inside it, so the state turns
+# healthy seconds after the tailnet is up; it needs Docker Engine 25 or later on
+# the host. Three misses 30 s apart make a fault last about 90 s before the
+# state changes, so one dockerd restart (a 10 s sleep) never flips it.
+#
+# UNHEALTHY RESTARTS NOTHING. `restart: unless-stopped` acts when the container
+# exits, never on health, and that is the point: a restart kills every agent
+# session on the box. Keep it that way. Do not deploy this under Swarm, and do
+# not run an autoheal container that watches every container on the host; both
+# restart an unhealthy container.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=3m --start-interval=5s --retries=3 \
+    CMD ["/usr/local/bin/devaloy", "health"]
+
 ENTRYPOINT ["/entrypoint.sh"]

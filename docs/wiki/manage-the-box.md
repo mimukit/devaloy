@@ -68,6 +68,14 @@ The exit code is the useful part for a script or an agent:
 
 An image built before the flags file existed reports "build flags unknown" and never fails on a missing capability, since there is no way to know what was asked for.
 
+## `devaloy health`
+
+A narrower check than doctor, and the one the Docker `HEALTHCHECK` runs. It answers one question: can you get into the box? It passes when Tailscale's backend is `Running` and, on a box that starts dockerd, `docker info` answers. It prints nothing on success, one line per failure on stderr, and exits `0` or `1`.
+
+It leaves out what doctor reports and what does not lock you out: a failed toolchain bootstrap, Paseo, and T3 Code. Run it by hand with `ssh devaloy 'devaloy health; echo $?'`. The entrypoint records `WITH_DOCKER` in `/opt/devaloy/runtime-flags`, so a run from your shell judges the same box the healthcheck does.
+
+An unhealthy state restarts nothing. See [Recover a box you cannot reach](recover-an-unreachable-box.md) for how to read it.
+
 ## Without a terminal
 
 With no terminal and no verb, `devaloy` prints the status as plain text and exits `0`.

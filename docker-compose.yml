@@ -336,6 +336,11 @@ services:
       # not. The `home` volume is the one worth protecting, and even there the
       # real backup is pushing to a remote.
       - docker-data:/var/lib/docker
+    # Restarts the container when it EXITS, which here means tailscaled died.
+    # It does not react to health. The image defines a HEALTHCHECK (see the
+    # Dockerfile) that marks the box unhealthy when it is unreachable, and that
+    # state only shows in `docker ps` and dashboards: nothing restarts on it,
+    # so a running agent session is never killed by a failed check.
     restart: unless-stopped
 
 volumes:
