@@ -754,12 +754,15 @@ Each reclaim shows you what it found before it touches anything, and the apply d
 ```sh
 devaloy status                 # the same figures as plain text
 devaloy doctor                 # what this box was built with, and what is broken
+devaloy health                 # can you get in? exits 0 or 1; the Docker healthcheck runs it
 devaloy disk                   # dry run; add --apply to act
 devaloy ram --apply            # restart Paseo, TERM orphaned language servers
 devaloy prune --apply --all    # Docker build cache and unused images
 ```
 
 `devaloy-update`, `devaloy-disk`, `devaloy-ram`, `devaloy-prune` and `devaloy-nvim-sync` are symlinks to it and still work. With no terminal and no verb — `ssh devaloy 'devaloy'` — it prints the status block and exits `0`.
+
+The image defines a Docker `HEALTHCHECK` that runs `devaloy health`, so `docker ps` and dashboards such as Beszel show the box as healthy or unhealthy. It probes Tailscale, and `docker info` where the entrypoint starts dockerd. An unhealthy box is never restarted: `restart: unless-stopped` acts only when the container exits, so a failed check cannot kill a running agent session.
 
 Full key map and the `doctor` exit codes: [Manage the box](docs/wiki/manage-the-box.md).
 

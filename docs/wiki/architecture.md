@@ -75,6 +75,10 @@ a missing ACL rule, and it destroys the log that would tell you which one it
 was. The failure modes are enumerated in
 [Recover a box you cannot reach](recover-an-unreachable-box.md).
 
+### How the box reports health
+
+The image defines a Docker `HEALTHCHECK` that runs `devaloy health` every 30 seconds after a three-minute start period. It checks only what decides whether you can get in: Tailscale's backend state, and `docker info` on a box whose entrypoint starts dockerd. It uses nothing from mise, so the toolchain bootstrap never delays or fails it. The state is a report and nothing more. `restart: unless-stopped` acts on an exit, not on health, so the same rule as above holds: a failed check never restarts the box.
+
 ## Three layers of state
 
 | Layer | Lifetime | Holds |

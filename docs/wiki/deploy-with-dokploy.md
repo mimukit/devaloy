@@ -77,7 +77,7 @@ In Dokploy: **Projects** → open (or create) a project and environment →
 | Name | `devaloy` | The display name in the project list. |
 | Select a Server | *Dokploy* (Default) | The host the container lands on. Leave it on the default to use the panel's own server, or pick a remote one you added under **Remote Servers** — §1's `tun` prerequisite applies to *whichever* you choose. |
 | App Name | `infra-devaloy` | Prefilled as `<project>-<name>`. Dokploy appends a random suffix on create, so the real value ends up like `infra-devaloy-o5upac`. This is the `-p` project name for `docker compose`, and therefore the volume prefix — see §7. |
-| Compose Type | **Docker Compose** | Keep it here rather than **Stack**. Swarm ignores `devices:` and `cap_add:`, so `tailscaled` would come up with no `tun` and no `NET_ADMIN`, and `build:` is unsupported there too. |
+| Compose Type | **Docker Compose** | Keep it here rather than **Stack**. Swarm ignores `devices:` and `cap_add:`, so `tailscaled` would come up with no `tun` and no `NET_ADMIN`, and `build:` is unsupported there too. Swarm would also replace the container whenever its healthcheck fails, which kills every agent session; Compose only reports the state. An autoheal container on the host that watches every container (`AUTOHEAL_CONTAINER_LABEL=all`) restarts it the same way, so keep devaloy out of its scope. |
 | Description | *(optional)* | |
 
 Hit **Create**. Then, on the new service's **General** tab, fill in the
