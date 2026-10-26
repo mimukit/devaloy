@@ -57,6 +57,10 @@ skill, which carries the complete pattern catalog.
 
 Never hard-wrap Markdown. Write each paragraph and each list item as one continuous line, and let the editor soft-wrap it. Keep the line structure only where it carries meaning: code fences, tables, and YAML frontmatter. No setting on this box wraps Markdown for you, so a wrapped file is your own doing. This rule covers every Markdown file you write or edit for me. If a repository states its own line rule, follow the repository instead.
 
+## Mockups
+
+When I ask for a mockup, make an image mockup. Never write HTML for it, unless I ask for code in the same request.
+
 ## Where you are
 
 You are running on **devaloy**, a headless remote dev box — an `ubuntu:24.04`
