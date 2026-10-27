@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Stop the current user's TCP listeners by port or with an fzf picker."""
+
+import argparse
+import os
+import shutil
+import signal
+import subprocess
+import sys
+
+
+def port_number(value):
+    if not value.isascii() or not value.isdecimal() or not 1 <= int(value) <= 65535:
+        raise argparse.ArgumentTypeError("use a port number from 1 to 65535")
+    return int(value)
+
+
+def listeners():
+    # -a joins the user and socket filters. Without it, lsof uses their union.
+    result = subprocess.run(
+        ["lsof", "-nP", "-a", "-u", str(os.getuid()), "-iTCP", "-sTCP:LISTEN", "-Fpcn"],
+        capture_output=True, text=True, check=False,
+    )
+    # lsof exits 1 when the filters find no sockets.
+    if result.returncode not in (0, 1) or (result.returncode and result.stderr.strip()):
+        raise RuntimeError(result.stderr.strip() or "lsof cannot list TCP listeners")
+    found = {}
+    pid, command = None, "?"
+    for line in result.stdout.splitlines():
+        if line.startswith("p"):
+            pid, command = int(line[1:]), "?"
+        elif line.startswith("c"):
+            command = line[1:]
+        elif line.startswith("n") and pid is not None:
+            port = line.rsplit(":", 1)[-1]
+            if port.isdecimal():
+                found[(int(port), pid)] = command
+    return found
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Stop your TCP listeners. With no ports, select processes with fzf.",
+        epilog="Use Tab to select multiple rows. Escape cancels. Docker services need docker compose stop.",
+    )
+    parser.add_argument("-9", dest="force", action="store_true", help="send SIGKILL instead of SIGTERM")
+    parser.add_argument("ports", nargs="*", type=port_number, help="TCP port numbers")
+    args = parser.parse_args()
+    if not shutil.which("lsof"):
+        raise RuntimeError("lsof is required; rebuild Devaloy with the updated Dockerfile")
+
+    available = listeners()
+    if args.ports:
+        ports = set(args.ports)
+        selected = {key for key in available if key[0] in ports}
+        for port in sorted(ports - {key[0] for key in selected}):
+            print(f"kp: no TCP listener owned by you on port {port}")
+    else:
+        if not available:
+            print("kp: no TCP listeners owned by you")
+            return 0
+        if not sys.stdin.isatty() or not sys.stderr.isatty():
+            raise RuntimeError("the picker needs a terminal; use kp PORT for a non-interactive command")
+        if not shutil.which("fzf"):
+            raise RuntimeError("fzf is required for the picker; use kp PORT instead")
+        rows = {f"{port:<7} {pid:<9} {command}": (port, pid)
+                for (port, pid), command in sorted(available.items())}
+        result = subprocess.run(
+            ["fzf", "--multi", "--header-lines=1", "--prompt=Stop port > ",
+             "--header=Tab selects multiple rows. Enter stops. Escape cancels."],
+            input="PORT    PID       COMMAND\n" + "\n".join(rows) + "\n",
+            stdout=subprocess.PIPE, text=True, check=False,
+        )
+        if result.returncode in (1, 130):
+            return 0
+        if result.returncode:
+            raise RuntimeError(f"fzf exits with status {result.returncode}")
+        selected = {rows[row] for row in result.stdout.splitlines() if row in rows}
+
+    if not selected:
+        return 0
+    # Recheck ownership and listeners after the picker. Skip stale rows.
+    current = listeners()
+    pids = sorted({key[1] for key in selected if key in current})
+    sig = signal.SIGKILL if args.force else signal.SIGTERM
+    failed = False
+    for pid in pids:
+        try:
+            os.kill(pid, sig)
+            print(f"kp: sent {sig.name} to PID {pid}")
+        except ProcessLookupError:
+            print(f"kp: PID {pid} no longer exists")
+        except PermissionError:
+            print(f"kp: no permission to stop PID {pid}", file=sys.stderr)
+            failed = True
+    return int(failed)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError) as error:
+        print(f"kp: {error}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)

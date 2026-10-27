@@ -219,6 +219,7 @@ Every management verb belongs to one command, `devaloy`. The five older names ar
 
 | Command | Effect |
 |---|---|
+| `kp [-9] [PORT ...]` | Sends SIGTERM to your TCP listeners on the given ports. With no ports, opens an fzf picker. Tab selects multiple rows. Escape cancels. `-9` sends SIGKILL. Each PID receives one signal. Missing listeners cause no error. Requires `lsof`; the picker also requires a terminal and `fzf`. For a Docker service, use `docker compose stop <service>`. |
 | `devaloy` | Opens the picker. With no terminal and no verb, prints `devaloy status` as plain text and exits `0`. Needs fzf 0.65+ to draw; below that it refuses and names `devaloy update`, while every verb still runs. Modules live in `/usr/local/lib/devaloy/`, overridable with `DEVALOY_LIB`. |
 | `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, the T3 Code server, Docker, and the toolset revision. |
 | `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes. |

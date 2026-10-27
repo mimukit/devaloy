@@ -138,6 +138,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         python3-venv \
         python-is-python3 \
         iproute2 \
+        lsof \
         iptables \
         openssh-client \
         # Codex's Linux sandbox. It looks for `bwrap` on PATH and warns on every
