@@ -125,6 +125,10 @@ main() {
   fi
 
   case "${verb}" in
+    update | nvim-sync) reexec_as_dev "$(readlink -f "$0")" "${verb}" "$@" ;;
+  esac
+
+  case "${verb}" in
     status) do_status "$@" ;;
     doctor) do_doctor "$@" ;;
     health) do_health "$@" ;;

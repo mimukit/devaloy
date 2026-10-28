@@ -17,7 +17,7 @@ Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, claude, c
 devaloy update
 ```
 
-It runs `bootstrap-toolchain.sh --force` (which skips the toolset gate and runs `mise upgrade`), then refreshes the `/usr/local/bin` shim mirror with `link-shims`. Run it as the dev user; it refuses to run as root.
+It runs `bootstrap-toolchain.sh --force` (which skips the toolset gate and runs `mise upgrade`), then refreshes the `/usr/local/bin` shim mirror with `link-shims`. It runs as the dev user. Run it as root, from `docker exec` or the Dokploy terminal, and it switches to the dev user with `su -l dev` first.
 
 It finishes with `mise prune`, which deletes every installed version no tracked config asks for any more. `mise upgrade` installs the new version beside the old one and never removes the old directory, so without the prune the home volume keeps a copy of every claude, codex and pnpm you have ever run. A failed prune only warns: it costs disk, not a working toolchain. To see what would go before you run it, use `mise ls --prunable` or `mise prune --dry-run`.
 

@@ -333,10 +333,26 @@ box_name() {
   printf '%s' "${name:-devaloy}"
 }
 
+reexec_as_dev() { # reexec_as_dev <devaloy> <verb> [args...]
+  # A root shell is the default way in through `docker exec` and the Dokploy
+  # terminal, so a refusal there only sends you to look up `su`. Drop to dev and
+  # run the same command instead. `su -l` gives dev's login environment, the
+  # same as entrypoint.sh's as_dev, so the mise shims are on PATH. DEVALOY_LIB
+  # goes along so a run from a checkout stays a run from that checkout.
+  [ "$(id -un)" = "root" ] || return 0
+  id dev >/dev/null 2>&1 || die "$2: run this as the dev user, but this box has no dev user."
+  local self="$1" cmd
+  shift
+  echo "devaloy: $1: running as the dev user, not root." >&2
+  cmd="$(printf '%q ' env DEVALOY_LIB="${DEVALOY_LIB}" "${self}" "$@")"
+  exec su -l dev -c "${cmd}"
+}
+
 refuse_root() { # refuse_root <verb>
   # update and nvim-sync both refuse root, and for the same reason: root writes
   # the files with the wrong owner and leaves the dev user unable to edit its
-  # own toolchain or editor config.
+  # own toolchain or editor config. main() re-runs them as dev first, so this
+  # only fires when that hand-off did not happen.
   [ "$(id -un)" = "root" ] || return 0
   die "$1: run this as the dev user, not root."
 }
