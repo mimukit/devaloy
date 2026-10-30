@@ -15,7 +15,7 @@ curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/instal
 To install a branch or a tag, put the ref in both places:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/feat/native-install/scripts/install-native.sh | sudo DEVALOY_REF=feat/native-install TS_AUTHKEY=tskey-auth-... bash
+curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/issue-4-install-devaloy-natively-on-an-ubuntu-vm/scripts/install-native.sh | sudo DEVALOY_REF=issue-4-install-devaloy-natively-on-an-ubuntu-vm TS_AUTHKEY=tskey-auth-... bash
 ```
 
 Success outcome: on a fresh Ubuntu 24.04 VM, that one command with no file edits exits 0 only after the toolchain is ready, the node answers `ssh dev@devaloy`, and `devaloy doctor` exits 0. A second run of the same command exits 0 and changes no file under `/etc`, `/opt/devaloy` or `/home/dev` apart from the toolchain stamp and logs it already owns.
@@ -53,7 +53,7 @@ Target: open, no baseline. Phase 3 measures the time from the command to exit 0 
 | Test approach | No new test runner. Phase 1 builds the image before and after the change on this box's nested Docker, runs each with no `TS_AUTHKEY` (`tailscale up` fails without stopping the container, and the seed still runs), and diffs the seeded `/home/dev`. When the nested run cannot start, that check moves to an attended run on the OVH host. Phases 3 to 5 check on a throwaway VM with the commands in each `Done when:`. |
 | Lint | `docker run --rm -v "$PWD:/mnt" koalaman/shellcheck:stable` on every new or changed script. The box toolset does not change for it. |
 | Test VM | A throwaway Ubuntu 24.04 VM with `TS_HOSTNAME=devaloy-vmtest`, so it cannot collide with the live `devaloy-ovh` node. A person runs the first install. The agent runs every later check and re-run as `ssh dev@devaloy-vmtest sudo ...`. |
-| Outward actions | The build may push the feature branch `feat/native-install` to `origin`. No push to `main`, no force-push. The test VM installs from that branch through `DEVALOY_REF`. |
+| Outward actions | The build may push the feature branch `issue-4-install-devaloy-natively-on-an-ubuntu-vm` to `origin`. No push to `main`, no force-push. The test VM installs from that branch through `DEVALOY_REF`. |
 | PR shape | One PR for all six phases. |
 
 ## Approach
@@ -74,7 +74,7 @@ Rejected alternatives, one line each:
 - A separate native script that copies the logic. Fastest to write, but `entrypoint.sh` changes often and the copy would drift within weeks.
 - Run `entrypoint.sh` itself as a systemd service with native guards. Least new code, but it keeps the `&` plus `wait` process model inside a unit, so systemd cannot restart Paseo or T3 Code on its own.
 
-### Phase 1: Split entrypoint.sh into step functions
+### Phase 1: Split entrypoint.sh into step functions (built 2026-10-28)
 
 Move each `# --- ... ---` section of `entrypoint.sh` into a function in `lib/steps/` (for example `step_shell_env`, `step_secrets`, `step_push_config`, `step_seed_config`, `step_tailscale_up`, `step_toolchain`, `step_gh_auth`, `step_git_identity`, `step_signing`, `step_clone_repos`, `step_paseo_config`, `step_t3code_config`). Each function takes its inputs from the environment and writes only files. Process start (tailscaled, dockerd, Paseo, T3 Code) stays in `entrypoint.sh` for the container. `entrypoint.sh` becomes a list of calls plus the container-only process blocks. The Dockerfile copies `lib/steps/` with the rest of `lib/`.
 
@@ -82,7 +82,7 @@ The working tree has uncommitted edits to `devaloy` and `lib/common.sh` (the `kp
 
 Done when: images built from `main` and from the branch, each run with the same `.env` minus `TS_AUTHKEY` on a fresh volume until `Toolchain ready`, give the same output for `find /home/dev -type f -not -path '*/.cache/*' -not -path '*/.local/share/mise/*' -print0 | sort -z | xargs -0 sha256sum`; both logs print `devaloy is up`; `devaloy doctor` exits 0 in the branch image; shellcheck is clean on `entrypoint.sh` and `lib/steps/*.sh`.
 
-### Phase 2: Make the steps host-agnostic
+### Phase 2: Make the steps host-agnostic (built 2026-10-28)
 
 Remove the container assumptions the steps carry: paths under `/var/run` and `/var/log` that the container owns, the `docker compose exec` recovery hints, and the probes that assume PID 1 is the entrypoint. Add `RUNTIME` (`container` or `native`) to `/opt/devaloy/build-flags`. Teach `devaloy health` to check `systemctl is-active` for the native units, and `devaloy doctor` to report the runtime. Move the apt package list to `config/apt/packages.txt` and make the Dockerfile read it. Move the free-range probe out of `scripts/setup-sysbox-host.sh` into a shared function that both scripts call.
 
@@ -90,7 +90,7 @@ Done when: the Phase 1 diff still matches, `devaloy doctor` prints `runtime: con
 
 ### Phase 3: The core installer
 
-Attended: a person provisions a throwaway Ubuntu 24.04 VM, makes a reusable untagged test auth key, and runs the first one-liner on it with `DEVALOY_REF=feat/native-install TS_HOSTNAME=devaloy-vmtest`. The build pushes `feat/native-install` before this step. Every later check in Phases 3 to 5 runs from the agent over `ssh dev@devaloy-vmtest`.
+Attended: a person provisions a throwaway Ubuntu 24.04 VM, makes a reusable untagged test auth key, and runs the first one-liner on it with `DEVALOY_REF=issue-4-install-devaloy-natively-on-an-ubuntu-vm TS_HOSTNAME=devaloy-vmtest`. The build pushes `issue-4-install-devaloy-natively-on-an-ubuntu-vm` before this step. Every later check in Phases 3 to 5 runs from the agent over `ssh dev@devaloy-vmtest`.
 
 Write `scripts/install-native.sh`. In order:
 
@@ -127,7 +127,7 @@ Done when: a second run of the one-liner on the Phase 4 VM exits 0 and `find /et
 
 Add `docs/wiki/install-on-a-vm.md` (the one-liner, `DEVALOY_REF`, `--no-wait`, `--lockdown`, the env variables, how to revoke a token, how to recover through the provider console). Add the native rows to `docs/wiki/reference.md` and a line in `docs/wiki/index.md` and the README front door. State in the page that the VM must serve nothing else, because `dev` has passwordless sudo and agents run in bypass mode on the VM itself.
 
-Done when: every command in `docs/wiki/install-on-a-vm.md` appears in the installer or the CLI (checked with `grep`), and the one-liner exactly as the page prints it, with `DEVALOY_REF=feat/native-install`, re-run on the test VM exits 0 with `devaloy doctor` exiting 0.
+Done when: every command in `docs/wiki/install-on-a-vm.md` appears in the installer or the CLI (checked with `grep`), and the one-liner exactly as the page prints it, with `DEVALOY_REF=issue-4-install-devaloy-natively-on-an-ubuntu-vm`, re-run on the test VM exits 0 with `devaloy doctor` exiting 0.
 
 ## Open questions
 
