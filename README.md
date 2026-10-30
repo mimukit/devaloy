@@ -23,6 +23,7 @@ ground in shorter, task-shaped pages:
   and why the trades were made.
 - [Reference](docs/wiki/reference.md) — every `.env` variable, command, flag and
   managed file.
+- [Install on a VM](docs/wiki/install-on-a-vm.md): one command on a fresh Ubuntu 24.04 VM, no Docker.
 - [Recover a box you cannot reach](docs/wiki/recover-an-unreachable-box.md) —
   when Tailscale SSH stops answering.
 - [All docs](docs/wiki/index.md)
@@ -520,7 +521,7 @@ the hosted web client reach a daemon it is not served from.
   much of the point, but it means a session started through Paseo has a
   different tool list from one you started over SSH.
 - **Turning it off stops the daemon and undeclares the CLI.** `WITH_PASEO=false` stops the daemon on the next boot and drops the mise fragment that declares `npm:@getpaseo/cli`. The installed copy stays on the home volume until the next `devaloy update`, whose `mise prune` reclaims it. Nothing rewrites `~/.paseo/config.json`, so your paired clients and settings are still there when you turn it back on.
-- **`devaloy update` reads the key from a file, not from your shell.** `WITH_PASEO` only ever reaches PID 1's environment, so no shell on the box inherits it. `entrypoint.sh` writes it, `WITH_BROWSER` and `WITH_T3CODE` to `/opt/devaloy/runtime-flags` on every boot, and `bootstrap-toolchain.sh` reads that file when the variable is absent. Without it an update read both optional keys as `false`, undeclared Paseo and the browser CLI, and then let `mise prune` delete both from the home volume. What that leaves behind is a running daemon and no `paseo` on `PATH`.
+- **`devaloy update` reads the key from a file, not from your shell.** `WITH_PASEO` only ever reaches PID 1's environment, so no shell on the box inherits it. `step_runtime_flags` in `lib/steps/toolchain.sh` writes it, `WITH_BROWSER` and `WITH_T3CODE` to `/opt/devaloy/runtime-flags` on every boot, and `bootstrap-toolchain.sh` reads that file when the variable is absent. Without it an update read both optional keys as `false`, undeclared Paseo and the browser CLI, and then let `mise prune` delete both from the home volume. What that leaves behind is a running daemon and no `paseo` on `PATH`.
 - **Upgrading is `devaloy update`.** Paseo always tracks `latest`
   through mise, like `claude` and `codex` do. There is no environment variable
   to pin it. `MISE_PASEO_VERSION` would look like the obvious name, but mise
@@ -802,8 +803,8 @@ just refused to install, then reported everything up to date. The agent CLIs
 made it worse: they ship most days and check their own release channel, which
 has no delay, so `claude` nagged *"Update available! Run: `mise upgrade
 claude`"* with no version of that command able to satisfy it.
-`MISE_MINIMUM_RELEASE_AGE=0` turns the window off for every tool, set in
-`entrypoint.sh` (every shell) and `bootstrap-toolchain.sh` (the boot path,
+`MISE_MINIMUM_RELEASE_AGE=0s` turns the window off for every tool, set in
+`lib/steps/env.sh` (every shell) and `bootstrap-toolchain.sh` (the boot path,
 which sources no shell config). Set it to a duration such as `24h` in either
 file to bring the delay back.
 

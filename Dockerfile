@@ -102,50 +102,27 @@ RUN userdel -r ubuntu 2>/dev/null; groupdel ubuntu 2>/dev/null; \
 COPY --from=fetch /out/usr/share/keyrings/ /usr/share/keyrings/
 COPY --from=fetch /out/etc/apt/sources.list.d/ /etc/apt/sources.list.d/
 
+# The package list itself is config/apt/packages.txt, one package per line with
+# a comment on each one that needs a reason. It lives there rather than inline
+# because the native installer reads the same file, and two copies of a list
+# drift. It comes in through a bind mount, not a COPY: the `COPY config` at the
+# bottom of this file is last on purpose, and a COPY here would rebuild every
+# layer below on any config edit. The bind mount makes this layer depend on
+# this one file alone, so an edit to browser.txt does not rebuild it.
+#
+# The sed strips comments and blank lines, because apt-get takes neither. The
+# list goes through a variable rather than a pipe into xargs, and the variable
+# is checked: /bin/sh has no pipefail, so a missing file piped into xargs would
+# run `apt-get install` with no packages, succeed, and ship an image with no
+# git, no zsh and no tailscale.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
-    apt-get update && apt-get install -y --no-install-recommends \
-        sudo \
-        git \
-        tmux \
-        build-essential \
-        curl \
-        ca-certificates \
-        vim \
-        htop \
-        btop \
-        bat \
-        jq \
-        # LazyVim's search stack. Neovim itself comes from mise (see
-        # bootstrap-toolchain.sh); these are the binaries its pickers shell out
-        # to, plus the unzip that Mason's installers expect on PATH.
-        ripgrep \
-        fd-find \
-        # Noble's 0.44.1, kept as a cold-boot floor: LazyVim's pickers want an
-        # fzf on the first `nvim`, before the toolchain bootstrap has finished.
-        # The `devaloy` TUI needs 0.65+ (--footer, --no-input), so
-        # bootstrap-toolchain.sh pins a current fzf from mise, and the shim in
-        # /usr/local/bin shadows this one on PATH.
-        fzf \
-        unzip \
-        zsh \
-        # Sourced from /usr/share by config/zsh/zshrc. Distro packages rather
-        # than a plugin manager: the point is that a cold boot clones nothing.
-        zsh-autosuggestions \
-        zsh-syntax-highlighting \
-        python3 \
-        python3-pip \
-        python3-venv \
-        python-is-python3 \
-        iproute2 \
-        lsof \
-        iptables \
-        openssh-client \
-        # Codex's Linux sandbox. It looks for `bwrap` on PATH and warns on every
-        # start when it can't find one, falling back to the copy bundled in its
-        # binary. The distro package is what upstream asks for.
-        bubblewrap \
-        tailscale \
+    --mount=type=bind,source=config/apt/packages.txt,target=/tmp/apt/packages.txt \
+    pkgs="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' /tmp/apt/packages.txt)" \
+    && [ -n "${pkgs}" ] \
+    && apt-get update \
+    # Unquoted on purpose: one word per package.
+    && apt-get install -y --no-install-recommends ${pkgs} \
     # Ubuntu ships bat as `batcat` to avoid a name clash with bacula-console.
     # Link it in /usr/bin, not /usr/local/bin — link-shims owns the latter and
     # will overwrite a symlink it finds there.
@@ -255,28 +232,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # `docker compose up -d` alone will not pick up a change to it. You need
 # `--build`. The same key is also read at runtime, by the bootstrap and the
 # entrypoint — see compose.
+#
+# The list is config/apt/browser.txt, read the same way as packages.txt above
+# and for the same reason: the native installer reads that file too.
 # ---------------------------------------------------------------------------
 ARG WITH_BROWSER=false
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,source=config/apt/browser.txt,target=/tmp/apt/browser.txt \
     if [ "${WITH_BROWSER}" = "true" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends \
-            libnss3 \
-            libnspr4 \
-            libatk1.0-0t64 \
-            libatk-bridge2.0-0t64 \
-            libcups2t64 \
-            libdrm2 \
-            libxkbcommon0 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libxrandr2 \
-            libgbm1 \
-            libpango-1.0-0 \
-            libcairo2 \
-            libasound2t64 \
-            ffmpeg; \
+        pkgs="$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' /tmp/apt/browser.txt)" \
+        && [ -n "${pkgs}" ] \
+        && apt-get update \
+        && apt-get install -y --no-install-recommends ${pkgs}; \
     fi
 # --- OPTIONAL: headless browser capture. END ---
 
@@ -311,8 +279,14 @@ RUN set -eux; \
 # here would go stale; entrypoint.sh records them in /opt/devaloy/runtime-flags
 # on every boot, and doctor reads them there and from whether the daemon or the
 # server is running.
+#
+# RUNTIME=container tells the CLI and the boot steps which kind of box this is.
+# The native installer writes the same file with RUNTIME=native, and the
+# difference decides what `devaloy doctor` and `devaloy health` check (processes
+# the entrypoint supervises, or systemd units) and which recovery command a
+# failed step prints. An image built before this key reads as container.
 RUN mkdir -p /opt/devaloy \
-    && printf 'WITH_DOCKER=%s\nWITH_BROWSER=%s\n' \
+    && printf 'WITH_DOCKER=%s\nWITH_BROWSER=%s\nRUNTIME=container\n' \
         "${WITH_DOCKER}" "${WITH_BROWSER}" \
         > /opt/devaloy/build-flags
 

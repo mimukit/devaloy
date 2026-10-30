@@ -216,8 +216,9 @@ whatever you had attached. So pick one:
   Dockerfile
   docker-compose.yml
   entrypoint.sh
+  lib/**
   bootstrap-toolchain.sh
-  devaloy update
+  devaloy
   link-shims
   config/**
   ```

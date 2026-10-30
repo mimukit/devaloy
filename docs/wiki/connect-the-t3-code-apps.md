@@ -75,6 +75,48 @@ The phone needs the Tailscale app connected to the same tailnet, and the T3 Code
 
 Each link works once. Run `ssh devaloy t3 pair` again for each new device.
 
+## 4. Turn on phone notifications
+
+Pairing does not give the phone push notifications. The pairing link opens a live connection to the server, and that connection closes when the app goes to the background. The server sends agent state (needs input, finished, failed) to phones only through T3 Connect, the hosted relay of T3 Code. A box with no T3 Connect link sends nothing, and no log line says so.
+
+The link needs your sign-in, so the boot cannot make it. You do it once. The link is stored in `~/.t3/userdata/secrets/` on the `home` volume, so a redeploy keeps it.
+
+1. On the box, as `dev`, run:
+
+   ```sh
+   t3 connect link --publish-only --headless
+   ```
+
+   `--headless` prints a code and a URL for the sign-in, because the box has no browser. Open the URL on the laptop or the phone and sign in.
+
+2. Restart the server, because the link takes effect on the next start. The restart cancels running turns.
+
+   ```sh
+   devaloy ram --t3 --apply
+   ```
+
+3. Check the link:
+
+   ```sh
+   t3 connect status
+   ```
+
+   `Environment link` shows `provisioned`, `Relay` shows a URL, and `Publish agent activity` shows `enabled`.
+
+4. In the phone app, sign in to T3 Connect with the same account. The phone registers itself with the relay, and the relay sends a push to each registered device.
+5. In the Android or iOS settings, allow notifications for the T3 Code app.
+6. Start a turn from the phone, put the app in the background, and wait for the turn to finish. A notification arrives.
+
+`--publish-only` links the box for push only. It starts no managed tunnel and installs no relay client, so the tailnet stays the only route to the server. Without the flag, `t3 connect link` also sets up a public tunnel, which this box does not need.
+
+For each state change the relay receives the project title, the thread title, the model name, the state and a fixed headline such as `Agent finished`. The thread title is often written from your first prompt, so it can carry words from it. The server sends no prompt text and no replies.
+
+To stop push, run `t3 connect publish --disable` and restart the server. `t3 connect publish` turns it on again.
+
+`devaloy doctor` has a `t3 push` row for this link. It shows `ok` when the box is linked and publishes, and `off` when you never linked it. It shows `broken` when you ran the link but the server has not provisioned it, or when T3 Connect revoked it.
+
+The [ntfy push](push-notifications.md) is a separate route. It sends to the ntfy app, not to the T3 Code app, and it needs no T3 Connect account.
+
 ## Open a thread on each new worktree
 
 gitkit, issuekit `start`, and mergekit `start` end with a `Workspace ready` block when they hand you a worktree. The block names no tool. In T3 Code, a short instruction file tells Claude to open an idle thread bound to that worktree. You type the first prompt in that thread yourself.
@@ -103,7 +145,7 @@ The apps use plain HTTP to the tailnet address. That is safe here, because WireG
 
 `http://devaloy:3773`, the MagicDNS name, also reaches the server. Once connected, the apps learn the box's Tailscale addresses and keep them as routes.
 
-There is no Tailscale Serve and no HTTPS. The hosted web app at `app.t3.codes` needs HTTPS, so it does not work with this setup. T3 Connect, the hosted relay, is not used either. The tailnet is the only route in.
+There is no Tailscale Serve and no HTTPS. The hosted web app at `app.t3.codes` needs HTTPS, so it does not work with this setup. T3 Connect, the hosted relay, carries no connection to the server. With the publish-only link from [step 4](#4-turn-on-phone-notifications), the server only sends agent state out to it for push. The tailnet is the only route in.
 
 If your tailnet policy has its own `acls` or `grants` instead of the default allow-all rule, add a rule that lets your laptop and phone reach port 3773 on the box.
 
@@ -137,12 +179,13 @@ All T3 Code state is in `~/.t3` on the `home` volume. A redeploy keeps it, and p
 | A turn stopped after `devaloy update`, `devaloy ram --t3 --apply` or a restart | A server restart cancels running turns | Threads and history are kept. Turn on "continue threads after a server update" in the app to resume interrupted turns. |
 | A browser tab fails to open | The image has no Chrome libraries | Work without browser tabs; the server keeps running. A `WITH_BROWSER=true` build adds the Chromium libraries Playwright needs, which may also cover T3 Code's browser. This is not tested. |
 | The phone cannot connect | Tailscale is off on the phone, or the tailnet policy blocks port 3773 | Connect Tailscale on the phone. Check the policy. |
+| The phone app shows no notifications | The box has no T3 Connect link, or the server has not restarted since the link | Run `devaloy doctor` and read the `t3 push` row. Follow [step 4](#4-turn-on-phone-notifications). |
 | `ssh devaloy t3 pair` finds no server | The server is down | Run `devaloy doctor`. Check the `t3 server` row. |
 
 ## Manage the server
 
 - `devaloy status` shows the server and its memory.
-- `devaloy doctor` shows a `t3 server` row and a `t3 cli` row.
+- `devaloy doctor` shows a `t3 server` row, a `t3 cli` row and a `t3 push` row.
 - `devaloy ram --t3` reports the server's memory. Add `--apply` to restart it. The restart cancels running turns. A plain `devaloy ram --apply` leaves the server alone.
 
 ## Turn it off

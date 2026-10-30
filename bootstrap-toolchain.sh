@@ -53,7 +53,7 @@ esac
 # See entrypoint.sh, which exports this into every shell for the same reason.
 # Repeated here because the boot path runs this script under `su -l -s /bin/sh`,
 # which sources neither .zshenv nor .bashrc.
-export MISE_MINIMUM_RELEASE_AGE=0
+export MISE_MINIMUM_RELEASE_AGE=0s
 
 # --- where the declared toolset comes from ------------------------------------
 # Same order devaloy-update's config_src() uses, and for the same reason:
