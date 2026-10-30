@@ -13,6 +13,10 @@
 # fzf runs every binding with stdout on a pipe, so `test -t 1` is false in
 # exactly the places that do want colour. Key off NO_COLOR alone, as the ip
 # script does, and let --ansi render the escapes.
+#
+# The modules that source this file read the colours, which shellcheck cannot
+# see when it checks this file on its own.
+# shellcheck disable=SC2034
 if [ -z "${NO_COLOR:-}" ]; then
   DIM=$'\033[2m'
   BOLD=$'\033[1m'
@@ -246,8 +250,13 @@ restart_t3() {
     fi
   done
   echo "devaloy ${caller}: WARNING — the T3 Code server has not come back after ${waited}s." >&2
-  echo "devaloy ${caller}: check 'docker logs' for this container; the supervisor" >&2
-  echo "devaloy ${caller}: retries every 10s and logs each failure." >&2
+  if on_native; then
+    echo "devaloy ${caller}: check 'journalctl -u devaloy-t3code'; systemd" >&2
+    echo "devaloy ${caller}: restarts the unit every 10s and logs each failure." >&2
+  else
+    echo "devaloy ${caller}: check 'docker logs' for this container; the supervisor" >&2
+    echo "devaloy ${caller}: retries every 10s and logs each failure." >&2
+  fi
   return 1
 }
 
@@ -278,6 +287,9 @@ proc_started() { # proc_started <pid>
 # WITH_PASEO and WITH_T3CODE are deliberately NOT in the file: they are runtime
 # variables that `docker compose up -d` can flip without a rebuild, so reading
 # them from a file baked into the image would report the wrong answer.
+#
+# RUNTIME is in the file too (container or native), read by devaloy_runtime
+# below. The native installer writes the same file with RUNTIME=native.
 BUILD_FLAGS_FILE="${BUILD_FLAGS_FILE:-/opt/devaloy/build-flags}"
 
 build_flag() { # build_flag <name>
@@ -287,6 +299,36 @@ build_flag() { # build_flag <name>
   local v
   v="$(sed -n "s/^$1=//p" "${BUILD_FLAGS_FILE}" 2>/dev/null | head -1)"
   printf '%s' "${v:-unknown}"
+}
+
+# --- the runtime ----------------------------------------------------------
+#
+# container or native: which kind of box this CLI is running on. The two need
+# different checks and different advice. A container's processes are children
+# of entrypoint.sh and its logs are `docker logs`; a native VM runs the same
+# work as systemd units, and its logs are `journalctl -u <unit>`.
+#
+# The environment wins, so `RUNTIME=native devaloy doctor` previews the native
+# checks on any box. Then the RUNTIME key in build-flags: the Dockerfile writes
+# container, the native installer writes native. An image built before the key
+# existed has no RUNTIME line, and every such image is a container, so absent
+# reads as container rather than as unknown. Anything other than `native` reads
+# as container too, so a typo keeps the behaviour every box had before.
+#
+# lib/steps/common.sh resolves the same key the same way for the boot steps; it
+# cannot source this file, which makes a temp directory on source.
+devaloy_runtime() {
+  local v="${RUNTIME:-}"
+  [ -n "${v}" ] || v="$(build_flag RUNTIME)"
+  if [ "${v}" = "native" ]; then
+    printf 'native'
+  else
+    printf 'container'
+  fi
+}
+
+on_native() {
+  [ "$(devaloy_runtime)" = "native" ]
 }
 
 # --- the runtime flags ----------------------------------------------------
