@@ -24,7 +24,7 @@ down and `restart: unless-stopped` brings it back.
 
 ## What runs, in what order
 
-`entrypoint.sh` runs as root and its ordering is load-bearing. Roughly:
+`entrypoint.sh` runs as root and its ordering is load-bearing. It calls step functions from `lib/steps/` and starts the processes itself. Roughly:
 
 1. **Write `~/.devaloy_env`** and hook it into `.bashrc` and `.zshenv`. This is
    `PATH` and the OOM reset, and it is written first so the very first session
@@ -41,6 +41,8 @@ down and `restart: unless-stopped` brings it back.
 10. **Start the Paseo daemon** under a supervision loop, only when `WITH_PASEO=true`.
 11. **Start the T3 Code server** (`t3 serve` on the tailnet address, port 3773) under a supervision loop, only when `WITH_T3CODE=true`.
 12. **`wait` on `tailscaled`.**
+
+On a native VM, `devaloy-boot.service` runs the same steps in the same order through `lib/steps/native-boot.sh`, and systemd starts `tailscaled`, `dockerd`, Paseo and T3 Code in place of the entrypoint. See [Install on a VM](install-on-a-vm.md).
 
 Three orderings in there matter more than they look.
 

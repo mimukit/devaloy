@@ -9,6 +9,8 @@ repo defines in one place. For what any of it is *for*, see
 All are set in `.env` beside `docker-compose.yml`, and every one is optional
 except `TS_AUTHKEY` on a first boot.
 
+On a native VM the same names live in `/etc/devaloy/env` instead, and the compose-only ones (`DEVALOY_NAME`, `DEVALOY_RUNTIME`, `DEVALOY_PRIVILEGED`, the resource ceilings) do not apply. See [Native install](#native-install).
+
 ### Identity
 
 | Variable | Default | Effect |
@@ -21,7 +23,7 @@ except `TS_AUTHKEY` on a first boot.
 |---|---|---|
 | `TS_AUTHKEY` | empty | Auth key for joining the tailnet. Must be **reusable, non-expiring and untagged**. Optional on a redeploy — the node identity is already in the `tailscale-state` volume. |
 | `TS_HOSTNAME` | `DEVALOY_NAME` (`devaloy`) | Node name on the tailnet, and the name given to the signing key registered on GitHub. Set it only when the tailnet name must differ from the container name; otherwise let `DEVALOY_NAME` drive it. The name is global to the tailnet, so two boxes that share one join as `<name>` and `<name>-1`. |
-| `TS_ACCEPT_DNS` | `false` | `true` passes `--accept-dns=true`. Letting Tailscale rewrite `/etc/resolv.conf` inside a container clobbers Docker's resolver — turn it on only if you need MagicDNS resolution *from* the box. |
+| `TS_ACCEPT_DNS` | `false` | `true` passes `--accept-dns=true`. Letting Tailscale rewrite `/etc/resolv.conf` inside a container clobbers Docker's resolver — turn it on only if you need MagicDNS resolution *from* the box. On a native VM the default is `true`, because there is no Docker resolver to protect; `false` still turns it off. |
 
 ### Credentials
 
@@ -222,9 +224,9 @@ Every management verb belongs to one command, `devaloy`. The five older names ar
 | `kp [-9] [PORT ...]` | Sends SIGTERM to your TCP listeners on the given ports. With no ports, opens an fzf picker. Tab selects multiple rows. Escape cancels. `-9` sends SIGKILL. Each PID receives one signal. Missing listeners cause no error. Requires `lsof`; the picker also requires a terminal and `fzf`. For a Docker service, use `docker compose stop <service>`. |
 | `devaloy` | Opens the picker. With no terminal and no verb, prints `devaloy status` as plain text and exits `0`. Needs fzf 0.65+ to draw; below that it refuses and names `devaloy update`, while every verb still runs. Modules live in `/usr/local/lib/devaloy/`, overridable with `DEVALOY_LIB`. |
 | `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, the T3 Code server, Docker, and the toolset revision. |
-| `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes. |
-| `devaloy health` | The Docker healthcheck's probe. Exits `0` when Tailscale's backend state is `Running` and, where the entrypoint starts dockerd (`WITH_DOCKER=true` in `/opt/devaloy/runtime-flags` and `/usr/bin/dockerd` present), `docker info` answers. Otherwise prints one line per failure to stderr and exits `1`. Each probe has a 5 second timeout. Unlike `doctor`, it ignores the toolchain, Paseo and T3 Code, because none of them decides whether you can get in. |
-| `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, refreshes the `/usr/local/bin` mirror, then runs `mise prune` to delete tool versions no tracked config still asks for. A failed prune warns and does not fail the update. Run as root, it switches to the dev user first. |
+| `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes (the native installer on a VM). Prints `runtime: container` or `runtime: native` under the date, from `RUNTIME` in the environment, then `RUNTIME` in build-flags, then `container`. On native it checks the units in place of `docker info` and the process probes: `tailscaled.service`, `devaloy-boot.service` (a oneshot: ok after a successful run, an off row while it still runs), and `docker.service`, `devaloy-paseo.service` and `devaloy-t3code.service` when their `WITH_*` key in `/opt/devaloy/runtime-flags` is `true`. |
+| `devaloy health` | The Docker healthcheck's probe. Exits `0` when Tailscale's backend state is `Running` and, where the entrypoint starts dockerd (`WITH_DOCKER=true` in `/opt/devaloy/runtime-flags` and `/usr/bin/dockerd` present), `docker info` answers. Otherwise prints one line per failure to stderr and exits `1`. Each probe has a 5 second timeout. Unlike `doctor`, it ignores the toolchain, Paseo and T3 Code, because none of them decides whether you can get in. On native it checks `systemctl is-active tailscaled.service`, Tailscale's backend state, and `systemctl is-active docker.service` when `WITH_DOCKER=true` in runtime-flags. |
+| `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, refreshes the `/usr/local/bin` mirror, then runs `mise prune` to delete tool versions no tracked config still asks for. A failed prune warns and does not fail the update. Run as root, it switches to the dev user first. Takes `--config-only` (seed the config and stop) and `--no-config` (toolchain only). On native, unless `--no-config`, it first runs `sudo git -C /opt/devaloy pull --ff-only` and `sudo /opt/devaloy/scripts/install-native.sh --cli-only`; on a detached tag it skips the pull and says so. |
 | `bootstrap-toolchain.sh` | Seeds `config/mise/` into `~/.config/mise` and installs the toolchain, but **skips itself** if the home volume already records the hash of that config. |
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
 | `link-shims` | Mirrors mise's shims into `/usr/local/bin`. **Needs root.** Reads `DEV_HOME` (default `/home/dev`). Never clobbers a real file, only symlinks. |
@@ -265,7 +267,7 @@ before.
 
 The config is not upstream's LazyVim starter. It is a vendored copy of `mimukit/dotfiles:dot_config/nvim`, kept in this repo at `config/nvim/` and carried into the image at `/opt/devaloy/config/nvim`. It sets tokyonight with a transparent background, `scrolloff` 20, `;` for command mode, 2-space tabs, the snacks explorer on the right showing hidden and gitignored files, and the `lang.json`, `lang.toml` and `util.dot` LazyVim extras. `lazy-lock.json` is vendored with it, so a fresh box resolves the same plugin commits as the laptop.
 
-**The seed runs once.** `bootstrap-toolchain.sh` copies `config/nvim/` into `~/.config/nvim` only when that directory does not exist. This is deliberate and it is why the copy does not go through `entrypoint.sh`, which re-copies the zsh, Claude Code and Codex files on every boot. Once seeded, `~/.config/nvim` is yours: edit it on the box and it survives every `docker compose up --build`, and `devaloy update` will not touch it.
+**The seed runs once.** `bootstrap-toolchain.sh` copies `config/nvim/` into `~/.config/nvim` only when that directory does not exist. This is deliberate and it is why the copy does not go through the boot's `step_seed_config` (`lib/steps/env.sh`), which re-copies the zsh, Claude Code and Codex files on every boot. Once seeded, `~/.config/nvim` is yours: edit it on the box and it survives every `docker compose up --build`, and `devaloy update` will not touch it.
 
 To pull the repo copy back over your own, run `devaloy nvim-sync`. It moves the current directory to `~/.config/nvim.bak-<timestamp>` and prints the path, so a sync you did not mean to run costs nothing. Use it after changing `config/nvim/` in this repo, or on a box seeded before `config/nvim/` existed and still holding the plain starter.
 
@@ -290,10 +292,12 @@ neither is in the image, and both are run on the host. Each has its own page:
 Needs root. No flags. Refuses to run unless Tailscale is up on the host *and*
 your SSH session came from a tailnet address.
 
+It reads the session from `SSH_CONNECTION`, which `sudo` strips, and it refuses an empty one. Run it as `sudo SSH_CONNECTION="$SSH_CONNECTION" ./scripts/host-firewall-lockdown.sh`, or with `ALLOW_NON_TAILNET=1` from a console with no SSH session. `install-native.sh --lockdown` finds the session and passes it for you.
+
 | Variable | Default | Effect |
 |---|---|---|
 | `TS_IFACE` | `tailscale0` | Interface to allow traffic on |
-| `ALLOW_NON_TAILNET` | unset | `1` overrides the second anti-lockout guard |
+| `ALLOW_NON_TAILNET` | unset | `1` overrides the second anti-lockout guard and the empty-`SSH_CONNECTION` refusal |
 
 ### `host-resource-guard.sh`
 
@@ -320,10 +324,56 @@ your SSH session came from a tailnet address.
 | `SYSBOX_POOL` | empty (same as `--pool`) |
 | `SYSBOX_VERSION` | `0.7.1` |
 
+## Native install
+
+`scripts/install-native.sh` installs devaloy on an Ubuntu 24.04 VM with no Docker. It runs on the VM, as root, usually piped from curl. The task page is [Install on a VM](install-on-a-vm.md).
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-native.sh | sudo TS_AUTHKEY=tskey-auth-... bash
+```
+
+Flags go after `bash -s --` when the script is piped.
+
+| Flag | Effect |
+|---|---|
+| `--no-wait` | Return once Tailscale SSH is up. The toolchain bootstrap goes on in `devaloy-boot.service`. |
+| `--lockdown` | At the end of the install, after Tailscale SSH is up, run `scripts/host-firewall-lockdown.sh`. Finds the SSH session that `sudo` hid and passes its `SSH_CONNECTION`. Refuses when it finds none, unless `ALLOW_NON_TAILNET=1`. Skipped when `ufw` already denies incoming traffic except on `tailscale0`. |
+| `--cli-only` | Reinstall the CLI and `lib/` from `/opt/devaloy` and stop. Internal: `devaloy update` runs it after its pull. Does not reinstall the unit files. |
+| `-h`, `--help` | Usage |
+
+| Variable | Default | Effect |
+|---|---|---|
+| `TS_AUTHKEY` | none | Asked for on `/dev/tty` when it is in neither the environment nor `/etc/devaloy/env`, and the node is not already on the tailnet. With no tty, the installer exits and prints the command to re-run. |
+| `TS_HOSTNAME` | `devaloy` | Node name on the tailnet. |
+| `TS_ACCEPT_DNS` | `true` | The native default. `false` passes `--accept-dns=false`. |
+| `DEVALOY_REF` | `main` | Branch or tag to clone to `/opt/devaloy`. Put the same ref in the curl URL. A branch tracks `origin`; a tag checks out detached. |
+| `WITH_DOCKER` | `false` | Docker Engine from Docker's apt repo, `dev` in the `docker` group, `/etc/docker/daemon.json` with free ranges. Turning it off leaves Docker installed. |
+| `WITH_BROWSER` | `false` | The packages in `config/apt/browser.txt`. |
+| `WITH_PASEO` | `false` | Enables `devaloy-paseo.service`. `false` disables and stops it. |
+| `WITH_T3CODE` | `false` | Enables `devaloy-t3code.service`. `false` disables and stops it. |
+| `ALLOW_NON_TAILNET` | unset | `1` lets `--lockdown` run with no SSH session found, or from a non-tailnet address. Not stored. |
+| `DEVALOY_SRC` | unset | Test only: the clone URL or path, used for the first clone and on a re-run only when set. |
+
+Each `WITH_*` takes only `true` or `false`. The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS` and `MISE_NODE_VERSION`, with the meanings in [Environment variables](#environment-variables).
+
+`/etc/devaloy/env` holds every key above except `ALLOW_NON_TAILNET` and `DEVALOY_SRC`, plus `RUNTIME=native`. It is root-owned, mode 0600, and every value is double-quoted in systemd's `EnvironmentFile=` syntax. The precedence on each run: a non-empty environment variable overwrites the file value, an empty or unset one keeps it, and a key in neither takes the default. To clear a value, edit the file and run `sudo systemctl restart devaloy-boot`. A key you add by hand is kept.
+
+`/opt/devaloy/build-flags` carries `WITH_DOCKER`, `WITH_BROWSER` and `RUNTIME`. The Dockerfile writes `RUNTIME=container`; the installer writes `RUNTIME=native`. The CLI and the boot steps read it to pick the native or the container path.
+
+| Unit | Kind | Runs |
+|---|---|---|
+| `devaloy-boot.service` | oneshot, `RemainAfterExit=yes`, `TimeoutStartSec=2h` | `/usr/local/lib/devaloy/steps/native-boot.sh` as root on every boot, after `tailscaled.service` and `network-online.target`. The same steps `entrypoint.sh` calls, minus the process starts. Fails when the toolchain bootstrap fails. |
+| `devaloy-paseo.service` | `User=dev`, `Restart=always`, `RestartSec=10`, `OOMScoreAdjust=-250` | `native-serve.sh paseo` on `<tailnet-ip>:6767`, after `devaloy-boot.service`. Installs `PASEO_PLUGINS` in `ExecStartPost`. |
+| `devaloy-t3code.service` | same as Paseo | `native-serve.sh t3code`, `t3 serve` on `<tailnet-ip>:3773`. |
+| `tailscaled.service` | the `tailscale` package's unit | Drop-in `devaloy-oom.conf`: `OOMScoreAdjust=-500`. |
+| `docker.service` | Docker's unit, with `WITH_DOCKER=true` | Drop-in `devaloy-oom.conf`: `OOMScoreAdjust=-250`. |
+
+All three `devaloy-*` unit files load `/etc/devaloy/env` and are always installed; the two servers are enabled only when their flag is on. `native-serve.sh` starts each server with a login environment, so `TS_AUTHKEY` and the other tokens in the file do not reach the agents it spawns. The boot logs to `journalctl -u devaloy-boot` with a `[devaloy]` prefix in place of `[entrypoint]`.
+
 ## Managed files
 
-Written or overwritten by `entrypoint.sh` on **every boot**. Editing any of these
-on the box is pointless — the change is gone at the next redeploy.
+Written or overwritten on **every boot** by the step functions in `lib/steps/`, which `entrypoint.sh` calls in the container and `devaloy-boot.service` calls on a native VM. Editing any of these
+on the box is pointless — the change is gone at the next redeploy, or the next `sudo systemctl restart devaloy-boot` on a VM.
 
 | Path | Mode | Contents |
 |---|---|---|
@@ -376,7 +426,7 @@ One more key is rewritten rather than set: `credential.https://<host>.helper`, f
 | `/opt/devaloy/config` | The image's copy of `config/`, the source for the sync |
 | `/var/lib/tailscale` | The `tailscale-state` volume. Node identity. |
 | `/var/lib/docker` | The `docker-data` volume. The nested daemon's images and containers. |
-| `/etc/docker/daemon.json` | The nested daemon's config, copied from `config/docker/daemon.json` each boot. Its own copy line, because the config sync targets `/home/dev`. |
+| `/etc/docker/daemon.json` | The nested daemon's config, copied from `config/docker/daemon.json` each boot. Its own copy line, because the config sync targets `/home/dev`. On a native VM the installer writes it once, and moves the ranges to free `10.x/16` ones when the repo's overlap the VM's network; the boot does not copy it. |
 | `/var/log/dockerd.log` | The nested daemon's output. Kept out of the container log, which `dockerd` would bury at info level. |
 
 ## Ports
@@ -385,6 +435,8 @@ One more key is rewritten rather than set: `credential.https://<host>.helper`, f
 |---|---|---|
 | 22 | Tailnet address only, inside the container's network namespace | Always. Not changeable — Tailscale SSH assumes 22. |
 | 3773 | Tailnet address only | Only with `WITH_T3CODE=true`. The T3 Code server. |
+| 22 (native VM) | Every address, the VM's own sshd | Until `install-native.sh --lockdown` sets `ufw` to allow inbound only on `tailscale0`. |
+| 6767 | Tailnet address only | Only with `WITH_PASEO=true`. The Paseo daemon. |
 | whatever a project stack publishes | `0.0.0.0` inside the container | Only on a `WITH_DOCKER=true` build. Reachable at `http://<tailnet-name>:<port>` and from the Docker host. |
 
 There is no `ports:` key in `docker-compose.yml`, so nothing is published to the
@@ -404,4 +456,4 @@ from the Docker host — do not attach other containers to devaloy's network.
 three. `docker-data` is pure cache and is the one safe to delete on purpose when
 the disk fills.
 
-_Verified against `main`@`d2e6886` plus the uncommitted browser-capture change on 2026-09-07._
+_Verified against `main`@`d2e6886` plus the uncommitted browser-capture change on 2026-09-07. The native-install rows are verified against `issue-4-install-devaloy-natively-on-an-ubuntu-vm` on 2026-10-28, from the code; the VM steps are not yet verified on a real VM._
