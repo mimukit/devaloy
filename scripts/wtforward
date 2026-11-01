@@ -4,7 +4,7 @@
 # number on both sides, so http://localhost:<port> opens the box's server.
 #
 #   every WTFORWARD_INTERVAL seconds   read the box's TCP listeners (ss -ltnH)
-#   a new listener in 10000-19999      ssh -O forward -L p:127.0.0.1:p
+#   a new listener in 10000-19999      ssh -O forward -L <lo>:p:127.0.0.1:p
 #   or in WTFORWARD_EXTRA
 #   a listener that went away          ssh -O cancel
 #
@@ -51,9 +51,11 @@ done
 dir=$(mktemp -d "${TMPDIR:-/tmp}/wtforward.XXXXXX") || exit 1
 sock="$dir/master"
 
-# Every client call goes through the master, never a new connection.
+# Every client call goes through the master, never a new connection. When
+# the master is gone, ssh would open a direct connection instead; the
+# ProxyCommand makes that fallback fail, so a dead master reads as closed.
 mux() {
-  ssh -S "$sock" -o ControlMaster=no "$@"
+  ssh -S "$sock" -o ControlMaster=no -o ProxyCommand=false "$@"
 }
 
 cleanup() {
@@ -70,6 +72,41 @@ if ! ssh -M -S "$sock" -fN -o ControlPersist=no "$host"; then
   exit 1
 fi
 echo "connected to $host; checking its listeners every ${interval}s"
+
+# OpenSSH binds a plain -L forward on 127.0.0.1 and on ::1, and reports
+# success when one of the two binds works. A laptop process that holds the
+# port on one family would then get no warning, so each family gets its own
+# forward, and a failure on either one means the port is taken. A machine
+# with no IPv6 loopback forwards IPv4 only: three probes on random free ports
+# tell that case apart from a taken port.
+families="127.0.0.1"
+probes=$(awk 'BEGIN { srand(); for (i = 0; i < 3; i++) print int(20000 + rand() * 40000) }')
+for probe in $probes; do
+  if mux -O forward -L "[::1]:$probe:127.0.0.1:$probe" "$host" >/dev/null 2>&1; then
+    mux -O cancel -L "[::1]:$probe:127.0.0.1:$probe" "$host" >/dev/null 2>&1
+    families="127.0.0.1 [::1]"
+    break
+  fi
+done
+if [ "$families" = "127.0.0.1" ]; then
+  echo "wtforward: this machine has no IPv6 loopback; forwarding on 127.0.0.1 only" >&2
+fi
+
+cancel_port() {
+  for a in $families; do
+    mux -O cancel -L "$a:$1:127.0.0.1:$1" "$host" >/dev/null 2>&1
+  done
+}
+
+# Sets err to the ssh message when a bind fails, and leaves no half forward.
+forward_port() {
+  for a in $families; do
+    if ! err=$(mux -O forward -L "$a:$1:127.0.0.1:$1" "$host" 2>&1); then
+      cancel_port "$1"
+      return 1
+    fi
+  done
+}
 
 # Reads ss -ltnH output and prints each wanted port once, space-separated
 # like the other port lists, so has() can match it. ss lists a port
@@ -109,7 +146,7 @@ while :; do
     if has "$active $skipped" "$p"; then
       continue
     fi
-    if err=$(mux -O forward -L "$p:127.0.0.1:$p" "$host" 2>&1); then
+    if forward_port "$p"; then
       active="$active $p"
       echo "forward localhost:$p -> $host:$p"
     else
@@ -123,7 +160,7 @@ while :; do
     if has "$wanted" "$p"; then
       keep="$keep $p"
     else
-      mux -O cancel -L "$p:127.0.0.1:$p" "$host" >/dev/null 2>&1
+      cancel_port "$p"
       echo "cancel localhost:$p ($host:$p stopped)"
     fi
   done

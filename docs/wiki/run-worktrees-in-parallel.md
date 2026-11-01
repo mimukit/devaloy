@@ -71,7 +71,7 @@ Open the URL that `wtports` printed. A new dev server opens on the laptop within
 
 Press `Ctrl+C` to stop it. It closes the SSH connection and removes its control socket, so every forward goes away with it.
 
-When a port is already in use on the laptop, for example by a local dev server on 3000, `wtforward` prints one warning and skips that port. It tries the port again after the box server on that port stops and starts again. To try at once, stop the laptop process and restart `wtforward`.
+When a port is already in use on the laptop, for example by a local dev server on 3000, `wtforward` prints one warning and skips that port. It forwards each port on `127.0.0.1` and on `::1` separately, so a laptop process on either address counts as in use. On a laptop with no IPv6 loopback, it prints one notice at the start and forwards on `127.0.0.1` only. It tries the port again after the box server on that port stops and starts again. To try at once, stop the laptop process and restart `wtforward`.
 
 When the SSH connection drops, for example after the laptop sleeps, `wtforward` prints `the connection to devaloy closed` and exits. Start it again.
 
