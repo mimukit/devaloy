@@ -71,9 +71,10 @@ if ! ssh -M -S "$sock" -fN -o ControlPersist=no "$host"; then
 fi
 echo "connected to $host; checking its listeners every ${interval}s"
 
-# Reads ss -ltnH output and prints each wanted port once. ss lists a port once
-# per address family, and the port is the last colon-separated field of the
-# local address in column 4 (127.0.0.1:p, [::]:p, *:p).
+# Reads ss -ltnH output and prints each wanted port once, space-separated
+# like the other port lists, so has() can match it. ss lists a port
+# once per address family, and the port is the last colon-separated field of
+# the local address in column 4 (127.0.0.1:p, [::]:p, *:p).
 wanted_ports() {
   awk -v extra="$extra" '
     BEGIN { n = split(extra, e, " "); for (i = 1; i <= n; i++) want[e[i] + 0] = 1 }
@@ -82,7 +83,7 @@ wanted_ports() {
       if (p !~ /^[0-9]+$/) next
       p += 0
       if (((p >= 10000 && p <= 19999) || (p in want)) && !(p in seen)) { seen[p] = 1; print p }
-    }' | sort -n
+    }' | sort -n | tr '\n' ' '
 }
 
 has() {
