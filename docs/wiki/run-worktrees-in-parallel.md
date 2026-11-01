@@ -4,6 +4,8 @@ Most projects use fixed dev ports such as 3000, 3001 and 4000, so only one check
 
 The main checkout keeps the project's default ports. Each linked worktree gets ports from 10000 to 19999, computed from a hash of the repo name, the service name and the branch, so a worktree gets the same ports every time.
 
+For the step-by-step procedure of a full session with several checkouts, including memory sizing and the start order, see [Set up a parallel worktree session](set-up-a-parallel-worktree-session.md).
+
 ## Why `localhost` and not `http://devaloy:<port>`
 
 The apps build their API URLs and allowed CORS origins from `localhost`, never from the box's tailnet name, so the browser must reach them at `localhost` too. `wtforward` keeps one SSH connection to the box and adds an SSH port forward for each dev server it finds, with the same port number on both sides.
