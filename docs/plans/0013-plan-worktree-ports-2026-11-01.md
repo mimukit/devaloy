@@ -53,7 +53,7 @@ Rejected alternatives, one line each:
 - Caddy with a hostname per worktree: isolates cookies with no code change, but the owner rejected the extra proxy and the domain setup.
 - A fixed `ssh -L` for the whole range: 10,000 sockets on the laptop, and macOS allows 256 open files for each process by default.
 
-### Phase 1: `wtports` on the box
+### Phase 1: `wtports` on the box (#6)
 
 - Add `config/bin/wtports`.
 - `wtports` (no arguments) in a linked worktree: read `.devports.json`, compute the ports, apply the collision rule, write the marked block into each listed `.env.local`, then print one URL for each service.
@@ -65,7 +65,7 @@ Rejected alternatives, one line each:
 
 Done when: in a scratch repo with a `.devports.json` and two linked worktrees, `wtports` writes a different block into each worktree's `.env.local`, a second run prints "no change", a forced collision gives the second worktree hash+1 with the comment, `wtports clean` removes only the block, and `wtports list` shows both worktrees with their ports.
 
-### Phase 2: `wtforward` on the laptop
+### Phase 2: `wtforward` on the laptop (#7)
 
 - Add `scripts/wtforward`. It takes the SSH host as an optional argument (default `devaloy`).
 - Start: open the master with `ssh -M -S <socket> -fN <host>`.
@@ -76,7 +76,7 @@ Done when: in a scratch repo with a `.devports.json` and two linked worktrees, `
 
 Done when: `sh -n scripts/wtforward` and `shellcheck scripts/wtforward` pass, and the QA plan lists this manual laptop step: with `wtforward` running, `python3 -m http.server 12345 --bind 127.0.0.1` started on the box opens at `http://localhost:12345` on the laptop within 4 seconds, and the forward goes away within 4 seconds after the server stops.
 
-### Phase 3: parallel QA session
+### Phase 3: parallel QA session (#8)
 
 Attended: the owner's QA session from the laptop browser. It needs Phases 1 and 2, and the primeshopr adoption issue, merged first.
 
@@ -85,7 +85,7 @@ Attended: the owner's QA session from the laptop browser. It needs Phases 1 and 
 
 Done when: the target holds. All 4 checkouts serve web and admin on the laptop, each admin login stays active after you log in to the other three, and `wtports list` shows 9 hashed ports with no collision (3 worktrees with 3 services each; the main checkout uses its defaults).
 
-## primeshopr adoption
+## primeshopr adoption (brainaloylabs/primeshopr#146)
 
 This work is filed as its own issue in the primeshopr repo. The file list:
 
