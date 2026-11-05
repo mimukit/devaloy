@@ -25,16 +25,90 @@
 # mounted project stack volume or /var/lib/docker is never walked.
 #
 # Usage: devaloy disk [--apply] [--age <days>] [--docker] [--caches]
+#                     [--logs <days>]
 #   --apply        actually delete. Without it, this only lists.
 #   --age <days>   a node_modules must be untouched this long to qualify.
 #                  Default 30.
 #   --docker       also hand off to the docker reclaim at the end
-#   --caches       also clear the pnpm/npm/mise download caches
+#   --caches       also clear the pnpm/npm/mise/turbo download caches, run
+#                  pnpm store prune (the store itself is never deleted), and
+#                  remove Playwright browser revisions that no installed
+#                  playwright-core names in its browsers.json
+#   --logs <days>  also remove agent logs older than <days> (7 or more):
+#                  ~/.codex/sessions/**/*.jsonl, each Claude session
+#                  ~/.claude/projects/*/<uuid>.jsonl with its <uuid>/
+#                  directory, and files under ~/.t3/userdata/logs. A deleted
+#                  session can no longer be resumed. Off by default.
+#
+# A linked worktree's node_modules is removed whatever its age when the
+# worktree is clean, has no commit missing from every remote, and no process
+# has its cwd in it. The apply checks all three again before it deletes.
+#
+# Never deleted, whatever a row says: the pnpm store, the aube store and its
+# virtual store, mise installs (mise prune only), and Claude agent memory. See
+# DISK_PROTECTED in lib/disk.sh.
 
 DISK_AGE_DAYS=30
 DISK_DO_DOCKER=0
 DISK_DO_CACHES=0
+DISK_LOGS_DAYS=''
 DISK_ROOT="${HOME:-/home/dev}"
+# Empty means the default target file. `devaloy clean` sets it, as a local, to a
+# file of its own, so its scan never stands in for the disk view's.
+DISK_TARGETS=''
+
+disk_targets() { # the file the disk scan writes and everything else reads
+  printf '%s' "${DISK_TARGETS:-$(target_file disk)}"
+}
+
+# --- the never-delete list --------------------------------------------------
+#
+# One list, one check. disk_apply_targets refuses any path row that is under
+# one of these, or that has one of these under it, so a scan bug or a saved
+# scan edited by hand cannot take a store with it. Each entry is a case
+# pattern, so `*` matches a directory name.
+#
+#   pnpm store      pruned with `pnpm store prune`, never rm -rf. Deleting it
+#                   breaks every project's install at once.
+#   aube            mise npm tools symlink into ~/.cache/aube/virtual-store,
+#                   so deleting either half breaks claude, codex and the rest.
+#   mise data       stale versions go through `mise prune` and nothing else.
+#   agent memory    Claude Code's per-project memory is not a log.
+DISK_PROTECTED=(
+  "${DISK_ROOT}/.local/share/pnpm/store"
+  "${DISK_ROOT}/.local/share/aube"
+  "${DISK_ROOT}/.cache/aube"
+  "${DISK_ROOT}/.local/share/mise"
+  "${DISK_ROOT}/.claude/projects/*/memory"
+)
+
+disk_path_protected() { # disk_path_protected <path>
+  # Returns 0 (protected) when <path> is a protected path, is under one, or
+  # holds one. A path with a `..` component is refused outright, because the
+  # textual test below cannot see where it resolves.
+  local p="${1%/}" pat up
+  [ -n "${p}" ] || return 0
+  case "/${p}/" in */../*) return 0 ;; esac
+  for pat in "${DISK_PROTECTED[@]}"; do
+    # The patterns are unquoted on purpose so their `*` globs.
+    # shellcheck disable=SC2254
+    case "${p}/" in ${pat}/*) return 0 ;; esac
+    # Each ancestor of the pattern: a row for ~/.claude/projects/x would take
+    # ~/.claude/projects/x/memory with it. A case `*` also matches `/`, so
+    # the ancestor must have as many components as <path>. Without that test
+    # ~/.claude/projects/* matched ~/.claude/projects/x/<uuid>.jsonl, which
+    # holds no memory directory.
+    up="${pat}"
+    while [ "${up}" != "${up%/*}" ]; do
+      up="${up%/*}"
+      [ -n "${up}" ] || break
+      [ "${p//[!\/]/}" = "${up//[!\/]/}" ] || continue
+      # shellcheck disable=SC2254
+      case "${p}" in ${up}) return 0 ;; esac
+    done
+  done
+  return 1
+}
 
 disk_args() {
   while [ $# -gt 0 ]; do
@@ -43,6 +117,15 @@ disk_args() {
       --age) DISK_AGE_DAYS="${2:?--age needs a number of days, e.g. 14}"; shift 2 ;;
       --docker) DISK_DO_DOCKER=1; shift ;;
       --caches) DISK_DO_CACHES=1; shift ;;
+      --logs)
+        # A floor of 7: a session from this week is one you may still resume.
+        case "${2:-}" in
+          '' | *[!0-9]*) die "disk: --logs needs a number of days, 7 or more, e.g. --logs 30" ;;
+        esac
+        [ "$((10#$2))" -ge 7 ] || die "disk: --logs $2 is under the floor of 7 days"
+        DISK_LOGS_DAYS="$((10#$2))"
+        shift 2
+        ;;
       -h | --help) disk_usage; exit 0 ;;
       *) die "disk: unknown argument: $1" ;;
     esac
@@ -50,7 +133,7 @@ disk_args() {
 }
 
 disk_usage() {
-  sed -n '2,32p' "${DEVALOY_LIB}/disk.sh" | sed 's/^# \{0,1\}//'
+  sed -n '2,49p' "${DEVALOY_LIB}/disk.sh" | sed 's/^# \{0,1\}//'
 }
 
 # --- the scan -------------------------------------------------------------
@@ -60,7 +143,7 @@ disk_usage() {
 # type here and a new case in disk_apply, with the report needing no change.
 disk_scan() {
   local out
-  out="$(target_file disk)"
+  out="$(disk_targets)"
   : >"${out}"
 
   # --- node_modules -------------------------------------------------------
@@ -124,6 +207,9 @@ disk_scan() {
     [ "${prunable:-0}" -eq 0 ] && [ "${extra:-0}" -eq 0 ] && continue
     printf 'wt\t%s\t0\t%s linked worktree(s), %s prunable\n' \
       "${repo}" "${extra}" "${prunable}" >>"${out}"
+    if [ "${extra:-0}" -gt 0 ]; then
+      disk_scan_wtnm "${out}" "${repo}"
+    fi
   done < <(find "${DISK_ROOT}" -xdev -maxdepth 4 -type d -name .git 2>/dev/null | sort)
 
   # --- stale mise tool versions -------------------------------------------
@@ -176,45 +262,268 @@ disk_scan() {
       -mtime "+${DISK_AGE_DAYS}" 2>/dev/null | sort)
   fi
 
+  # --- agent logs ---------------------------------------------------------
+  #
+  # Opt-in through --logs <days>, because a deleted session can no longer be
+  # resumed. See disk_scan_logs.
+  if [ -n "${DISK_LOGS_DAYS}" ]; then
+    disk_scan_logs "${out}"
+  fi
+
   # --- caches -------------------------------------------------------------
   #
   # Opt-in because every one of these costs a re-download on the next install,
   # and on a box behind Tailscale that is minutes rather than seconds. Worth it
   # when the disk is genuinely full, wasteful otherwise.
+  #
+  # Not ~/.npm as a whole: `npm cache clean --force` at apply clears
+  # ~/.npm/_cacache, and the rest of ~/.npm is npm's own state and logs.
   if [ "${DISK_DO_CACHES}" -eq 1 ]; then
     local c
-    for c in "${DISK_ROOT}/.local/share/pnpm/store" "${DISK_ROOT}/.npm" \
+    for c in "${DISK_ROOT}/.cache/pnpm" "${DISK_ROOT}/.npm/_npx" \
+      "${DISK_ROOT}/.local/share/pnpm/package-manager-store" \
       "${DISK_ROOT}/.cache/mise" "${DISK_ROOT}/.cache/turbo"; do
       [ -d "${c}" ] || continue
       printf 'cache\t%s\t%s\tpackage manager cache\n' \
         "${c}" "$(du -sk "${c}" 2>/dev/null | cut -f1)" >>"${out}"
     done
+
+    # --- the pnpm store ---------------------------------------------------
+    #
+    # A size report, like the mise rows, and never a path to delete. The apply
+    # runs `pnpm store prune` once, which drops packages no project links and
+    # keeps the rest. An rm -rf here broke every project's install at once.
+    local pstore="${DISK_ROOT}/.local/share/pnpm/store"
+    if [ -d "${pstore}" ]; then
+      printf 'pstore\t%s\t%s\tpruned with pnpm store prune, never deleted\n' \
+        "${pstore}" "$(du -sk "${pstore}" 2>/dev/null | cut -f1)" >>"${out}"
+    fi
+
+    disk_scan_playwright "${out}"
+  fi
+}
+
+# --- Playwright browser revisions -------------------------------------------
+#
+# Under --caches, beside the caches, because a removed revision is a
+# re-download too. Playwright installs each browser as
+# ~/.cache/ms-playwright/<name>-<revision> and never removes an old one.
+#
+# A revision is kept when ANY playwright-core/browsers.json on the box names
+# it. The box carries more than one playwright-core at once (the aube virtual
+# store held 1.63, 1.64 and 1.65 on 2026-11-05), so the keep set is the union,
+# not the pin of one copy. The match is on the revision number alone: the
+# directory spells chromium-headless-shell as chromium_headless_shell, and a
+# revision kept by mistake costs disk, not a broken browser.
+#
+# Kept directories get a `pwkeep` row so the report can show them; the apply
+# ignores that type. With no browsers.json at all, nothing is offered for
+# removal, because the scan cannot tell which revision is in use.
+disk_scan_playwright() { # disk_scan_playwright <target file>
+  local out="$1" pwdir="${DISK_ROOT}/.cache/ms-playwright" keep d base rev
+  [ -d "${pwdir}" ] || return 0
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'pwkeep\t%s\t0\tjq not on PATH, so no browsers.json can be read and no revision is offered for removal\n' \
+      "${pwdir}" >>"${out}"
+    return 0
+  fi
+
+  # `|| true` on the find: one of the two roots may not exist, and under
+  # pipefail its non-zero exit would end the whole scan.
+  keep="$({ find "${DISK_ROOT}/.cache/aube/virtual-store" \
+    "${DISK_ROOT}/.local/share/mise/installs" \
+    -path '*/playwright-core/browsers.json' -type f 2>/dev/null || true; } |
+    while IFS= read -r d; do
+      jq -r '.browsers[]?.revision // empty' "${d}" 2>/dev/null || true
+    done | sort -u)"
+
+  if [ -z "${keep}" ]; then
+    printf 'pwkeep\t%s\t0\tno playwright-core/browsers.json under ~/.cache/aube/virtual-store or ~/.local/share/mise/installs, so no revision is offered for removal\n' \
+      "${pwdir}" >>"${out}"
+    return 0
+  fi
+
+  while IFS= read -r d; do
+    [ -n "${d}" ] || continue
+    base="$(basename "${d}")"
+    # <name>-<digits> only. `daemon`, cli-update-check.json and anything
+    # else Playwright keeps here do not match and are left alone.
+    case "${base}" in *?-*) ;; *) continue ;; esac
+    rev="${base##*-}"
+    case "${rev}" in '' | *[!0-9]*) continue ;; esac
+    if printf '%s\n' "${keep}" | grep -qx "${rev}"; then
+      printf 'pwkeep\t%s\t%s\tnamed by a playwright-core browsers.json\n' \
+        "${d}" "$(du -sk "${d}" 2>/dev/null | cut -f1)" >>"${out}"
+    else
+      printf 'pw\t%s\t%s\trevision %s, named by no browsers.json\n' \
+        "${d}" "$(du -sk "${d}" 2>/dev/null | cut -f1)" "${rev}" >>"${out}"
+    fi
+  done < <(find "${pwdir}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
+}
+
+# --- node_modules in clean linked worktrees ---------------------------------
+#
+# The age rule above misses these: an agent or a review worktree installs,
+# runs once, and leaves a fresh node_modules behind. A `wtnm` row qualifies
+# whatever its age when the worktree passes disk_wtnm_reason: a clean tree,
+# no commit missing from every remote (`--not --remotes` also covers a branch
+# with no upstream), and no process with its cwd inside. No `git fetch` runs,
+# so a squash-merged branch whose remote branch is gone fails the remote test
+# and stays for gitkit's sweep. The main checkout never qualifies.
+
+disk_wt_busy() { # disk_wt_busy <worktree>   0 when a process has its cwd in it
+  local wt="${1%/}" c cwd
+  for c in /proc/[0-9]*/cwd; do
+    # Another user's process is unreadable. That is not a reason to stop.
+    cwd="$(readlink "${c}" 2>/dev/null)" || continue
+    case "${cwd}/" in "${wt}"/*) return 0 ;; esac
+  done
+  return 1
+}
+
+disk_wtnm_reason() { # disk_wtnm_reason <worktree>
+  # Prints why the worktree's node_modules must stay, or nothing when it may go.
+  # The scan and the apply both call this, because a commit can land between
+  # the two.
+  local wt="$1" st ahead
+  if [ ! -f "${wt}/.git" ]; then
+    echo "no longer a linked worktree"
+  elif ! st="$(git -C "${wt}" status --porcelain 2>/dev/null)"; then
+    echo "git status failed"
+  elif [ -n "${st}" ]; then
+    echo "uncommitted changes"
+  elif ! ahead="$(git -C "${wt}" rev-list --count HEAD --not --remotes 2>/dev/null)"; then
+    echo "git rev-list failed"
+  elif [ "${ahead}" != "0" ]; then
+    echo "${ahead} commit(s) on no remote"
+  elif disk_wt_busy "${wt}"; then
+    echo "a process has its cwd in the worktree"
+  fi
+}
+
+disk_scan_wtnm() { # disk_scan_wtnm <target file> <repo>
+  local out="$1" repo="$2" line wt='' wt_cur branch='' first=1 nm reason size_kb
+  # --porcelain ends each record with a blank line. The first record is the
+  # main checkout, which never qualifies. The trailing echo closes the last
+  # record if a git version leaves its blank line off.
+  while IFS= read -r line; do
+    case "${line}" in
+      'worktree '*) wt="${line#worktree }"; branch='(detached)' ;;
+      'branch '*) branch="${line#branch }"; branch="${branch#refs/heads/}" ;;
+      '')
+        [ -n "${wt}" ] || continue
+        if [ "${first}" -eq 1 ]; then
+          first=0
+          wt=''
+          continue
+        fi
+        nm="${wt}/node_modules"
+        wt_cur="${wt}"
+        wt=''
+        # Scope is the home volume, like every other row.
+        case "${nm}" in "${DISK_ROOT}"/*) ;; *) continue ;; esac
+        [ -d "${nm}" ] && [ ! -L "${nm}" ] || continue
+        # One path, one row: the age rule may already list it.
+        if awk -F'\t' -v p="${nm}" '($1 == "nm" || $1 == "wtnm") && $2 == p { f = 1 } END { exit !f }' "${out}"; then
+          continue
+        fi
+        reason="$(disk_wtnm_reason "${wt_cur}")"
+        [ -z "${reason}" ] || continue
+        size_kb="$(du -sk "${nm}" 2>/dev/null | cut -f1)"
+        [ -n "${size_kb}" ] || continue
+        printf 'wtnm\t%s\t%s\tbranch: %s\n' "${nm}" "${size_kb}" "${branch}" >>"${out}"
+        ;;
+    esac
+  done < <(git -C "${repo}" worktree list --porcelain 2>/dev/null || true; echo)
+}
+
+# --- agent logs -------------------------------------------------------------
+#
+# Codex and Claude Code keep every session transcript forever, and T3 Code
+# keeps its server logs. In scope, by mtime older than --logs <days>:
+#
+#   ~/.codex/sessions/**/*.jsonl             one row per file
+#   ~/.claude/projects/<proj>/<uuid>.jsonl   one row, plus one row for the
+#                                            <uuid>/ directory beside it
+#   ~/.t3/userdata/logs/**                   one row per file
+#
+# The Claude walk stops at depth 2 and takes UUID-named files only, so
+# <proj>/memory is never listed. disk_path_protected refuses it at apply too.
+disk_scan_logs() { # disk_scan_logs <target file>
+  local out="$1" days="${DISK_LOGS_DAYS}" kb f dir base
+  local codex="${DISK_ROOT}/.codex/sessions"
+  local claude="${DISK_ROOT}/.claude/projects"
+  local t3="${DISK_ROOT}/.t3/userdata/logs"
+  local uuid='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+
+  if [ -d "${codex}" ]; then
+    while IFS=$'\t' read -r kb f; do
+      [ -n "${f}" ] || continue
+      printf 'alog\t%s\t%s\tcodex sessions\n' "${f}" "${kb}" >>"${out}"
+    done < <(find "${codex}" -xdev -type f -name '*.jsonl' -mtime "+${days}" \
+      -printf '%k\t%p\n' 2>/dev/null | sort -t$'\t' -k2)
+  fi
+
+  if [ -d "${claude}" ]; then
+    while IFS=$'\t' read -r kb f; do
+      [ -n "${f}" ] || continue
+      base="$(basename "${f}" .jsonl)"
+      [[ "${base}" =~ ${uuid} ]] || continue
+      printf 'alog\t%s\t%s\tclaude projects\n' "${f}" "${kb}" >>"${out}"
+      dir="${f%.jsonl}"
+      if [ -d "${dir}" ] && [ ! -L "${dir}" ]; then
+        printf 'alog\t%s\t%s\tclaude projects\n' \
+          "${dir}" "$(du -sk "${dir}" 2>/dev/null | cut -f1)" >>"${out}"
+      fi
+    done < <(find "${claude}" -xdev -mindepth 2 -maxdepth 2 -type f -name '*.jsonl' \
+      -mtime "+${days}" -printf '%k\t%p\n' 2>/dev/null | sort -t$'\t' -k2)
+  fi
+
+  if [ -d "${t3}" ]; then
+    while IFS=$'\t' read -r kb f; do
+      [ -n "${f}" ] || continue
+      printf 'alog\t%s\t%s\tt3 logs\n' "${f}" "${kb}" >>"${out}"
+    done < <(find "${t3}" -xdev -type f -mtime "+${days}" \
+      -printf '%k\t%p\n' 2>/dev/null | sort -t$'\t' -k2)
   fi
 }
 
 # --- reading the scan back ------------------------------------------------
 
-disk_sum_kb() { # disk_sum_kb <type>
-  awk -F'\t' -v t="$1" '$1 == t { s += $3 } END { print s + 0 }' "$(target_file disk)" 2>/dev/null
+disk_sum_kb() { # disk_sum_kb <type> [file]
+  awk -F'\t' -v t="$1" '$1 == t { s += $3 } END { print s + 0 }' "${2:-$(disk_targets)}" 2>/dev/null
 }
 
-disk_count() { # disk_count <type>
-  awk -F'\t' -v t="$1" '$1 == t { n++ } END { print n + 0 }' "$(target_file disk)" 2>/dev/null
+disk_count() { # disk_count <type> [file]
+  awk -F'\t' -v t="$1" '$1 == t { n++ } END { print n + 0 }' "${2:-$(disk_targets)}" 2>/dev/null
 }
 
 rows_disk() {
   emit_head 'reclaimable' "scanned at $(now_stamp), age window ${DISK_AGE_DAYS}d"
   emit_row '📦' 'node_modules' \
     "$(disk_count nm) tree(s), $(($(disk_sum_kb nm) / 1024)) MiB"
+  emit_row '🌱' 'worktree node_modules' \
+    "$(disk_count wtnm) tree(s), $(($(disk_sum_kb wtnm) / 1024)) MiB — clean, pushed, idle worktrees"
   emit_row '🔧' 'stale mise versions' \
     "$(disk_count mise) tool(s), $(($(disk_sum_kb mise) / 1024)) MiB installed"
   emit_row '📄' 'paseo logs' \
     "$(disk_count log) file(s), $(($(disk_sum_kb log) / 1024)) MiB"
+  if [ -n "${DISK_LOGS_DAYS}" ]; then
+    emit_row '📜' 'agent logs' \
+      "$(disk_count alog) path(s), $(($(disk_sum_kb alog) / 1024)) MiB, older than ${DISK_LOGS_DAYS}d"
+  else
+    emit_row '📜' 'agent logs' "not scanned — devaloy disk --logs <days> includes them"
+  fi
   if [ "${DISK_DO_CACHES}" -eq 1 ]; then
     emit_row '📚' 'caches' \
       "$(disk_count cache) dir(s), $(($(disk_sum_kb cache) / 1024)) MiB"
+    emit_row '🧺' 'pnpm store' \
+      "$(($(disk_sum_kb pstore) / 1024)) MiB — pnpm store prune, never deleted"
+    emit_row '🎭' 'playwright' \
+      "$(disk_count pw) old revision(s), $(($(disk_sum_kb pw) / 1024)) MiB, $(disk_count pwkeep) kept"
   else
     emit_row '📚' 'caches' "not scanned — devaloy disk --caches includes them"
+    emit_row '🎭' 'playwright' "not scanned — devaloy disk --caches includes them"
   fi
   emit_row '🌿' 'git worktrees' \
     "$(disk_count wt) repo(s) with linked worktrees — listed, never deleted"
@@ -239,9 +548,23 @@ disk_report() {
       [ "${type}" = "nm" ] || continue
       printf '  %6s MiB  %s\n' "$((size_kb / 1024))" "${path#"${DISK_ROOT}"/}"
       printf '               %s\n' "${note}"
-    done <"$(target_file disk)"
+    done <"$(disk_targets)"
     printf 'devaloy disk: %s tree(s), %s MiB\n' \
       "$(disk_count nm)" "$(($(disk_sum_kb nm) / 1024))"
+  fi
+
+  echo
+  echo "devaloy disk: node_modules in clean, pushed, idle linked worktrees (any age)"
+  if [ "$(disk_count wtnm)" -eq 0 ]; then
+    echo "  none"
+  else
+    while IFS=$'\t' read -r type path size_kb note; do
+      [ "${type}" = "wtnm" ] || continue
+      printf '  %6s MiB  %s  (%s)\n' "$((size_kb / 1024))" \
+        "$(dirname "${path#"${DISK_ROOT}"/}")" "${note}"
+    done <"$(disk_targets)"
+    printf 'devaloy disk: %s tree(s), %s MiB\n' \
+      "$(disk_count wtnm)" "$(($(disk_sum_kb wtnm) / 1024))"
   fi
 
   echo
@@ -253,7 +576,7 @@ disk_report() {
       [ "${type}" = "wt" ] || continue
       echo "  ${path#"${DISK_ROOT}"/}: ${note}"
       git -C "${path}" worktree list 2>/dev/null | tail -n +2 | sed 's/^/      /'
-    done <"$(target_file disk)"
+    done <"$(disk_targets)"
   fi
   echo "  (a linked worktree may hold uncommitted work — use gitkit's sweep to"
   echo "   remove merged ones, not this command)"
@@ -268,7 +591,7 @@ disk_report() {
       [ "${type}" = "mise" ] || continue
       printf '  %6s MiB  %-20s %s\n' \
         "$((size_kb / 1024))" "$(basename "${path}")" "${note}"
-    done <"$(target_file disk)"
+    done <"$(disk_targets)"
     echo "  full list with 'mise prune --dry-run'"
   fi
 
@@ -278,16 +601,65 @@ disk_report() {
     while IFS=$'\t' read -r type path size_kb note; do
       [ "${type}" = "log" ] || continue
       printf '  %6s KiB  %s\n' "${size_kb}" "$(basename "${path}")"
-    done <"$(target_file disk)"
+    done <"$(disk_targets)"
   fi
 
-  if [ "${DISK_DO_CACHES}" -eq 1 ]; then
+  echo
+  # The row count is the second test because a saved scan (devaloy clean
+  # --from) can carry agent log rows without --logs on this run.
+  if [ -n "${DISK_LOGS_DAYS}" ] || [ "$(disk_count alog)" -gt 0 ]; then
+    echo "devaloy disk: agent logs${DISK_LOGS_DAYS:+ older than ${DISK_LOGS_DAYS} days}"
+    local group where n kb
+    for group in 'codex sessions' 'claude projects' 't3 logs'; do
+      case "${group}" in
+        'codex sessions') where='~/.codex/sessions' ;;
+        'claude projects') where='~/.claude/projects (session files and their directories)' ;;
+        't3 logs') where='~/.t3/userdata/logs' ;;
+      esac
+      read -r n kb < <(awk -F'\t' -v g="${group}" \
+        '$1 == "alog" && $4 == g { n++; s += $3 } END { print n + 0, s + 0 }' "$(disk_targets)")
+      printf '  %5s path(s)  %6s MiB  %s\n' "${n}" "$((kb / 1024))" "${where}"
+    done
+    echo "  a deleted session can no longer be resumed"
+  else
+    echo "devaloy disk: agent logs: not scanned (--logs <days> includes them)"
+  fi
+
+  if [ "${DISK_DO_CACHES}" -eq 1 ] ||
+    [ "$(($(disk_count cache) + $(disk_count pstore) + $(disk_count pw) + $(disk_count pwkeep)))" -gt 0 ]; then
     echo
     echo "devaloy disk: package manager caches"
     while IFS=$'\t' read -r type path size_kb note; do
-      [ "${type}" = "cache" ] || continue
-      printf '  %6s MiB  %s\n' "$((size_kb / 1024))" "${path#"${DISK_ROOT}"/}"
-    done <"$(target_file disk)"
+      case "${type}" in
+        cache) printf '  %6s MiB  %s\n' "$((size_kb / 1024))" "${path#"${DISK_ROOT}"/}" ;;
+        pstore) printf '  %6s MiB  %s  (%s)\n' "$((size_kb / 1024))" "${path#"${DISK_ROOT}"/}" "${note}" ;;
+      esac
+    done <"$(disk_targets)"
+    echo "  plus ~/.npm/_cacache, cleared with npm cache clean --force"
+
+    echo
+    echo "devaloy disk: Playwright browser revisions"
+    if [ "$(disk_count pw)" -eq 0 ] && [ "$(disk_count pwkeep)" -eq 0 ]; then
+      echo "  no ~/.cache/ms-playwright revisions"
+    else
+      while IFS=$'\t' read -r type path size_kb note; do
+        case "${type}" in
+          pw) printf '  %6s MiB  remove  %s  (%s)\n' "$((size_kb / 1024))" "$(basename "${path}")" "${note}" ;;
+          pwkeep)
+            # A row on ms-playwright itself is the scan saying why it listed
+            # nothing, not a kept revision.
+            if [ "${path}" = "${DISK_ROOT}/.cache/ms-playwright" ]; then
+              echo "  ${note}"
+            else
+              printf '  %6s MiB  keep    %s  (%s)\n' "$((size_kb / 1024))" "$(basename "${path}")" "${note}"
+            fi
+            ;;
+        esac
+      done <"$(disk_targets)"
+    fi
+  else
+    echo
+    echo "devaloy disk: package manager caches and Playwright revisions: not scanned (--caches includes them)"
   fi
 }
 
@@ -298,16 +670,40 @@ disk_report() {
 # `mise prune` decides which versions to drop from its own tracked-configs, and
 # an rm loop over those directories would be the thing that leaves the box
 # without a toolchain.
-disk_apply_targets() {
-  local type path size_kb note removed_kb=0 removed=0 did_mise=0
+#
+# `pstore` works the same way: the row reports the pnpm store size, and the
+# apply runs `pnpm store prune` once. Every path row passes disk_path_protected
+# before its rm -rf, so a row under the never-delete list is refused, not run.
+#
+# <file> defaults to the disk scan's own. `devaloy clean --from` passes the rows
+# of a saved scan it has already checked.
+disk_apply_targets() { # disk_apply_targets [file]
+  local file="${1:-$(disk_targets)}"
+  local type path size_kb note removed_kb=0 removed=0 refused=0 skipped=0 did_mise=0 did_pstore=0
+  local reason
 
   while IFS=$'\t' read -r type path size_kb note; do
     case "${type}" in
-      nm | log | cache)
+      nm | log | cache | pw | alog | wtnm)
+        if disk_path_protected "${path}"; then
+          echo "devaloy disk: refused, on the never-delete list: ${path}"
+          refused=$((refused + 1))
+          continue
+        fi
         # The path may have gone since the scan. That is fine and expected: the
         # contract is that nothing OUTSIDE the list is touched, not that
         # everything in it still exists.
         [ -e "${path}" ] || continue
+        # A worktree's node_modules qualified on its git state at scan time.
+        # A commit, an edit or a shell in it since then keeps it.
+        if [ "${type}" = "wtnm" ]; then
+          reason="$(disk_wtnm_reason "$(dirname "${path}")")"
+          if [ -n "${reason}" ]; then
+            echo "devaloy disk: skipped ${path}: ${reason}"
+            skipped=$((skipped + 1))
+            continue
+          fi
+        fi
         act rm -rf "${path}"
         removed=$((removed + 1))
         removed_kb=$((removed_kb + size_kb))
@@ -325,21 +721,43 @@ disk_apply_targets() {
           echo "devaloy disk: would run: mise prune"
         fi
         ;;
+      pstore)
+        # `pnpm store prune` rather than rm -rf: it drops packages no project
+        # links and keeps the rest, so the projects you still work on reinstall
+        # from the store instead of the network.
+        [ "${did_pstore}" -eq 1 ] && continue
+        did_pstore=1
+        if ! command -v pnpm >/dev/null 2>&1; then
+          echo "devaloy disk: pnpm not on PATH, store not pruned"
+        elif [ "${APPLY}" -eq 1 ]; then
+          echo "devaloy disk: pruning the pnpm store"
+          pnpm store prune || true
+        else
+          echo "devaloy disk: would run: pnpm store prune"
+        fi
+        ;;
     esac
-  done <"$(target_file disk)"
+  done <"${file}"
 
-  if [ "${DISK_DO_CACHES}" -eq 1 ] && [ "${APPLY}" -eq 1 ]; then
-    # `pnpm store prune` rather than rm -rf: it drops packages no lockfile on
-    # the box references and keeps the rest, so the projects you still work on
-    # reinstall from the store instead of the network.
-    command -v pnpm >/dev/null 2>&1 && pnpm store prune || true
-    command -v npm >/dev/null 2>&1 && npm cache clean --force >/dev/null 2>&1 || true
+  # ~/.npm/_cacache. npm owns its layout, so npm clears it.
+  if [ "${DISK_DO_CACHES}" -eq 1 ] && command -v npm >/dev/null 2>&1; then
+    if [ "${APPLY}" -eq 1 ]; then
+      npm cache clean --force >/dev/null 2>&1 || true
+    else
+      echo "devaloy disk: would run: npm cache clean --force"
+    fi
   fi
 
   if [ "${APPLY}" -eq 1 ]; then
     printf 'devaloy disk: removed %s path(s), %s MiB\n' "${removed}" "$((removed_kb / 1024))"
   else
     printf 'devaloy disk: would remove %s path(s), %s MiB\n' "${removed}" "$((removed_kb / 1024))"
+  fi
+  if [ "${refused}" -gt 0 ]; then
+    printf 'devaloy disk: refused %s path(s) on the never-delete list\n' "${refused}"
+  fi
+  if [ "${skipped}" -gt 0 ]; then
+    printf 'devaloy disk: skipped %s worktree node_modules that failed the check again\n' "${skipped}"
   fi
 
   # Delegated rather than reimplemented. The docker reclaim already handles the
@@ -365,10 +783,11 @@ disk_apply_targets() {
 # counts from the scan and then runs the same apply the CLI runs.
 disk_apply() {
   local mib
-  mib="$(((  $(disk_sum_kb nm) + $(disk_sum_kb log) + $(disk_sum_kb cache) ) / 1024))"
+  # pstore and pwkeep are size reports, not deletes, so they stay out of the sum.
+  mib="$(((  $(disk_sum_kb nm) + $(disk_sum_kb wtnm) + $(disk_sum_kb log) + $(disk_sum_kb alog) + $(disk_sum_kb cache) + $(disk_sum_kb pw) ) / 1024))"
   if ! confirm \
-    "devaloy disk will delete $(disk_count nm) node_modules tree(s), $(disk_count log) Paseo log(s)," \
-    "reclaiming about ${mib} MiB, and run mise prune." \
+    "devaloy disk will delete $(( $(disk_count nm) + $(disk_count wtnm) )) node_modules tree(s), $(disk_count log) Paseo log(s), $(disk_count alog) agent log path(s), $(disk_count pw) Playwright revision(s)," \
+    "reclaiming about ${mib} MiB, and run mise prune$([ "$(disk_count pstore)" -gt 0 ] && printf ' and pnpm store prune')." \
     "It deletes only what the report listed. Worktrees are never deleted."; then
     printf '\n  cancelled\n'
     sleep 1
