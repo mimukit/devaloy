@@ -138,9 +138,30 @@ disk_usage() {
 
 # --- the scan -------------------------------------------------------------
 #
-# Writes one tab-delimited line per target: TYPE, PATH, SIZE_KB, NOTE.
-# TYPE decides what the apply does with it, so a new kind of reclaim is a new
-# type here and a new case in disk_apply, with the report needing no change.
+# Writes one tab-delimited line per target: TYPE, PATH, SIZE_KB, NOTE, and for
+# the nm and wtnm types a fifth column, FREE_KB (see disk_measure). TYPE decides
+# what the apply does with it, so a new kind of reclaim is a new type here and a
+# new case in disk_apply, with the report needing no change.
+#
+# A row with FREE_KB must have a NOTE that is not empty. Tab is whitespace to
+# `read`, so an empty NOTE would let FREE_KB slide into its place.
+
+# THE SIZE OF A node_modules IS TWO NUMBERS. pnpm hard-links each file from its
+# store, and deleting a link frees the bytes only when no other path still holds
+# the file. `du -sk` counts every file once, so a pnpm tree reads as the space
+# the delete frees when most of it stays on the disk under the store. On the
+# reference box one 3758 MiB tree held 130 MiB in files with a link count of 1.
+#
+# One walk gives both: KB, what `du -sk` reports, and FREE_KB, the blocks of
+# directories and of files no other path links. FREE_KB is a lower bound. A file
+# whose every link is inside the trees deleted together is freed too, but no
+# walk of one tree can know that.
+disk_measure() { # disk_measure <dir> -> "<kb> <free_kb>"
+  find "$1" -xdev -printf '%y %n %i %k\n' 2>/dev/null | awk '
+    !seen[$3]++ { kb += $4; if ($1 == "d" || $2 == 1) free += $4 }
+    END { print kb + 0, free + 0 }'
+}
+
 disk_scan() {
   local out
   out="$(disk_targets)"
@@ -164,15 +185,16 @@ disk_scan() {
   # every project's install at once rather than one project's. Anything you add
   # to this list must be pruned BEFORE the -name test, or find still descends
   # into it.
-  local nm size_kb project last_commit
+  local nm size_kb free_kb project last_commit
   while IFS= read -r nm; do
     [ -n "${nm}" ] || continue
-    size_kb="$(du -sk "${nm}" 2>/dev/null | cut -f1)"
-    [ -n "${size_kb}" ] || continue
+    read -r size_kb free_kb < <(disk_measure "${nm}")
+    [ "${size_kb:-0}" -gt 0 ] || continue
     project="$(dirname "${nm}")"
     last_commit="$(git -C "${project}" log -1 --format=%cr 2>/dev/null || true)"
     [ -n "${last_commit}" ] || last_commit="not a git repo"
-    printf 'nm\t%s\t%s\tlast commit: %s\n' "${nm}" "${size_kb}" "${last_commit}" >>"${out}"
+    printf 'nm\t%s\t%s\tlast commit: %s\t%s\n' \
+      "${nm}" "${size_kb}" "${last_commit}" "${free_kb}" >>"${out}"
   done < <(find "${DISK_ROOT}" -xdev \
     \( -path "${DISK_ROOT}/.local/share/pnpm" \
     -o -path "${DISK_ROOT}/.npm" \
@@ -227,21 +249,26 @@ disk_scan() {
   # with the matching ~/.cache/mise entries. The version you are running is
   # never a candidate, so this cannot leave the box without a toolchain.
   #
-  # It is therefore the one target that is NOT a path: the row records the tool
-  # so the report can show the size, and the apply runs `mise prune` once.
-  if command -v mise >/dev/null 2>&1; then
-    local mise_installs path versions
-    mise_installs="${DISK_ROOT}/.local/share/mise/installs"
-    if [ -d "${mise_installs}" ]; then
-      while read -r size_kb path; do
-        [ -n "${path}" ] || continue
-        versions="$(find "${path}" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | wc -l)"
-        # The count is every installed version of that tool, including the
-        # active one, so "18 versions" reads as "17 of these are dead weight".
-        printf 'mise\t%s\t%s\t%s version(s) installed\n' \
-          "${path}" "${size_kb}" "${versions}" >>"${out}"
-      done < <(du -sk "${mise_installs}"/* 2>/dev/null | sort -rn | head -6)
-    fi
+  # It is therefore the one target that is NOT a path: the row records the
+  # version so the report can show its size, and the apply runs `mise prune`
+  # once, for the tools the rows name.
+  #
+  # The rows come from `mise ls --prunable --json`, which applies the same
+  # tracked-configs rule as `mise prune`, so the report lists the versions the
+  # prune removes and nothing else. Listing every install directory instead put
+  # tools with one version under a "stale" heading. The JSON is an object of
+  # tool name to an array of {version, install_path}, and `{}` when nothing is
+  # prunable.
+  if command -v mise >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    local tool version path
+    while IFS=$'\t' read -r tool version path; do
+      [ -n "${path}" ] && [ -d "${path}" ] || continue
+      size_kb="$(du -sk "${path}" 2>/dev/null | cut -f1)"
+      printf 'mise\t%s\t%s\t%s@%s\n' \
+        "${path}" "${size_kb:-0}" "${tool}" "${version}" >>"${out}"
+    done < <(mise ls --prunable --json 2>/dev/null |
+      jq -r 'to_entries[] | .key as $t | .value[] | [$t, .version, .install_path] | @tsv' 2>/dev/null |
+      sort)
   fi
 
   # --- Paseo daemon logs --------------------------------------------------
@@ -402,7 +429,7 @@ disk_wtnm_reason() { # disk_wtnm_reason <worktree>
 }
 
 disk_scan_wtnm() { # disk_scan_wtnm <target file> <repo>
-  local out="$1" repo="$2" line wt='' wt_cur branch='' first=1 nm reason size_kb
+  local out="$1" repo="$2" line wt='' wt_cur branch='' first=1 nm reason size_kb free_kb
   # --porcelain ends each record with a blank line. The first record is the
   # main checkout, which never qualifies. The trailing echo closes the last
   # record if a git version leaves its blank line off.
@@ -429,9 +456,10 @@ disk_scan_wtnm() { # disk_scan_wtnm <target file> <repo>
         fi
         reason="$(disk_wtnm_reason "${wt_cur}")"
         [ -z "${reason}" ] || continue
-        size_kb="$(du -sk "${nm}" 2>/dev/null | cut -f1)"
-        [ -n "${size_kb}" ] || continue
-        printf 'wtnm\t%s\t%s\tbranch: %s\n' "${nm}" "${size_kb}" "${branch}" >>"${out}"
+        read -r size_kb free_kb < <(disk_measure "${nm}")
+        [ "${size_kb:-0}" -gt 0 ] || continue
+        printf 'wtnm\t%s\t%s\tbranch: %s\t%s\n' \
+          "${nm}" "${size_kb}" "${branch}" "${free_kb}" >>"${out}"
         ;;
     esac
   done < <(git -C "${repo}" worktree list --porcelain 2>/dev/null || true; echo)
@@ -494,18 +522,36 @@ disk_sum_kb() { # disk_sum_kb <type> [file]
   awk -F'\t' -v t="$1" '$1 == t { s += $3 } END { print s + 0 }' "${2:-$(disk_targets)}" 2>/dev/null
 }
 
+# The least the delete of each row frees: FREE_KB where the row has one, else
+# SIZE_KB. Only nm and wtnm rows carry FREE_KB, and a saved scan from before
+# the column existed reads as it did then.
+disk_sum_free_kb() { # disk_sum_free_kb <type> [file]
+  awk -F'\t' -v t="$1" '$1 == t { s += ($5 ~ /^[0-9]+$/ ? $5 : $3) } END { print s + 0 }' \
+    "${2:-$(disk_targets)}" 2>/dev/null
+}
+
 disk_count() { # disk_count <type> [file]
   awk -F'\t' -v t="$1" '$1 == t { n++ } END { print n + 0 }' "${2:-$(disk_targets)}" 2>/dev/null
+}
+
+# "3082 MiB on disk, at least 410 MiB freed" for one or more node_modules types.
+disk_nm_sizes() { # disk_nm_sizes <type>...
+  local t kb=0 free=0
+  for t in "$@"; do
+    kb=$((kb + $(disk_sum_kb "${t}")))
+    free=$((free + $(disk_sum_free_kb "${t}")))
+  done
+  printf '%s MiB on disk, at least %s MiB freed' "$((kb / 1024))" "$((free / 1024))"
 }
 
 rows_disk() {
   emit_head 'reclaimable' "scanned at $(now_stamp), age window ${DISK_AGE_DAYS}d"
   emit_row '📦' 'node_modules' \
-    "$(disk_count nm) tree(s), $(($(disk_sum_kb nm) / 1024)) MiB"
+    "$(disk_count nm) tree(s), $(disk_nm_sizes nm)"
   emit_row '🌱' 'worktree node_modules' \
-    "$(disk_count wtnm) tree(s), $(($(disk_sum_kb wtnm) / 1024)) MiB — clean, pushed, idle worktrees"
+    "$(disk_count wtnm) tree(s), $(disk_nm_sizes wtnm) — clean, pushed, idle worktrees"
   emit_row '🔧' 'stale mise versions' \
-    "$(disk_count mise) tool(s), $(($(disk_sum_kb mise) / 1024)) MiB installed"
+    "$(disk_count mise) version(s), $(($(disk_sum_kb mise) / 1024)) MiB, mise prune"
   emit_row '📄' 'paseo logs' \
     "$(disk_count log) file(s), $(($(disk_sum_kb log) / 1024)) MiB"
   if [ -n "${DISK_LOGS_DAYS}" ]; then
@@ -534,7 +580,7 @@ rows_disk() {
 # --- the report -----------------------------------------------------------
 
 disk_report() {
-  local type path size_kb note
+  local type path size_kb note free_kb
 
   echo "devaloy disk: disk before"
   df -h "${DISK_ROOT}" | tail -1
@@ -544,13 +590,13 @@ disk_report() {
   if [ "$(disk_count nm)" -eq 0 ]; then
     echo "  none"
   else
-    while IFS=$'\t' read -r type path size_kb note; do
+    while IFS=$'\t' read -r type path size_kb note free_kb; do
       [ "${type}" = "nm" ] || continue
       printf '  %6s MiB  %s\n' "$((size_kb / 1024))" "${path#"${DISK_ROOT}"/}"
-      printf '               %s\n' "${note}"
+      printf '               %s; at least %s MiB freed\n' \
+        "${note}" "$((${free_kb:-${size_kb}} / 1024))"
     done <"$(disk_targets)"
-    printf 'devaloy disk: %s tree(s), %s MiB\n' \
-      "$(disk_count nm)" "$(($(disk_sum_kb nm) / 1024))"
+    printf 'devaloy disk: %s tree(s), %s\n' "$(disk_count nm)" "$(disk_nm_sizes nm)"
   fi
 
   echo
@@ -558,13 +604,16 @@ disk_report() {
   if [ "$(disk_count wtnm)" -eq 0 ]; then
     echo "  none"
   else
-    while IFS=$'\t' read -r type path size_kb note; do
+    while IFS=$'\t' read -r type path size_kb note free_kb; do
       [ "${type}" = "wtnm" ] || continue
-      printf '  %6s MiB  %s  (%s)\n' "$((size_kb / 1024))" \
-        "$(dirname "${path#"${DISK_ROOT}"/}")" "${note}"
+      printf '  %6s MiB  %s  (%s; at least %s MiB freed)\n' "$((size_kb / 1024))" \
+        "$(dirname "${path#"${DISK_ROOT}"/}")" "${note}" "$((${free_kb:-${size_kb}} / 1024))"
     done <"$(disk_targets)"
-    printf 'devaloy disk: %s tree(s), %s MiB\n' \
-      "$(disk_count wtnm)" "$(($(disk_sum_kb wtnm) / 1024))"
+    printf 'devaloy disk: %s tree(s), %s\n' "$(disk_count wtnm)" "$(disk_nm_sizes wtnm)"
+  fi
+  if [ "$(($(disk_count nm) + $(disk_count wtnm)))" -gt 0 ]; then
+    echo "  (pnpm hard-links node_modules files from its store, so a delete frees"
+    echo "   a file only when no other path links it)"
   fi
 
   echo
@@ -582,17 +631,22 @@ disk_report() {
   echo "   remove merged ones, not this command)"
 
   echo
-  echo "devaloy disk: stale mise tool versions"
+  echo "devaloy disk: stale mise tool versions (mise ls --prunable)"
   if [ "$(disk_count mise)" -eq 0 ]; then
-    command -v mise >/dev/null 2>&1 || echo "  mise not on PATH"
-    [ "$(disk_count mise)" -eq 0 ] && echo "  nothing installed under mise"
+    if ! command -v mise >/dev/null 2>&1; then
+      echo "  mise not on PATH"
+    elif ! command -v jq >/dev/null 2>&1; then
+      echo "  jq not on PATH, so the prunable list is not read"
+    else
+      echo "  none"
+    fi
   else
     while IFS=$'\t' read -r type path size_kb note; do
       [ "${type}" = "mise" ] || continue
-      printf '  %6s MiB  %-20s %s\n' \
-        "$((size_kb / 1024))" "$(basename "${path}")" "${note}"
+      printf '  %6s MiB  %s\n' "$((size_kb / 1024))" "${note}"
     done <"$(disk_targets)"
-    echo "  full list with 'mise prune --dry-run'"
+    printf 'devaloy disk: %s version(s), %s MiB\n' \
+      "$(disk_count mise)" "$(($(disk_sum_kb mise) / 1024))"
   fi
 
   if [ "$(disk_count log)" -gt 0 ]; then
@@ -679,10 +733,15 @@ disk_report() {
 # of a saved scan it has already checked.
 disk_apply_targets() { # disk_apply_targets [file]
   local file="${1:-$(disk_targets)}"
-  local type path size_kb note removed_kb=0 removed=0 refused=0 skipped=0 did_mise=0 did_pstore=0
-  local reason
+  local type path size_kb note free_kb removed_kb=0 removed_free_kb=0 removed=0 refused=0 skipped=0 did_pstore=0
+  local reason tool avail_before avail_after
+  local -a mise_tools=()
 
-  while IFS=$'\t' read -r type path size_kb note; do
+  # The scan's sizes are estimates, and the hard-link case can be far off. df
+  # before and after gives the number that actually changed on the volume.
+  avail_before="$(df -Pk "${DISK_ROOT}" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+
+  while IFS=$'\t' read -r type path size_kb note free_kb; do
     case "${type}" in
       nm | log | cache | pw | alog | wtnm)
         if disk_path_protected "${path}"; then
@@ -707,19 +766,21 @@ disk_apply_targets() { # disk_apply_targets [file]
         act rm -rf "${path}"
         removed=$((removed + 1))
         removed_kb=$((removed_kb + size_kb))
+        case "${free_kb}" in
+          '' | *[!0-9]*) removed_free_kb=$((removed_free_kb + size_kb)) ;;
+          *) removed_free_kb=$((removed_free_kb + free_kb)) ;;
+        esac
         ;;
       wt)
         act git -C "${path}" worktree prune
         ;;
       mise)
-        [ "${did_mise}" -eq 1 ] && continue
-        did_mise=1
-        if [ "${APPLY}" -eq 1 ]; then
-          echo "devaloy disk: pruning unused mise versions"
-          mise prune || true
-        else
-          echo "devaloy disk: would run: mise prune"
-        fi
+        # NOTE is tool@version. The tool is everything before the last @, as
+        # in npm:@antfu/ni@30.6.0. A saved scan can be edited by hand, so the
+        # name must start with a letter or digit and never reads as an option.
+        tool="${note%@*}"
+        [[ "${tool}" =~ ^[A-Za-z0-9][A-Za-z0-9@:/._+-]*$ ]] || continue
+        case " ${mise_tools[*]} " in *" ${tool} "*) ;; *) mise_tools+=("${tool}") ;; esac
         ;;
       pstore)
         # `pnpm store prune` rather than rm -rf: it drops packages no project
@@ -739,6 +800,19 @@ disk_apply_targets() { # disk_apply_targets [file]
     esac
   done <"${file}"
 
+  # One `mise prune` for the tools the rows named. It applies its own rule
+  # again, so a version that stopped being prunable since the scan stays.
+  if [ "${#mise_tools[@]}" -gt 0 ]; then
+    if ! command -v mise >/dev/null 2>&1; then
+      echo "devaloy disk: mise not on PATH, versions not pruned"
+    elif [ "${APPLY}" -eq 1 ]; then
+      echo "devaloy disk: pruning unused mise versions of ${mise_tools[*]}"
+      mise prune "${mise_tools[@]}" || true
+    else
+      echo "devaloy disk: would run: mise prune ${mise_tools[*]}"
+    fi
+  fi
+
   # ~/.npm/_cacache. npm owns its layout, so npm clears it.
   if [ "${DISK_DO_CACHES}" -eq 1 ] && command -v npm >/dev/null 2>&1; then
     if [ "${APPLY}" -eq 1 ]; then
@@ -749,9 +823,16 @@ disk_apply_targets() { # disk_apply_targets [file]
   fi
 
   if [ "${APPLY}" -eq 1 ]; then
-    printf 'devaloy disk: removed %s path(s), %s MiB\n' "${removed}" "$((removed_kb / 1024))"
+    printf 'devaloy disk: removed %s path(s), %s MiB on disk, at least %s MiB freed\n' \
+      "${removed}" "$((removed_kb / 1024))" "$((removed_free_kb / 1024))"
+    avail_after="$(df -Pk "${DISK_ROOT}" 2>/dev/null | awk 'NR == 2 { print $4 }')"
+    if [ -n "${avail_before}" ] && [ -n "${avail_after}" ]; then
+      printf 'devaloy disk: the volume gained %s MiB of free space (df, any other writer included)\n' \
+        "$(((avail_after - avail_before) / 1024))"
+    fi
   else
-    printf 'devaloy disk: would remove %s path(s), %s MiB\n' "${removed}" "$((removed_kb / 1024))"
+    printf 'devaloy disk: would remove %s path(s), %s MiB on disk, at least %s MiB freed\n' \
+      "${removed}" "$((removed_kb / 1024))" "$((removed_free_kb / 1024))"
   fi
   if [ "${refused}" -gt 0 ]; then
     printf 'devaloy disk: refused %s path(s) on the never-delete list\n' "${refused}"
@@ -782,12 +863,19 @@ disk_apply_targets() { # disk_apply_targets [file]
 # The TUI's `a`. The report is already on screen, so this confirms against the
 # counts from the scan and then runs the same apply the CLI runs.
 disk_apply() {
-  local mib
+  local mib free_mib t
   # pstore and pwkeep are size reports, not deletes, so they stay out of the sum.
-  mib="$(((  $(disk_sum_kb nm) + $(disk_sum_kb wtnm) + $(disk_sum_kb log) + $(disk_sum_kb alog) + $(disk_sum_kb cache) + $(disk_sum_kb pw) ) / 1024))"
+  mib=0
+  free_mib=0
+  for t in nm wtnm log alog cache pw; do
+    mib=$((mib + $(disk_sum_kb "${t}")))
+    free_mib=$((free_mib + $(disk_sum_free_kb "${t}")))
+  done
+  mib=$((mib / 1024))
+  free_mib=$((free_mib / 1024))
   if ! confirm \
     "devaloy disk will delete $(( $(disk_count nm) + $(disk_count wtnm) )) node_modules tree(s), $(disk_count log) Paseo log(s), $(disk_count alog) agent log path(s), $(disk_count pw) Playwright revision(s)," \
-    "reclaiming about ${mib} MiB, and run mise prune$([ "$(disk_count pstore)" -gt 0 ] && printf ' and pnpm store prune')." \
+    "freeing ${free_mib} to ${mib} MiB$([ "$(disk_count mise)" -gt 0 ] && printf ', run mise prune')$([ "$(disk_count pstore)" -gt 0 ] && printf ', run pnpm store prune')." \
     "It deletes only what the report listed. Worktrees are never deleted."; then
     printf '\n  cancelled\n'
     sleep 1

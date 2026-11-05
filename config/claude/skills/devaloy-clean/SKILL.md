@@ -20,9 +20,9 @@ devaloy clean --json --save "$SCAN" > "$SCAN.json"
 df -h ~
 ```
 
-Stdout is one JSON object. Its keys are `disk`, `docker` and `totals`. Each row is `{type, path, size_kb, note}`. The save message goes to stderr.
+Stdout is one JSON object. Its keys are `disk`, `docker` and `totals`. Each row is `{type, path, size_kb, note, min_free_kb}`. `size_kb` is what `du` counts, and `min_free_kb` is the least the delete frees. pnpm hard-links `node_modules` files from its store, so the two can differ by a factor of five. The save message goes to stderr.
 
-Show the human a short table. Give one line for each row type, with the count and the size in MiB. Add the Docker volume rows, the `docker.summary` lines and `totals.total_mib`. Show the `df -h ~` use percent below the table.
+Show the human a short table. Give one line for each row type, with the count and the size in MiB. Add the Docker volume rows and the `docker.summary` lines. Give the total as a range, from `totals.total_min_free_mib` to `totals.total_mib`. Show the `df -h ~` use percent below the table.
 
 When `docker.available` is `false`, say that the Docker half is skipped.
 
@@ -51,7 +51,7 @@ At 85% or below, do not ask. The apply then removes dangling images only.
 
 ### 5. Ask, then apply the saved scan
 
-Show the total from step 1 again. Ask the human to confirm the delete. When the answer is yes, run the apply.
+Show the total range from step 1 again. Ask the human to confirm the delete. When the answer is yes, run the apply.
 
 ```sh
 devaloy clean --apply --from "$SCAN"          # add --all when the human said yes in step 4

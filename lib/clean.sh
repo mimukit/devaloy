@@ -31,26 +31,35 @@
 #
 # Fixed here: the disk half runs with --caches and never with --docker, and the
 # Docker half prunes build cache older than 24h (devaloy prune keeps 168h).
-# Build cache, images, npm cache clean, mise prune and pnpm store prune are not
-# rows a file can list, so `--apply --from` still runs them. Only the paths and
+# Build cache, images and npm cache clean are not rows a file can list, so
+# `--apply --from` still runs them. mise prune runs for the tools the mise rows
+# name, and pnpm store prune when the file has a pstore row. Only the paths and
 # the volumes come from the file.
 #
 # THE SAVED FILE is TSV with no header, one row per line: TYPE, PATH, SIZE_KB,
-# NOTE. Disk types: nm wt mise log cache pstore pw pwkeep wtnm alog. Docker
-# type: dvol, whose PATH is a volume name.
+# NOTE, and on nm and wtnm rows FREE_KB. Disk types: nm wt mise log cache
+# pstore pw pwkeep wtnm alog. Docker type: dvol, whose PATH is a volume name. A
+# mise row's PATH is the install directory and its NOTE is tool@version.
+#
+# TWO SIZES. SIZE_KB is what `du -sk` reports. FREE_KB is the least the delete
+# frees: pnpm hard-links node_modules files from its store, and a file is freed
+# only when no other path links it. See disk_measure in lib/disk.sh.
 #
 # THE JSON SCHEMA. A change may add a field, never rename one, because the
 # devaloy-clean skill reads it.
 #   {
-#     "disk":   [ {type, path, size_kb, note} ],      every disk row
+#     "disk":   [ {type, path, size_kb, note, min_free_kb} ],  every disk row
 #     "docker": { "available": bool,
 #                 "summary": [ {type, count, size, reclaimable} ],
-#                 "volumes": [ {type, path, size_kb, note} ] },
-#     "totals": { disk_paths, disk_kb, volumes, volume_kb, total_kb, total_mib }
+#                 "volumes": [ {type, path, size_kb, note, min_free_kb} ] },
+#     "totals": { disk_paths, disk_kb, volumes, volume_kb, total_kb, total_mib,
+#                 disk_min_free_kb, total_min_free_kb, total_min_free_mib }
 #   }
 # totals count only rows the apply deletes (nm wtnm log alog cache pw, and dvol).
-# Build cache and images are in docker.summary, not in totals. With --from the
-# summary is empty, because nothing is scanned.
+# total_mib is the most the apply frees and total_min_free_mib the least.
+# min_free_kb is FREE_KB where the row has one, else size_kb. Build cache and
+# images are in docker.summary, not in totals. With --from the summary is
+# empty, because nothing is scanned.
 
 CLEAN_DO_CACHES=1
 CLEAN_BUILDER_AGE='24h'
@@ -87,7 +96,7 @@ clean_args() {
 }
 
 clean_usage() {
-  sed -n '2,53p' "${DEVALOY_LIB}/clean.sh" | sed 's/^# \{0,1\}//'
+  sed -n '2,63p' "${DEVALOY_LIB}/clean.sh" | sed 's/^# \{0,1\}//'
 }
 
 # --- the context ------------------------------------------------------------
@@ -126,7 +135,7 @@ clean_scan() {
 # another process, so each one is checked again here before anything reads it.
 clean_load() { # clean_load <file>
   [ -n "${CLEAN_IN_CTX:-}" ] || { clean_ctx clean_load "$@"; return; }
-  local src="$1" out age type path size_kb note n=0 kept=0 reason
+  local src="$1" out age type path size_kb note free_kb n=0 kept=0 reason
   [ -f "${src}" ] && [ -r "${src}" ] || die "clean: cannot read ${src}"
   age=$(($(date +%s) - $(stat -c %Y "${src}")))
   if [ "${age}" -gt $((CLEAN_MAX_AGE_MIN * 60)) ]; then
@@ -135,7 +144,7 @@ clean_load() { # clean_load <file>
 
   out="$(target_file clean)"
   : >"${out}"
-  while IFS=$'\t' read -r type path size_kb note || [ -n "${type}" ]; do
+  while IFS=$'\t' read -r type path size_kb note free_kb || [ -n "${type}" ]; do
     n=$((n + 1))
     [ -n "${type}" ] || continue
     reason=''
@@ -146,6 +155,9 @@ clean_load() { # clean_load <file>
     # The size goes into shell arithmetic at apply, so it must be digits only.
     if [ -z "${reason}" ]; then
       case "${size_kb}" in '' | *[!0-9]*) reason="size is not a number" ;; esac
+    fi
+    if [ -z "${reason}" ] && [ -n "${free_kb}" ]; then
+      case "${free_kb}" in *[!0-9]*) reason="free size is not a number" ;; esac
     fi
     if [ -z "${reason}" ] && [ "${type}" = "dvol" ]; then
       [[ "${path}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || reason="not a volume name"
@@ -171,7 +183,8 @@ clean_load() { # clean_load <file>
       warn "clean: dropped row ${n} (${type} ${path}): ${reason}"
       continue
     fi
-    printf '%s\t%s\t%s\t%s\n' "${type}" "${path}" "${size_kb}" "${note}" >>"${out}"
+    printf '%s\t%s\t%s\t%s%s\n' "${type}" "${path}" "${size_kb}" "${note}" \
+      "${free_kb:+$'\t'${free_kb}}" >>"${out}"
     kept=$((kept + 1))
   done <"${src}"
 
@@ -192,6 +205,14 @@ clean_disk_kb() {
   printf '%s' "${kb}"
 }
 
+clean_disk_free_kb() {
+  local t kb=0
+  for t in ${CLEAN_RM_TYPES}; do
+    kb=$((kb + $(disk_sum_free_kb "${t}")))
+  done
+  printf '%s' "${kb}"
+}
+
 clean_disk_paths() {
   local t n=0
   for t in ${CLEAN_RM_TYPES}; do
@@ -201,24 +222,30 @@ clean_disk_paths() {
 }
 
 clean_total_line() {
-  local dkb vkb
+  local dkb dfree vkb
   dkb="$(clean_disk_kb)"
+  dfree="$(clean_disk_free_kb)"
   vkb="$(prune_vol_sum_kb "$(clean_vol_file)")"
-  printf 'devaloy clean: the apply frees about %s MiB: %s MiB in %s path(s) on the home volume, %s MiB in %s anonymous volume(s)\n' \
-    "$(((dkb + vkb) / 1024))" "$((dkb / 1024))" "$(clean_disk_paths)" \
+  printf 'devaloy clean: the apply frees %s to %s MiB: %s to %s MiB in %s path(s) on the home volume, %s MiB in %s anonymous volume(s)\n' \
+    "$(((dfree + vkb) / 1024))" "$(((dkb + vkb) / 1024))" \
+    "$((dfree / 1024))" "$((dkb / 1024))" "$(clean_disk_paths)" \
     "$((vkb / 1024))" "$(prune_vol_count "$(clean_vol_file)")"
+  if [ "${dfree}" -lt "${dkb}" ]; then
+    echo "devaloy clean: the low figure leaves out node_modules files that another path still hard-links"
+  fi
   prune_available || return 0
   echo "devaloy clean: plus Docker build cache older than ${PRUNE_BUILDER_AGE} and $([ "${PRUNE_ALL}" -eq 1 ] && printf 'unused' || printf 'dangling') images, sized in the Docker table above"
 }
 
 rows_clean() {
   [ -n "${CLEAN_IN_CTX:-}" ] || { clean_ctx rows_clean "$@"; return; }
-  local dkb vkb
+  local dkb dfree vkb
   dkb="$(clean_disk_kb)"
+  dfree="$(clean_disk_free_kb)"
   vkb="$(prune_vol_sum_kb "$(clean_vol_file)")"
   emit_head 'clean' "scanned at $(now_stamp), age window ${DISK_AGE_DAYS}d, cache ${PRUNE_BUILDER_AGE}"
   emit_row '📦' 'node_modules' \
-    "$(($(disk_count nm) + $(disk_count wtnm))) tree(s), $((($(disk_sum_kb nm) + $(disk_sum_kb wtnm)) / 1024)) MiB"
+    "$(($(disk_count nm) + $(disk_count wtnm))) tree(s), $(disk_nm_sizes nm wtnm)"
   if [ "${DISK_DO_CACHES}" -eq 1 ]; then
     emit_row '📚' 'caches' \
       "$(($(disk_count cache) + $(disk_count pw))) path(s), $((($(disk_sum_kb cache) + $(disk_sum_kb pw)) / 1024)) MiB, plus pnpm store prune"
@@ -227,7 +254,8 @@ rows_clean() {
   fi
   emit_row '📄' 'logs' \
     "$(($(disk_count log) + $(disk_count alog))) path(s), $((($(disk_sum_kb log) + $(disk_sum_kb alog)) / 1024)) MiB"
-  emit_row '🔧' 'stale mise versions' "mise prune decides; $(disk_count mise) tool(s) listed"
+  emit_row '🔧' 'stale mise versions' \
+    "$(disk_count mise) version(s), $(($(disk_sum_kb mise) / 1024)) MiB, mise prune"
   if prune_available; then
     emit_row '🐳' 'anon volumes' \
       "$(prune_vol_count "$(clean_vol_file)") unused, $((vkb / 1024)) MiB"
@@ -237,7 +265,7 @@ rows_clean() {
     emit_row '🚫' 'docker' "$(bad 'not reachable') — the disk half still runs"
   fi
   emit_rule
-  emit_row '🧹' 'total' "about $(((dkb + vkb) / 1024)) MiB, plus build cache and images"
+  emit_row '🧹' 'total' "$(((dfree + vkb) / 1024)) to $(((dkb + vkb) / 1024)) MiB, plus build cache and images"
   emit_row '💾' 'disk now' "$(status_disk_line)"
 }
 
@@ -272,13 +300,14 @@ clean_apply_targets() {
 # The TUI's `a`: one confirm for both halves.
 clean_apply() {
   [ -n "${CLEAN_IN_CTX:-}" ] || { clean_ctx clean_apply "$@"; return; }
-  local dkb vkb images='dangling images'
+  local dkb dfree vkb images='dangling images'
   dkb="$(clean_disk_kb)"
+  dfree="$(clean_disk_free_kb)"
   vkb="$(prune_vol_sum_kb "$(clean_vol_file)")"
   [ "${PRUNE_ALL}" -eq 1 ] && images='every image no container is running'
   if ! confirm \
     "devaloy clean will delete $(clean_disk_paths) path(s) on the home volume and $(prune_vol_count "$(clean_vol_file)") anonymous volume(s)," \
-    "about $(((dkb + vkb) / 1024)) MiB, run mise prune$([ "${DISK_DO_CACHES}" -eq 1 ] && printf ', pnpm store prune and npm cache clean')," \
+    "freeing $(((dfree + vkb) / 1024)) to $(((dkb + vkb) / 1024)) MiB$([ "$(disk_count mise)" -gt 0 ] && printf ', run mise prune')$([ "${DISK_DO_CACHES}" -eq 1 ] && printf ', run pnpm store prune and npm cache clean')," \
     "and drop Docker build cache older than ${PRUNE_BUILDER_AGE} and ${images}." \
     "It deletes only what the report listed. Worktrees and named volumes are never deleted."; then
     printf '\n  cancelled\n'
@@ -305,13 +334,15 @@ clean_json() {
     --argjson available "${avail}" \
     --arg rm_types "${CLEAN_RM_TYPES}" '
     def lines($s): $s | split("\n") | map(select(length > 0) | split("\t"));
-    def rows($s): lines($s) | map({type: .[0], path: .[1],
-      size_kb: ((.[2] // "0") | tonumber? // 0), note: (.[3] // "")});
+    def rows($s): lines($s) | map(((.[2] // "0") | tonumber? // 0) as $kb
+      | {type: .[0], path: .[1], size_kb: $kb, note: (.[3] // ""),
+         min_free_kb: ((.[4] // "") | tonumber? // $kb)});
     ($rm_types | split(" ")) as $rm
     | rows($disk) as $d
     | rows($vols) as $v
     | ($d | map(select(.type as $t | $rm | index($t)))) as $del
     | ($del | map(.size_kb) | add // 0) as $dkb
+    | ($del | map(.min_free_kb) | add // 0) as $dfree
     | ($v | map(.size_kb) | add // 0) as $vkb
     | {
         disk: $d,
@@ -327,7 +358,10 @@ clean_json() {
           volumes: ($v | length),
           volume_kb: $vkb,
           total_kb: ($dkb + $vkb),
-          total_mib: (($dkb + $vkb) / 1024 | floor)
+          total_mib: (($dkb + $vkb) / 1024 | floor),
+          disk_min_free_kb: $dfree,
+          total_min_free_kb: ($dfree + $vkb),
+          total_min_free_mib: (($dfree + $vkb) / 1024 | floor)
         }
       }'
 }
