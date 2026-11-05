@@ -215,7 +215,22 @@ if [ "${SEED}" -eq 1 ]; then
   echo "mise config seeded from ${CONFIG_SRC}/mise"
 fi
 
-mise install
+# Parallel installs can race in aube's shared virtual store. mise's npm backend
+# installs through aube, and aube links every hoisted dependency into one
+# ~/.cache/aube/virtual-store/node_modules/. npm:wrangler and npm:cf both depend
+# on miniflare, so when both land a new version in the same run, two jobs create
+# the same node_modules/miniflare link and the loser fails with "File exists
+# (os error 17)". Installed alone, either tool succeeds. So: run in parallel,
+# and on a failure retry once with --jobs 1. The retry only redoes the tools
+# the first pass left behind, so it costs seconds, not a full serial run.
+mise_serial_retry() {
+  if ! mise "$@"; then
+    echo "mise $* failed; retrying with --jobs 1 (aube store race)" >&2
+    mise "$@" --jobs 1
+  fi
+}
+
+mise_serial_retry install
 
 # `mise install` does NOT move a tool that is already installed, even one pinned
 # to `latest` — it resolves `latest` against what is on disk, prints "all tools
@@ -230,7 +245,7 @@ mise install
 # the copy in the home volume out of step with the repo's.
 if [ "${FORCE}" -eq 1 ]; then
   echo "upgrading tools that track latest"
-  mise upgrade
+  mise_serial_retry upgrade
 fi
 
 # --- agent skills -----------------------------------------------------------
