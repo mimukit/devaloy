@@ -23,6 +23,7 @@
 #   devaloy disk [flags]     the home-volume reclaim
 #   devaloy ram [flags]      the RAM reclaim
 #   devaloy prune [flags]    the nested Docker reclaim
+#   devaloy clean [flags]    the routine reclaim: disk and Docker in one pass
 #   devaloy update [flags]   seed config/, then re-run the toolchain bootstrap
 #                            --config-only seeds and stops, for testing a
 #                            config/ edit without a redeploy
@@ -57,7 +58,7 @@ set -euo pipefail
 # Order matters. common.sh defines what every other module calls, and tui.sh
 # defines fzf_version_ok, which doctor.sh reports on.
 DEVALOY_LIB="${DEVALOY_LIB:-/usr/local/lib/devaloy}"
-DEVALOY_MODULES='common.sh tui.sh status.sh doctor.sh disk.sh ram.sh prune.sh update.sh nvim.sh'
+DEVALOY_MODULES='common.sh tui.sh status.sh doctor.sh disk.sh ram.sh prune.sh clean.sh update.sh nvim.sh'
 
 for _module in ${DEVALOY_MODULES}; do
   if [ ! -r "${DEVALOY_LIB}/${_module}" ]; then
@@ -72,7 +73,7 @@ done
 unset _module
 
 usage() {
-  sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # --- verb dispatch --------------------------------------------------------
@@ -98,7 +99,7 @@ main() {
 
   if [ -z "${verb}" ]; then
     case "${1:-}" in
-      status | doctor | health | disk | ram | prune | update | nvim-sync)
+      status | doctor | health | disk | ram | prune | clean | update | nvim-sync)
         verb="$1"
         shift
         ;;
@@ -135,6 +136,7 @@ main() {
     disk) do_disk "$@" ;;
     ram) do_ram "$@" ;;
     prune) do_prune "$@" ;;
+    clean) do_clean "$@" ;;
     update) do_update "$@" ;;
     nvim-sync) do_nvim_sync "$@" ;;
   esac
