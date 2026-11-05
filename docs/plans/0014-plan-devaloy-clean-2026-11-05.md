@@ -80,7 +80,7 @@ Rejected alternatives, one line each:
 - `docker volume prune` at apply: it takes volumes the scan did not list, which breaks the contract.
 - A lower `defaultReservedSpace` in place of the 24h age: it needs an image rebuild, and the GC runs only under disk pressure.
 
-### Phase 1: stop `--caches --apply` from deleting the pnpm store
+### Phase 1: stop `--caches --apply` from deleting the pnpm store (#11) (built 2026-11-05)
 
 - In `disk_scan`, remove `${DISK_ROOT}/.local/share/pnpm/store` from the `cache` path list.
 - Add a `pstore` row with the store size and the note "pruned with pnpm store prune, never deleted".
@@ -89,7 +89,7 @@ Rejected alternatives, one line each:
 
 Done when: on the real box, `DEVALOY_LIB=./lib ./devaloy disk --caches` prints `would run: pnpm store prune` and no path under `.local/share/pnpm/store`. In a scratch `HOME` with a populated `.local/share/pnpm/store`, `devaloy disk --caches --apply` leaves that directory and its files in place.
 
-### Phase 2: cache and Playwright targets
+### Phase 2: cache and Playwright targets (#11) (built 2026-11-05)
 
 - Change the `cache` list to `~/.cache/pnpm`, `~/.npm/_npx`, `~/.local/share/pnpm/package-manager-store`, `~/.cache/mise` and `~/.cache/turbo`. Keep `npm cache clean --force` for `~/.npm/_cacache`, and stop the `rm -rf` of all of `~/.npm`.
 - Add the never-delete list as one variable, and make `disk_apply_targets` refuse any row under it.
@@ -98,7 +98,7 @@ Done when: on the real box, `DEVALOY_LIB=./lib ./devaloy disk --caches` prints `
 
 Done when: on the real box, a dry run lists `chromium-1252` and `chromium_headless_shell-1252` as kept. In a scratch `HOME` with revisions 1243, 1247 and 1252 and one `browsers.json` that names 1252, `--apply` removes 1243 and 1247 only. A row added by hand under `~/.local/share/aube` is refused.
 
-### Phase 3: node_modules in clean linked worktrees
+### Phase 3: node_modules in clean linked worktrees (#11) (built 2026-11-05)
 
 - Add the `wtnm` row type and its scan (see Design decisions). Find linked worktrees through `git worktree list --porcelain` of each repo the `wt` scan already finds.
 - Skip a `wtnm` candidate that the age-based `nm` scan already lists, so a path appears once.
@@ -107,7 +107,7 @@ Done when: on the real box, a dry run lists `chromium-1252` and `chromium_headle
 
 Done when: in a scratch repo under a temporary `HOME`, a dry run lists the node_modules of a clean, pushed worktree. It does not list the node_modules of a worktree with one dirty file, a worktree with one commit not on any remote, or a worktree where a `sleep` process has its cwd. A commit made between scan and apply makes the apply skip that row.
 
-### Phase 4: agent logs behind `--logs <days>`
+### Phase 4: agent logs behind `--logs <days>` (#11) (built 2026-11-05)
 
 - Add `--logs <days>` to `disk_args`, and refuse a value under 7.
 - Write one `alog` row for each matching file or Claude session directory (see Design decisions). Group them by top directory in the report, with a count and a size for each.
@@ -115,7 +115,7 @@ Done when: in a scratch repo under a temporary `HOME`, a dry run lists the node_
 
 Done when: in a scratch `HOME` with old and new session files, a `<uuid>/` directory beside an old `<uuid>.jsonl`, and an old file under `memory/`, `devaloy disk --logs 30 --apply` removes the old sessions and their directories and leaves `memory/` in place. `devaloy disk --logs 3` exits non-zero with a message about the floor. Without `--logs`, the report says "agent logs: not scanned".
 
-### Phase 5: Docker volumes and the build-cache age
+### Phase 5: Docker volumes and the build-cache age (#11) (built 2026-11-05)
 
 - In `prune_scan`, write anonymous unused volumes with their size from `docker system df -v` to a second target file in the disk row format (TYPE, PATH, SIZE_KB, NOTE).
 - In `prune_apply_targets`, run `docker volume rm` for each listed volume. Docker refuses a volume in use, so report that and continue.
@@ -124,7 +124,7 @@ Done when: in a scratch `HOME` with old and new session files, a `<uuid>/` direc
 
 Done when: after `docker run -v /data alpine true` and `docker rm` of that container, a dry run lists the new volume and no named volume. `devaloy prune --builder-age 24h` prints `would prune build cache older than 24h`. The apply check for volumes is in Phase 7.
 
-### Phase 6: the `devaloy clean` verb and its TUI view
+### Phase 6: the `devaloy clean` verb and its TUI view (#11) (built 2026-11-05)
 
 - Add `lib/clean.sh` with `clean_args`, `clean_scan`, `clean_report`, `clean_apply_targets`, `clean_apply`, `rows_clean` and `do_clean`.
 - `clean_args` takes `--apply`, `--all`, `--logs <days>`, `--age <days>` and `--no-caches`, and passes each to the disk or prune half. It always passes `--builder-age 24h`.
@@ -133,7 +133,7 @@ Done when: after `docker run -v /data alpine true` and `docker rm` of that conta
 
 Done when: `devaloy clean` prints one report and ends on `dry run. Nothing was deleted.`. In a scratch `HOME`, `devaloy clean --apply` removes the same disk rows that `devaloy disk --caches --apply` removes. In the picker, the `clean` view opens, and its `a` asks one confirm.
 
-### Phase 7: machine report and saved scan
+### Phase 7: machine report and saved scan (#11) (built 2026-11-05)
 
 - Add `--json` to `clean`. It prints one JSON object with `disk`, `docker` and `totals` keys, each row as `{type, path, size_kb, note}`. Document the schema in the `lib/clean.sh` header.
 - Add `--save <file>` and `--from <file>`. `--from` refuses a file older than 60 minutes. It checks each row's type against the known types, checks its path against `DISK_ROOT` and the never-delete list, and drops a row that fails with a message.
@@ -141,7 +141,7 @@ Done when: `devaloy clean` prints one report and ends on `dry run. Nothing was d
 
 Done when: `devaloy clean --json | jq '.totals'` prints the totals. A row edited in a saved file to point at `~/.local/share/aube` is dropped at `--apply --from` with a message. A saved file with its mtime set 61 minutes back is refused. After the Phase 5 volume setup, `--apply --from` a saved file that lists only the new volume removes it, and `docker volume ls` still shows every other volume.
 
-### Phase 8: the `devaloy-clean` skill
+### Phase 8: the `devaloy-clean` skill (#11) (built 2026-11-05)
 
 - Write `config/claude/skills/devaloy-clean/SKILL.md`. The skill does these steps:
   1. Run `devaloy clean --json --save <scratch file>` and show the report.
