@@ -61,18 +61,19 @@ The boot log names whatever restarted, so you find out on the way in rather than
 
 ## When the disk fills
 
-Build cache is reaped for you. `config/docker/daemon.json` sets the builder GC to hold 10 GB, and it runs on its own.
+Build cache is reaped for you, but only above 10 GB. `config/docker/daemon.json` sets the builder GC to keep 10 GB of reserved cache, so it never frees a smaller cache. `devaloy prune` frees that with its own age filter, `--builder-age`.
 
 Images are not, and that is deliberate: an agent may be halfway through a multi-stage build whose intermediate images are pinned by nothing. Reap them by hand:
 
 ```sh
 devaloy prune                          # report only: what is reclaimable
-devaloy prune --apply                  # dangling images and build cache older than 7 days
+devaloy prune --apply                  # dangling images and build cache older than 7 days, unused anonymous volumes
 devaloy prune --apply --all            # also images no container is running
-devaloy prune --apply --all --age 24h  # narrower window
+devaloy prune --apply --all --age 24h  # narrower window for images
+devaloy prune --apply --builder-age 24h  # narrower window for build cache
 ```
 
-Neither form can touch an image a running container uses — Docker refuses — so a stack you left up is safe by construction.
+Neither form can touch an image or a volume a container uses, because Docker refuses, so a stack you left up is safe by construction. The volume rows are anonymous volumes only (the ones `-v /data` or a Dockerfile `VOLUME` creates). A named volume, such as a compose stack's database volume, is never listed, even when its stack is down.
 
 For the nuclear option, on the Docker host rather than on devaloy:
 
