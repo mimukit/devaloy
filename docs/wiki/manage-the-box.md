@@ -29,7 +29,7 @@ The figures refresh on `r` and when you come back from an action. There is no ti
 
 ## Reclaiming something
 
-The three reclaim views work the same way. Opening one scans, and the scan writes down every file or process it intends to touch. The view shows the totals, `d` shows the whole list, and `a` asks you to type `yes` before anything happens.
+The four reclaim views work the same way. Opening one scans, and the scan writes down every file or process it intends to touch. The view shows the totals, `d` shows the whole list, and `a` asks you to type `yes` before anything happens.
 
 **The apply consumes the list you just read.** It does not scan again. If a `pnpm install` lands between the report and the confirm, the new `node_modules` is not in the list and is not deleted. For the RAM reclaim the same contract needs one more step, because Linux reuses process IDs: the scan records each process's start time and the apply re-checks it, so a PID that was recycled in between is skipped and reported rather than killed.
 
@@ -38,12 +38,22 @@ From the command line the flags are unchanged:
 ```sh
 devaloy disk                      # dry run, always read this first
 devaloy disk --apply --docker     # node_modules, mise versions, logs, Docker
-devaloy disk --apply --caches     # also the pnpm/npm/turbo caches
+devaloy disk --apply --caches     # also the download caches, pnpm store prune, old Playwright builds
+devaloy disk --logs 30            # also agent session logs older than 30 days (7 is the floor)
 devaloy ram                       # report: what is holding the memory
 devaloy ram --apply               # restart Paseo, TERM orphaned language servers
 devaloy ram --t3 --apply          # restart the T3 Code server, cancelling running turns
 devaloy prune --apply --all       # also images no container is running
+devaloy prune --builder-age 24h   # build cache older than 24h, not 7 days
+devaloy clean                     # disk and Docker in one report, caches on, build cache older than 24h
+devaloy clean --apply             # the routine reclaim; add --all for unused images, --logs 30 for agent logs
+devaloy clean --json --save f.tsv # one JSON object on stdout, and the rows saved for a later apply
+devaloy clean --apply --from f.tsv  # apply the saved rows only (refused after 60 minutes)
 ```
+
+`devaloy clean` is the one to run every few days. It calls the `disk` and `prune` scans and adds no filter of its own, and its picker view asks one `yes` for both halves.
+
+Run `devaloy clean`, read the report, then `devaloy clean --apply` every few days. On a Beszel disk alert, or every two weeks, ask Claude Code to use the `devaloy-clean` skill instead. It adds the worktree sweep, one answer per worktree, and applies the exact scan you saw. Never put worktree deletion on a timer.
 
 `devaloy prune` is the one behaviour change. The old `devaloy-prune` pruned as soon as you ran it; it now reports first and needs `--apply`, so every verb answers to the same contract and the picker can show you the reclaim before it happens.
 

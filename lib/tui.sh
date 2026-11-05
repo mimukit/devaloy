@@ -141,6 +141,7 @@ cmd_view() { # cmd_view <view> [arg]
     disk) rows_disk ;;
     ram) rows_ram ;;
     prune) rows_prune ;;
+    clean) rows_clean ;;
     doctor) rows_doctor ;;
     tools) rows_tools ;;
     *) die "unknown view: $1" ;;
@@ -153,6 +154,7 @@ label_of() {
     disk) printf ' disk reclaim ' ;;
     ram) printf ' ram reclaim ' ;;
     prune) printf ' docker reclaim ' ;;
+    clean) printf ' clean ' ;;
     doctor) printf ' doctor ' ;;
     tools) printf ' toolchain ' ;;
   esac
@@ -161,7 +163,7 @@ label_of() {
 footer_of() {
   case "$1" in
     status) printf 'j/k move · enter open · / search · r refresh · q quit' ;;
-    disk | ram | prune) printf 'a apply · d full report · / search · r rescan · h back · q quit' ;;
+    disk | ram | prune | clean) printf 'a apply · d full report · / search · r rescan · h back · q quit' ;;
     doctor) printf '/ search · r recheck · h back · q quit' ;;
     tools) printf 'a run · / search · h back · q quit' ;;
     *) printf '/ search · h back · q quit' ;;
@@ -182,6 +184,7 @@ apply_of() { # apply_of <view>
     disk) printf 'disk_apply' ;;
     ram) printf 'ram_apply' ;;
     prune) printf 'prune_apply' ;;
+    clean) printf 'clean_apply' ;;
     tools) printf 'tools_apply' ;;
     *) printf '' ;;
   esac
@@ -192,6 +195,7 @@ detail_of() { # detail_of <view>
     disk) printf 'disk_report' ;;
     ram) printf 'ram_report' ;;
     prune) printf 'prune_report' ;;
+    clean) printf 'clean_report' ;;
     doctor) printf 'doctor_report' ;;
     *) printf '' ;;
   esac
@@ -204,6 +208,7 @@ scan_of() { # scan_of <view>
     disk) printf 'disk_scan' ;;
     ram) printf 'ram_scan' ;;
     prune) printf 'prune_scan' ;;
+    clean) printf 'clean_scan' ;;
     *) printf '' ;;
   esac
 }

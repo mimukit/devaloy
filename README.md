@@ -662,7 +662,9 @@ at start rather than quietly picking one.
 - **Nothing prunes images for you.** Build cache is reaped automatically by the
   builder GC; images are not, because an agent may be halfway through a build.
   Run `devaloy prune --apply` when the disk fills, or add `--all` to also take
-  images no container is running.
+  images no container is running. The builder GC keeps 10 GB of reserved cache,
+  so `devaloy prune` also frees build cache older than `--builder-age` (default
+  `168h`) and each anonymous volume no container uses. Named volumes stay.
 - **Published ports bind `0.0.0.0`,** so they are reachable from the Docker host
   as well as the tailnet. That is accepted: whoever holds the Docker host
   already holds its socket.
@@ -756,8 +758,9 @@ devaloy status                 # the same figures as plain text
 devaloy doctor                 # what this box was built with, and what is broken
 devaloy health                 # can you get in? exits 0 or 1; the Docker healthcheck runs it
 devaloy disk                   # dry run; add --apply to act
+devaloy clean                  # disk and Docker reclaim in one report; add --apply to act
 devaloy ram --apply            # restart Paseo, TERM orphaned language servers
-devaloy prune --apply --all    # Docker build cache and unused images
+devaloy prune --apply --all    # Docker build cache, unused images, anonymous volumes
 ```
 
 `devaloy-update`, `devaloy-disk`, `devaloy-ram`, `devaloy-prune` and `devaloy-nvim-sync` are symlinks to it and still work. With no terminal and no verb — `ssh devaloy 'devaloy'` — it prints the status block and exits `0`.

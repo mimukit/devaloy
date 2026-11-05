@@ -195,7 +195,8 @@ Disk is the ceiling nobody watches. Two home volumes and a 12 GiB swap file shar
 ```sh
 devaloy disk                      # dry run, always read this first
 devaloy disk --apply --docker     # node_modules, mise versions, Docker
-devaloy disk --apply --caches     # also the pnpm/npm/turbo caches
+devaloy disk --apply --caches     # also the download caches, pnpm store prune, old Playwright builds
+devaloy disk --logs 30            # also agent session logs older than 30 days (7 is the floor)
 ```
 
 ### Fix the kill order before you rely on the cap
