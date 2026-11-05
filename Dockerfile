@@ -116,6 +116,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         btop \
         bat \
         jq \
+        # The sqlite3 CLI, with FTS5 and -json. tinydrop's store tests and
+        # `pnpm bench` run it at /usr/bin/sqlite3, the path macOS uses.
+        sqlite3 \
         # LazyVim's search stack. Neovim itself comes from mise (see
         # bootstrap-toolchain.sh); these are the binaries its pickers shell out
         # to, plus the unzip that Mason's installers expect on PATH.
