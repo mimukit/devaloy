@@ -70,7 +70,7 @@ To change a feature later, re-run the one-liner with the new value. Setting `WIT
 
 The installer also reads `TS_HOSTNAME` (the tailnet name, default `devaloy`) and every `.env` variable that means something on a VM: `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS`, `TS_ACCEPT_DNS` and `MISE_NODE_VERSION`. Each one means what [Reference](reference.md#environment-variables) says, with one difference: `TS_ACCEPT_DNS` defaults to `true` on a VM, because there is no Docker resolver to protect. Set `TS_ACCEPT_DNS=false` to turn MagicDNS off on the box.
 
-A non-empty variable on the command line overwrites the value stored in `/etc/devaloy/env`. An empty or missing one keeps the stored value. So you pass a token once, and a re-run without it keeps it. You can also skip the command line and edit the file; see [Change or revoke a token](#change-or-revoke-a-token).
+A non-empty variable on the command line overwrites the value stored in `/etc/devaloy/env`. An empty or missing one keeps the stored value. So you pass a token once, and a re-run without it keeps it. For more than one or two values, skip the command line and edit the file instead; see [4. Set your environment](#4-set-your-environment). A token on the command line also lands in your shell history.
 
 The compose-only variables (`DEVALOY_NAME`, `DEVALOY_RUNTIME`, `DEVALOY_PRIVILEGED`, the `DEVALOY_*` resource ceilings, `DEVALOY_SHM_SIZE`) have no meaning on a VM and the installer ignores them.
 
@@ -107,6 +107,68 @@ devaloy doctor
 ```
 
 It prints `runtime: native` under the date, and one row each for `tailscaled`, `devaloy-boot`, and the Docker, Paseo and T3 Code units when their flag is on. It exits 0 when everything that is on works.
+
+Always log in as `dev`. The devaloy shell config (zsh, the aliases, the prompt, mise on `PATH`) is in `/home/dev` only. The cloud image's own user, or the user a provider's SSH gateway logs you in as, is a plain login with none of it. From such a session, switch with:
+
+```sh
+sudo -iu dev
+```
+
+## 4. Set your environment
+
+The installer writes `/etc/devaloy/env` on the first run, with every key the VM reads and an empty value for each one you did not pass. It is the VM's counterpart of the `.env` file, or of the environment settings in Dokploy. The file is owned by root with mode 0600, and the systemd units read it through `EnvironmentFile=`.
+
+1. Open the file in your editor as root:
+   ```sh
+   sudoedit /etc/devaloy/env
+   ```
+2. Fill in the values you need. The table below lists the keys.
+3. Keep each value inside its double quotes. Inside them, write `\\`, `\"`, `` \` `` and `\$` for a literal backslash, quote, backtick and dollar sign.
+4. Save and close the file.
+5. Apply the file. Re-run the installer with no variables:
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-native.sh | sudo bash
+   ```
+6. Check the result as `dev`:
+   ```sh
+   devaloy doctor
+   ```
+
+The re-run in step 5 always works. You need it when you change a `WITH_*` flag or `DEVALOY_REF`, because those install packages, switch units on or off, or move the clone. For any other key, restarting the units is enough:
+
+```sh
+sudo systemctl restart devaloy-boot
+```
+
+Restart `devaloy-paseo` or `devaloy-t3code` as well when you changed a key that server reads.
+
+### The keys
+
+Each key means what [Reference](reference.md#environment-variables) says. The exceptions on a VM are in the third column.
+
+| Group | Keys | On a VM |
+|---|---|---|
+| Tailnet | `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_ACCEPT_DNS` | `TS_AUTHKEY` matters only while the node is off the tailnet. `TS_HOSTNAME` defaults to `devaloy`; give a second box its own name. `TS_ACCEPT_DNS` defaults to `true`. |
+| GitHub and git | `GITHUB_TOKEN`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `DEVALOY_REPOS` | With no identity, `devaloy-boot` warns that commits will fail. `devaloy-boot` clones `DEVALOY_REPOS` into `/home/dev`. |
+| Agents and services | `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` | Written to `~/.devaloy_secrets` on every boot. A cleared value is gone after the next restart. |
+| Push notifications | `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN` | See [Push notifications](push-notifications.md). |
+| Features | `WITH_DOCKER`, `WITH_BROWSER`, `WITH_PASEO`, `WITH_T3CODE` | `true` or `false`. Re-run the installer after a change. See [Turn on optional features](#turn-on-optional-features). |
+| Paseo | `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS` | `devaloy-boot` writes the Paseo config, so restart both: `sudo systemctl restart devaloy-boot devaloy-paseo`. |
+| Toolchain and source | `MISE_NODE_VERSION`, `DEVALOY_REF` | Re-run the installer after a `DEVALOY_REF` change. |
+| Set by the installer | `RUNTIME` | Always `native`. Do not edit it. |
+
+A key that is not in this table stays in the file across re-runs, but no devaloy code reads it. To give a tool on the box its own key, put the key in that tool's config, or ask for it to be added to `~/.devaloy_secrets`.
+
+### Move settings from a Dokploy box
+
+Copy the values from the Dokploy environment settings into `/etc/devaloy/env`, with these differences:
+
+- Copy as they are: the GitHub and git keys, the agent and service tokens, the ntfy keys, the Paseo keys, `WITH_PASEO`, `WITH_T3CODE` and `WITH_BROWSER`.
+- Leave out the compose-only keys: `DEVALOY_NAME`, `DEVALOY_RUNTIME`, `DEVALOY_PRIVILEGED`, `DEVALOY_SHM_SIZE`, and the resource ceilings (`DEVALOY_MEM_LIMIT`, `DEVALOY_MEMSWAP_LIMIT`, `DEVALOY_MEM_RESERVATION`, `DEVALOY_CPUS`, `DEVALOY_CPU_SHARES`, `DEVALOY_PIDS_LIMIT`). A VM has no container to limit.
+- Do not copy `TS_HOSTNAME` or `DEVALOY_NAME` as the tailnet name while the Dokploy box is still on the tailnet. Two nodes with one name collide.
+- Check `WITH_DOCKER` first. See the warning in [On InstaBox](#on-instabox), which applies to any VM image that already ships Docker.
+
+A token copied to a second box works on both. To revoke one box's access on its own later, make a separate token for each box.
 
 ## Lock down public SSH
 
@@ -162,7 +224,7 @@ journalctl -u devaloy-boot
 
 ## Change or revoke a token
 
-Edit `/etc/devaloy/env`, then restart the boot unit:
+[4. Set your environment](#4-set-your-environment) lists the keys. Edit `/etc/devaloy/env`, then restart the boot unit:
 
 ```sh
 sudo systemctl restart devaloy-boot
@@ -217,11 +279,49 @@ The usual causes are a used one-off key, an expired key, or a tagged key. A node
 
 An [InstaBox](https://instabox.sh/docs/index.md) machine is a Firecracker microVM that boots Debian 13 with systemd, so the installer runs on it as on any other VM. You reach the machine through the InstaBox SSH gateway, not a public IP, so run the installer from that session.
 
-Check the machine before you install:
+The gateway logs you in as `user`, with bash and the home `/data/home`. That user has none of devaloy's shell config. After the install, log in with `ssh dev@<TS_HOSTNAME>` over the tailnet, or run `sudo -iu dev` in the gateway session.
+
+### Check the machine
 
 ```sh
 cat /etc/os-release; ls -l /dev/net/tun; systemctl --version | head -1; df -h / /data
 ```
+
+Go on when the output shows Debian 13, a `/dev/net/tun` device, and a systemd version.
+
+### Put /home/dev on /data
+
+The root disk holds the template and the apt packages, and has about 11 GB free. `/data` is the machine's persistent disk. Put `/home/dev`, which holds the toolchain, repos and worktrees, on `/data`. Do this before the first install.
+
+1. Make the directory:
+   ```sh
+   sudo mkdir -p /data/devaloy-home /home/dev
+   ```
+2. Add a bind mount to `/etc/fstab`:
+   ```sh
+   echo '/data/devaloy-home /home/dev none bind,nofail,x-systemd.requires-mounts-for=/data 0 0' | sudo tee -a /etc/fstab
+   ```
+3. Mount it:
+   ```sh
+   sudo systemctl daemon-reload && sudo mount /home/dev && findmnt /home/dev
+   ```
+4. Make sure the `SOURCE` column shows `/dev/vdb[/devaloy-home]`.
+5. Create `dev` and give it the directory:
+   ```sh
+   sudo useradd --home-dir /home/dev --shell /usr/bin/zsh --user-group dev && sudo chown dev:dev /home/dev
+   ```
+
+`useradd` warns that `/usr/bin/zsh` is missing. That is expected, because the installer installs zsh. The installer then reports `dev exists` and keeps the user. The mount survives a reboot.
+
+### Keep WITH_DOCKER off
+
+The InstaBox template already runs Docker Engine from Docker's Debian repo, listed in `/etc/apt/sources.list.d/docker.sources`. `dev` lands in the `docker` group on install, so `docker` works with no flag.
+
+Do not set `WITH_DOCKER=true` on it. The installer then adds its own `docker.list` for the same repo with a different keyring path, and `apt-get update` stops with `Conflicting values set for option Signed-By`. Every later apt call fails until you remove `/etc/apt/sources.list.d/docker.list`.
+
+Docker keeps its images and volumes in `/var/lib/docker`, on the root disk, not on `/data`. Run `docker system prune` when the root disk fills.
+
+### Free plan limits
 
 The free plan limits how long the node stays on the tailnet:
 
@@ -236,4 +336,4 @@ A paid plan can turn off the idle pause and the run limit. Until then, use an In
 
 There is no uninstall. Rebuild the VM from a fresh image, and remove the old node from the [admin console](https://login.tailscale.com/admin/machines).
 
-_Verified against `issue-4-install-devaloy-natively-on-an-ubuntu-vm` on 2026-10-28, from the code. The VM steps are not yet verified on a real VM._
+_Verified against `hotfix-shared-system-install` on 2026-11-06, on an InstaBox machine (Debian 13.7): the install, a re-run, a reboot, and the steps in On InstaBox. Ubuntu 24.04 is verified from the code and in a container, not yet on a real VM._
