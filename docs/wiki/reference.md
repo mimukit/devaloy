@@ -209,9 +209,9 @@ runtime, and is listed above for that half.
 and is not: it is an environment variable listed above, because Paseo installs
 into the home volume rather than the image. It needs no `--build`.
 
-One more is pinned in the `Dockerfile` itself rather than exposed through
-compose: `ZSH_COMPLETIONS_VERSION` (`0.36.0`). Changing it means editing the
-file and rebuilding.
+One more is pinned in `lib/system/steps.sh` rather than exposed through
+compose: `ZSH_COMPLETIONS_VERSION` (`0.36.0`). Changing it means editing that
+file and rebuilding, or re-running the installer on a native VM.
 
 ## Commands on the box
 
@@ -328,7 +328,7 @@ It reads the session from `SSH_CONNECTION`, which `sudo` strips, and it refuses 
 
 ## Native install
 
-`scripts/install-native.sh` installs devaloy on an Ubuntu 24.04 VM with no Docker. It runs on the VM, as root, usually piped from curl. The task page is [Install on a VM](install-on-a-vm.md).
+`scripts/install-native.sh` installs devaloy on an Ubuntu 24.04 or Debian 13 VM with no Docker. It runs on the VM, as root, usually piped from curl. The task page is [Install on a VM](install-on-a-vm.md).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-native.sh | sudo TS_AUTHKEY=tskey-auth-... bash

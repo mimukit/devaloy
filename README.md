@@ -23,7 +23,7 @@ ground in shorter, task-shaped pages:
   and why the trades were made.
 - [Reference](docs/wiki/reference.md) — every `.env` variable, command, flag and
   managed file.
-- [Install on a VM](docs/wiki/install-on-a-vm.md): one command on a fresh Ubuntu 24.04 VM, no Docker.
+- [Install on a VM](docs/wiki/install-on-a-vm.md): one command on a fresh Ubuntu 24.04 or Debian 13 VM, no Docker.
 - [Recover a box you cannot reach](docs/wiki/recover-an-unreachable-box.md) —
   when Tailscale SSH stops answering.
 - [All docs](docs/wiki/index.md)
@@ -85,8 +85,8 @@ both are large downloads. The tailnet comes up before the toolchain install, so
 you can log in and watch it happen rather than waiting for it.
 
 Anything you `apt install` on the box yourself is gone at the next
-`docker compose up --build`. If a tool is worth having, put it in the
-`Dockerfile` — or in `config/mise/config.toml` if `mise` has it.
+`docker compose up --build`. If a tool is worth having, put it in
+`config/apt/packages.txt`, or in `config/mise/config.toml` if `mise` has it.
 
 **Adding a tool is one line under `[tools]` in `config/mise/config.toml`**, and
 nothing else. `bootstrap-toolchain.sh` copies that file into `~/.config/mise`

@@ -1,6 +1,6 @@
 # Install on a VM
 
-devaloy also runs straight on an Ubuntu 24.04 VM, with no Docker and no container. One command turns a fresh VM into the same box: `ssh dev@devaloy` over Tailscale SSH, the same toolchain in `/home/dev`, the same `devaloy` CLI. systemd does the supervising that `entrypoint.sh` does in the container, and the per-boot work runs from the same step functions in `lib/steps/`.
+devaloy also runs straight on an Ubuntu 24.04 or Debian 13 VM, with no Docker and no container. One command turns a fresh VM into the same box: `ssh dev@devaloy` over Tailscale SSH, the same toolchain in `/home/dev`, the same `devaloy` CLI. systemd does the supervising that `entrypoint.sh` does in the container, and the per-boot work runs from the same step functions in `lib/steps/`. The packages, the `dev` user and the CLI come from `lib/system/`, the same steps the `Dockerfile` runs.
 
 Use this path when the VM exists only for devaloy, or when Docker is heavy or impossible there: a small VPS plan, a VM inside a nested hypervisor, a corporate image with no Docker allowed. Use the container ([Getting started](getting-started.md)) when the host also runs other things, or when you want a redeploy to throw away everything outside the home volume.
 
@@ -10,16 +10,16 @@ Use this path when the VM exists only for devaloy, or when Docker is heavy or im
 
 You need:
 
-- A fresh Ubuntu 24.04 VM, `x86_64` or `aarch64`, booted with systemd. The installer refuses any other release.
+- A fresh Ubuntu 24.04 or Debian 13 VM, `x86_64` or `aarch64`, booted with systemd. The installer refuses any other release.
 - `/dev/net/tun`. The installer runs `modprobe tun` when it is missing. If that fails, turn on TUN in the VM's settings at the provider.
 - Outbound HTTPS to `github.com` and `pkgs.tailscale.com`.
-- A login with sudo, usually the cloud image's `ubuntu` user over public SSH, and access to the provider's console. The installer leaves both alone, and they are your way back in if Tailscale does not come up.
+- A login with sudo, usually the cloud image's own user (`ubuntu` or `debian`) over public SSH, and access to the provider's console. The installer leaves both alone, and they are your way back in if Tailscale does not come up.
 - The SSH rule in your tailnet policy file. See [step 3 of Getting started](getting-started.md#3-add-an-ssh-rule-to-your-tailnet-policy-file).
 - A reusable, untagged Tailscale auth key. See [step 4 of Getting started](getting-started.md#4-set-an-auth-key). An untagged key is what lets the `autogroup:self` rule match.
 
 ## 1. Run the installer
 
-Log in to the VM as the `ubuntu` user and run:
+Log in to the VM as the cloud image's user and run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-native.sh | sudo TS_AUTHKEY=tskey-auth-... bash
@@ -204,7 +204,7 @@ The installer stops at the Tailscale step, exits non-zero and prints:
 sudo tailscale up --ssh --hostname=devaloy
 ```
 
-The installer did not touch sshd or the firewall, so the SSH session you ran it from still works. If that session is gone, log in as `ubuntu` over public SSH, or use the provider console. The installer keeps the `ubuntu` user for this.
+The installer did not touch sshd or the firewall, so the SSH session you ran it from still works. If that session is gone, log in as the cloud image's user over public SSH, or use the provider console. The installer keeps that user for this.
 
 Then either:
 
@@ -212,6 +212,25 @@ Then either:
 - run the printed `sudo tailscale up` command, finish the login it asks for, and re-run the one-liner. With the node on the tailnet, the installer does not ask for a key.
 
 The usual causes are a used one-off key, an expired key, or a tagged key. A node that joins but refuses `dev` is missing the policy rule. [Recover a box you cannot reach](recover-an-unreachable-box.md) lists these causes for the container; the fixes on the Tailscale side are the same.
+
+## On InstaBox
+
+An [InstaBox](https://instabox.sh/docs/index.md) machine is a Firecracker microVM that boots Debian 13 with systemd, so the installer runs on it as on any other VM. You reach the machine through the InstaBox SSH gateway, not a public IP, so run the installer from that session.
+
+Check the machine before you install:
+
+```sh
+cat /etc/os-release; ls -l /dev/net/tun; systemctl --version | head -1; df -h / /data
+```
+
+The free plan limits how long the node stays on the tailnet:
+
+- The machine pauses after 30 minutes idle. The free plan cannot change this. A paused machine is offline, so `ssh dev@devaloy` does not answer.
+- Tailscale traffic does not wake it. An SSH connection through the InstaBox gateway, a request to a public port URL, or `instabox wake` does. After the resume, Tailscale reconnects on its own.
+- The machine pauses after 480 minutes of continuous running, even when busy, and then waits out a cooldown that grows with each pause. An unattended run longer than that stops partway.
+- The disk is fixed at 20 GiB. Run `devaloy clean` often.
+
+A paid plan can turn off the idle pause and the run limit. Until then, use an InstaBox machine for attended work, not as an always-on box.
 
 ## Remove devaloy
 
