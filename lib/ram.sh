@@ -144,6 +144,9 @@ ram_scan() {
   if [ "${RAM_DO_ORPHANS}" -eq 1 ]; then
     local now started age pid ppid rss cputime comm
     now="$(date +%s)"
+    # ps, not pgrep: the match needs the ppid, rss and cpu-time columns, which
+    # pgrep cannot print.
+    # shellcheck disable=SC2009
     while read -r pid ppid rss cputime comm; do
       [ "${ppid}" = "1" ] || continue
       started="$(proc_started "${pid}")"
@@ -162,6 +165,9 @@ ram_scan() {
   # and the orphans together account for 800 MB and the box is holding 5 GB,
   # this is where the rest went. The apply skips this type entirely.
   local pid rss args
+  # ps, not pgrep: the report needs the RSS and args columns, which pgrep
+  # cannot print.
+  # shellcheck disable=SC2009
   while read -r pid rss args; do
     printf 'devserver\t%s\t%s\t%s\t%s\n' \
       "${pid}" "${rss}" "$(proc_started "${pid}")" "${args}" >>"${out}"
@@ -377,8 +383,13 @@ ram_apply_targets() {
       done
       if [ -z "$(paseo_pids)" ]; then
         echo "devaloy ram: WARNING — the daemon has not come back after ${waited}s." >&2
-        echo "devaloy ram: check 'docker logs' for this container; the supervisor" >&2
-        echo "devaloy ram: retries every 10s and logs each failure." >&2
+        if on_native; then
+          echo "devaloy ram: check 'journalctl -u devaloy-paseo'; systemd" >&2
+          echo "devaloy ram: restarts the unit every 10s and logs each failure." >&2
+        else
+          echo "devaloy ram: check 'docker logs' for this container; the supervisor" >&2
+          echo "devaloy ram: retries every 10s and logs each failure." >&2
+        fi
       fi
     fi
   fi

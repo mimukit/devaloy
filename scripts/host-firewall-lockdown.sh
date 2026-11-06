@@ -30,7 +30,19 @@ fi
 # Anti-lockout guard 2: Tailscale being up is not enough — if you are logged in
 # over the public IP, enabling this drops your own session. Tailnet addresses
 # live in 100.64.0.0/10, so check where this SSH session actually came from.
-SSH_SRC="${SSH_CONNECTION%% *}"
+#
+# sudo's env_reset drops SSH_CONNECTION, so under a plain `sudo` the source is
+# unknown. Unknown is not safe: refuse, the same as a public address. Pass it
+# through with `sudo SSH_CONNECTION="$SSH_CONNECTION" ...`; install-native.sh
+# --lockdown recovers it from the parent process chain and does this for you.
+SSH_SRC="${SSH_CONNECTION:-}"
+SSH_SRC="${SSH_SRC%% *}"
+if [ -z "${SSH_SRC}" ] && [ "${ALLOW_NON_TAILNET:-}" != "1" ]; then
+  echo "Cannot tell where this session came from: SSH_CONNECTION is empty." >&2
+  echo "Re-run as: sudo SSH_CONNECTION=\"\$SSH_CONNECTION\" $0" >&2
+  echo "or with ALLOW_NON_TAILNET=1 from the provider console." >&2
+  exit 1
+fi
 if [ -n "${SSH_SRC}" ] && ! printf '%s' "${SSH_SRC}" | grep -qE '^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\.'; then
   echo "This SSH session is from ${SSH_SRC}, which is not a tailnet address." >&2
   echo "Enabling the firewall now would cut you off. Reconnect over Tailscale first," >&2

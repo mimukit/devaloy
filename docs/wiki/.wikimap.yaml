@@ -46,6 +46,7 @@ pages:
       - link-shims
       - scripts/**
       - config/zsh/zshrc
+      - config/systemd/**
 
   - path: vm-resource-limits.md
     mode: how-to
@@ -58,7 +59,19 @@ pages:
     mode: how-to
     documents:
       - scripts/host-firewall-lockdown.sh
+      - scripts/install-native.sh
       - .dockerignore
+
+  - path: install-on-a-vm.md
+    mode: how-to
+    documents:
+      - scripts/install-native.sh
+      - scripts/host-firewall-lockdown.sh
+      - lib/steps/**
+      - lib/update.sh
+      - lib/doctor.sh
+      - config/systemd/**
+      - config/apt/**
 
   - path: recover-an-unreachable-box.md
     mode: how-to

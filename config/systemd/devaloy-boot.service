@@ -1,0 +1,28 @@
+# devaloy's per-boot setup on a native VM: the work entrypoint.sh does in the
+# container, minus the process starts. Installed by scripts/install-native.sh.
+#
+# A oneshot with RemainAfterExit, so `systemctl is-active devaloy-boot` keeps
+# answering after the script exits, and devaloy-paseo and devaloy-t3code can
+# order themselves after it. The script reads every input from the
+# environment, which EnvironmentFile= fills from /etc/devaloy/env; edit that
+# file and run `sudo systemctl restart devaloy-boot` to apply a change.
+#
+# TimeoutStartSec is long on purpose. A cold toolchain bootstrap takes many
+# minutes, more with WITH_BROWSER, and systemd's default 90 s would kill it
+# halfway and fail the unit. Two hours is far past any install seen so far and
+# still ends a bootstrap that has hung.
+[Unit]
+Description=devaloy per-boot setup (shell, secrets, dotfiles, toolchain, git)
+Documentation=https://github.com/mimukit/devaloy
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=/etc/devaloy/env
+ExecStart=/usr/local/lib/devaloy/steps/native-boot.sh
+TimeoutStartSec=2h
+
+[Install]
+WantedBy=multi-user.target

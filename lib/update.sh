@@ -16,6 +16,9 @@
 # config/. Without that, pulling a commit that changes lib/update.sh leaves the
 # box answering with the old module and no way to fix it short of a rebuild.
 #
+# On a native VM (RUNTIME=native) it first pulls /opt/devaloy and reinstalls
+# the CLI from it, which is that box's rebuild. See native_pull.
+#
 # Usage:
 #   devaloy update                 seed the config, then re-run the bootstrap
 #   devaloy update --config-only   seed the config and stop, seconds not minutes
@@ -153,9 +156,48 @@ install_bin() {
   return 1
 }
 
+# native_pull — on a native VM, move /opt/devaloy forward and reinstall the
+# CLI from it, before the seed and the bootstrap.
+#
+# In the container the image is the release: /opt/devaloy holds config/ only,
+# and a newer devaloy arrives with a rebuild. A native VM has no rebuild. The
+# installer cloned the repo to /opt/devaloy, root-owned, so this is the
+# rebuild's place: pull the branch the installer checked out, then let the
+# installer's --cli-only mode copy devaloy, the two boot scripts and all of
+# lib/ (steps included) to the paths it installed them to. One copy routine,
+# owned by the installer, so the two cannot disagree on what goes where.
+#
+# dev has passwordless sudo, and `devaloy update` already runs as dev. A tag
+# checks out detached, and a detached HEAD has nothing to pull from, so that
+# case says so and moves on; re-running the installer with another
+# DEVALOY_REF is how a tag install moves. A failed pull is a warning: the
+# seed and the bootstrap below are still worth running on what is there.
+native_pull() {
+  local repo=/opt/devaloy
+  if ! sudo -n true 2>/dev/null; then
+    warn "update: cannot sudo, so ${repo} was not pulled."
+    return 0
+  fi
+  if ! sudo -n git -C "${repo}" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    echo "devaloy: ${repo} is on a detached ref ($(sudo -n git -C "${repo}" describe --tags --always 2>/dev/null || echo unknown)),"
+    echo "devaloy: most likely a tag, so there is nothing to pull. Re-run the native"
+    echo "devaloy: installer with DEVALOY_REF=<branch or tag> to move it."
+  elif ! sudo -n git -C "${repo}" pull --ff-only; then
+    warn "update: 'git pull --ff-only' in ${repo} failed; installing the cli from what is there."
+  fi
+  sudo -n "${repo}/scripts/install-native.sh" --cli-only ||
+    warn "update: the cli reinstall from ${repo} failed."
+}
+
 do_update() {
   update_args "$@"
   refuse_root update
+
+  # Native only, and not with --no-config, which keeps its promise of the
+  # toolchain alone.
+  if on_native && [ "${UPDATE_DO_CONFIG}" -eq 1 ]; then
+    native_pull
+  fi
 
   if [ "${UPDATE_DO_CONFIG}" -eq 1 ]; then
     do_config_seed

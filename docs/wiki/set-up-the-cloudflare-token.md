@@ -19,7 +19,7 @@ An agent running overnight needs more than that. An OAuth login expires and depe
 
 1. You put the token in `.env` as `CLOUDFLARE_API_TOKEN`.
 2. `docker-compose.yml` passes it into the container.
-3. `entrypoint.sh` writes it to `~/.devaloy_secrets` (mode 600) on every boot, and every shell on the box sources that file.
+3. `step_secrets` in `lib/steps/env.sh` writes it to `~/.devaloy_secrets` (mode 600) on every boot, and every shell on the box sources that file.
 
 The entrypoint deletes and rewrites `~/.devaloy_secrets` on each boot. Do not hand-edit it, because the next boot overwrites your edit.
 

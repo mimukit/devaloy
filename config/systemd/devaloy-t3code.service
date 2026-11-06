@@ -1,0 +1,29 @@
+# The T3 Code server on a native VM (WITH_T3CODE=true). The container runs it in
+# a restart loop in entrypoint.sh; here systemd is the loop, with the same 10 s
+# pause. Installed, enabled and disabled by scripts/install-native.sh.
+#
+# After devaloy-boot because the boot upgrades t3, links ~/.t3/worktrees and
+# runs link-shims, which puts `t3` in /usr/local/bin. native-serve.sh resolves
+# the tailnet IPv4 and execs `t3 serve` with the same environment `su -l` gives
+# it in the container. The pairing link it prints on every start lands in
+# `journalctl -u devaloy-t3code`.
+#
+# OOMScoreAdjust=-250 is the container's ladder: a runaway build in a session
+# (0) dies first, then this server, and tailscaled (-500) last.
+[Unit]
+Description=devaloy T3 Code server (tailnet only)
+Documentation=https://github.com/mimukit/devaloy
+After=devaloy-boot.service tailscaled.service
+
+[Service]
+Type=simple
+User=dev
+WorkingDirectory=~
+EnvironmentFile=/etc/devaloy/env
+ExecStart=/usr/local/lib/devaloy/steps/native-serve.sh t3code
+Restart=always
+RestartSec=10
+OOMScoreAdjust=-250
+
+[Install]
+WantedBy=multi-user.target

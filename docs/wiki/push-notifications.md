@@ -33,7 +33,7 @@ feature only: `agent-push` never ships to the laptop.
    [F-Droid](https://f-droid.org/en/packages/io.heckel.ntfy/)) and subscribe to
    your topic, or open `https://ntfy.sh/<your-topic>` in a browser to watch it.
 
-That is the whole setup. `entrypoint.sh` writes `~/.config/agent-push.env` on
+That is the whole setup. `step_push_config` (`lib/steps/env.sh`) writes `~/.config/agent-push.env` on
 the box from your `.env`, and the hooks are already wired.
 
 ## Turn it off

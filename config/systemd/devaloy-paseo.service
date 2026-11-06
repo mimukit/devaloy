@@ -1,0 +1,31 @@
+# The Paseo daemon on a native VM (WITH_PASEO=true). The container runs it in a
+# restart loop in entrypoint.sh; here systemd is the loop, with the same 10 s
+# pause. Installed, enabled and disabled by scripts/install-native.sh.
+#
+# After devaloy-boot because the boot writes ~/.paseo/config.json and runs
+# link-shims, which puts `paseo`, `claude` and `codex` in /usr/local/bin.
+# native-serve.sh resolves the tailnet IPv4 and execs the daemon with the same
+# environment `su -l` gives it in the container. The ExecStartPost installs
+# PASEO_PLUGINS in the background, as root (the `+`), because the step drives
+# the CLI through su like every other step.
+#
+# OOMScoreAdjust=-250 is the container's ladder: a runaway build in a session
+# (0) dies first, then this daemon, and tailscaled (-500) last.
+[Unit]
+Description=devaloy Paseo daemon (tailnet only)
+Documentation=https://github.com/mimukit/devaloy
+After=devaloy-boot.service tailscaled.service
+
+[Service]
+Type=simple
+User=dev
+WorkingDirectory=~
+EnvironmentFile=/etc/devaloy/env
+ExecStart=/usr/local/lib/devaloy/steps/native-serve.sh paseo
+ExecStartPost=+/usr/local/lib/devaloy/steps/native-boot.sh paseo-plugins
+Restart=always
+RestartSec=10
+OOMScoreAdjust=-250
+
+[Install]
+WantedBy=multi-user.target

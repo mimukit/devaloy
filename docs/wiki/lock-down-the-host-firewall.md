@@ -31,8 +31,12 @@ every service on it reachable over the tailnet only.
 ## Running it
 
 ```sh
-sudo ./scripts/host-firewall-lockdown.sh
+sudo SSH_CONNECTION="$SSH_CONNECTION" ./scripts/host-firewall-lockdown.sh
 ```
+
+`sudo` strips `SSH_CONNECTION` from the environment, and the script refuses to run when it is empty, because then it cannot tell where your session comes from. Pass it through as above. From the provider console there is no SSH session, so pass `ALLOW_NON_TAILNET=1` instead, and only when you know the tailnet works.
+
+On a VM set up with [Install on a VM](install-on-a-vm.md), run the installer with `--lockdown` instead. It finds your session's `SSH_CONNECTION` and passes it to this script.
 
 The repo is not checked out as a normal clone on a Dokploy host — Dokploy clones
 it under a hash-dependent path for the build — so pull the single file:
@@ -40,7 +44,7 @@ it under a hash-dependent path for the build — so pull the single file:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/host-firewall-lockdown.sh \
   -o /tmp/host-firewall-lockdown.sh
-sudo bash /tmp/host-firewall-lockdown.sh
+sudo SSH_CONNECTION="$SSH_CONNECTION" bash /tmp/host-firewall-lockdown.sh
 ```
 
 There are no flags. Two environment variables tune it:
@@ -48,7 +52,7 @@ There are no flags. Two environment variables tune it:
 | Variable | Default | Effect |
 |---|---|---|
 | `TS_IFACE` | `tailscale0` | The interface to allow incoming traffic on |
-| `ALLOW_NON_TAILNET` | unset | `1` overrides the second anti-lockout guard below |
+| `ALLOW_NON_TAILNET` | unset | `1` overrides the second anti-lockout guard below, and the refusal of an empty `SSH_CONNECTION` |
 
 ## The two anti-lockout guards
 
@@ -68,6 +72,12 @@ Without a working tailnet there would be no route left once the rules apply.
 ```
 This SSH session is from <addr>, which is not a tailnet address.
 Enabling the firewall now would cut you off.
+```
+
+An empty `SSH_CONNECTION` counts as unknown, and the script refuses it too:
+
+```
+Cannot tell where this session came from: SSH_CONNECTION is empty.
 ```
 
 Enabling `ufw` from a session on the host's public IP drops that session
@@ -133,4 +143,4 @@ to stock defaults.
   — why not to run this one there.
 - [Architecture](architecture.md) — why devaloy needs no firewall rule of its own.
 
-_Verified against `main`@`b6bc42b` on 2026-08-25._
+_Verified against `main`@`b6bc42b` on 2026-08-25. The `SSH_CONNECTION` refusal is verified against `issue-4-install-devaloy-natively-on-an-ubuntu-vm` on 2026-10-28, from the code._
