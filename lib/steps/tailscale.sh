@@ -83,6 +83,22 @@ ts_is_up_as() { # ts_is_up_as <hostname>
       "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" ]
 }
 
+# ts_wait_up_as <hostname> <seconds> — ts_is_up_as, retried once a second.
+#
+# .Self.HostName is not the local --hostname pref. It is the control server's
+# copy of this node's Hostinfo, from the last netmap. On a node that is already
+# logged in, `tailscale up --hostname=NEW` returns as soon as the backend is
+# Running on the cached netmap, and the control server sends back the new
+# Hostinfo about a second later. A check made at once still sees the old name.
+ts_wait_up_as() {
+  local i
+  for i in $(seq 1 "$2"); do
+    ts_is_up_as "$1" && return 0
+    [ "${i}" -lt "$2" ] && sleep 1
+  done
+  return 1
+}
+
 step_tailscale_ensure() {
   for _ in $(seq 1 30); do
     case "$(ts_status_field .BackendState)" in
@@ -95,4 +111,8 @@ step_tailscale_ensure() {
     return 0
   fi
   step_tailscale_up
+  # Wait for the new name to come back in the netmap. Still non-fatal: the
+  # boot goes on either way, and the installer makes its own decision.
+  ts_wait_up_as "${TS_HOSTNAME:-devaloy}" 20 ||
+    log "WARNING: the node does not report the name ${TS_HOSTNAME:-devaloy} yet."
 }

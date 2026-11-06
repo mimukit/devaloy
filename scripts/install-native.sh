@@ -715,12 +715,15 @@ inst_tailscale() {
   . "${LIB_DIR}/steps/tailscale.sh"
   step_tailscale_ensure
 
+  # step_tailscale_ensure already waited for the name to settle, so one check
+  # is enough here.
   if ! ts_is_up_as "${VAL[TS_HOSTNAME]}"; then
     # sshd is untouched and --lockdown has not run, so the session this runs
     # in, or the provider console, is still the way in.
-    die "tailscale up failed, so this VM is not on the tailnet. sshd and the
-firewall are untouched, so public SSH still works. Fix the key or the ACL,
-then either re-run this installer, or run:
+    die "Tailscale is not Running as ${VAL[TS_HOSTNAME]} (state: $(ts_status_field .BackendState),
+name: $(ts_status_field .Self.HostName)). sshd and the firewall are untouched,
+so public SSH still works. Fix the key or the ACL, then either re-run this
+installer, or run:
 
   sudo tailscale up --ssh --hostname=${VAL[TS_HOSTNAME]}"
   fi
