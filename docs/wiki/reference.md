@@ -458,4 +458,4 @@ from the Docker host — do not attach other containers to devaloy's network.
 three. `docker-data` is pure cache and is the one safe to delete on purpose when
 the disk fills.
 
-_Verified against `main`@`d2e6886` plus the uncommitted browser-capture change on 2026-09-07. The native-install rows are verified against `issue-4-install-devaloy-natively-on-an-ubuntu-vm` on 2026-10-28, from the code; the VM steps are not yet verified on a real VM._
+_Verified against `main`@`d2e6886` plus the uncommitted browser-capture change on 2026-09-07. The native-install rows are verified from the code on 2026-10-28; the VM steps are not yet verified on a real VM._

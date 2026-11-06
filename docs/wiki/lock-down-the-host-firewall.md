@@ -143,4 +143,4 @@ to stock defaults.
   — why not to run this one there.
 - [Architecture](architecture.md) — why devaloy needs no firewall rule of its own.
 
-_Verified against `main`@`b6bc42b` on 2026-08-25. The `SSH_CONNECTION` refusal is verified against `issue-4-install-devaloy-natively-on-an-ubuntu-vm` on 2026-10-28, from the code._
+_Verified against `main`@`b6bc42b` on 2026-08-25. The `SSH_CONNECTION` refusal is verified from the code on 2026-10-28._

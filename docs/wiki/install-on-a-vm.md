@@ -42,10 +42,20 @@ If you leave out `TS_AUTHKEY`, the installer asks for it on the terminal. With n
 `DEVALOY_REF` picks the branch or tag the installer clones. The default is `main`. Put the ref in the URL and in the variable, so the script you run comes from the same ref it installs:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/issue-4-install-devaloy-natively-on-an-ubuntu-vm/scripts/install-native.sh | sudo DEVALOY_REF=issue-4-install-devaloy-natively-on-an-ubuntu-vm TS_AUTHKEY=tskey-auth-... bash
+curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/<ref>/scripts/install-native.sh | sudo DEVALOY_REF=<ref> TS_AUTHKEY=tskey-auth-... bash
 ```
 
 The installer stores the ref in `/etc/devaloy/env`, so a later re-run with no `DEVALOY_REF` stays on that ref. Set `DEVALOY_REF=main` to move back. A tag checks out detached, and `devaloy update` does not pull a tag.
+
+### Switch back to main
+
+A VM that tracks another ref keeps it in `/etc/devaloy/env`. Run the installer with `DEVALOY_REF=main` to track `main` again. Put the variable after `sudo`. A re-run keeps the existing Tailscale login, so `TS_AUTHKEY` is not needed.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-native.sh | sudo DEVALOY_REF=main bash
+```
+
+Check the result as `dev` with `devaloy doctor`.
 
 ### Turn on optional features
 
@@ -336,4 +346,4 @@ A paid plan can turn off the idle pause and the run limit. Until then, use an In
 
 There is no uninstall. Rebuild the VM from a fresh image, and remove the old node from the [admin console](https://login.tailscale.com/admin/machines).
 
-_Verified against `hotfix-shared-system-install` on 2026-11-06, on an InstaBox machine (Debian 13.7): the install, a re-run, a reboot, and the steps in On InstaBox. Ubuntu 24.04 is verified from the code and in a container, not yet on a real VM._
+_Verified against `main`@`1ff2e32` on 2026-11-06, on an InstaBox machine (Debian 13.7): the install, a re-run, a reboot, and the steps in On InstaBox. Ubuntu 24.04 is verified from the code and in a container, not yet on a real VM._
