@@ -100,8 +100,9 @@ reclaims that space without touching a single repo. Do not back it up; do back
 up nothing else either, which is the point of the next paragraph.
 
 The first one is why anything you `apt install` by hand is gone at the next
-rebuild. A tool worth having belongs in the `Dockerfile`, or in
-`bootstrap-toolchain.sh` if mise carries it.
+rebuild. A tool worth having belongs in `config/apt/packages.txt`, or in
+`config/mise/config.toml` if mise carries it. The `Dockerfile` and the native
+installer both read the apt list through `lib/system/`.
 
 **Neither volume is backed up.** There is no snapshot job in this stack. Pushing
 to a remote is the backup, and unpushed work on the box is work that can be lost.
