@@ -1,0 +1,316 @@
+#!/usr/bin/env python3
+"""Give each linked worktree its own dev ports, from the project's .devports.json."""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+CONFIG = ".devports.json"
+BEGIN, END = "# >>> wtports", "# <<< wtports"
+LOW, SPAN = 10000, 10000
+PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
+NOTE = re.compile(r"#\s*hash (\d+) taken by (.+)$")
+
+
+def git(cwd, *args):
+    result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or f"git {' '.join(args)} exits {result.returncode}")
+    return result.stdout
+
+
+def worktrees(repo):
+    """Return (path, branch) for each worktree of the repo, the main checkout first."""
+    found, path, branch = [], None, None
+    for line in git(repo, "worktree", "list", "--porcelain").splitlines() + [""]:
+        if line.startswith("worktree "):
+            path, branch = Path(line[len("worktree "):]), None
+        elif line.startswith("branch refs/heads/"):
+            branch = line[len("branch refs/heads/"):]
+        elif not line and path is not None:
+            if path.is_dir():
+                # A detached HEAD takes the worktree folder name.
+                found.append((path, branch or path.name))
+            path = None
+    return found
+
+
+def here():
+    """Return the main checkout, the worktree root, and the branch."""
+    top = Path(git(Path.cwd(), "rev-parse", "--show-toplevel").strip())
+    trees = worktrees(top)
+    main = trees[0][0]
+    branch = next((b for p, b in trees if p.resolve() == top.resolve()), top.name)
+    return main, top, branch
+
+
+def hash_port(repo, service, branch):
+    digest = hashlib.sha256(f"{repo}:{service}:{branch}".encode()).hexdigest()
+    return LOW + int(digest[:8], 16) % SPAN
+
+
+def slug(repo, branch):
+    return hashlib.sha256(f"{repo}:{branch}".encode()).hexdigest()[:6]
+
+
+def load_config(root):
+    path = root / CONFIG
+    try:
+        data = json.loads(path.read_text())
+    except FileNotFoundError:
+        raise RuntimeError(f"no {CONFIG} in {root}") from None
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"{path}: {error}") from None
+    services, env = data.get("services"), data.get("env")
+    if not isinstance(services, dict) or not services or not all(
+            isinstance(port, int) and not isinstance(port, bool) for port in services.values()):
+        raise RuntimeError(f'{path}: "services" must map each service name to its default port')
+    if not isinstance(env, dict) or not all(
+            isinstance(keys, dict) and all(isinstance(v, str) for v in keys.values()) for keys in env.values()):
+        raise RuntimeError(f'{path}: "env" must map each .env.local path to its keys and templates')
+    for file, keys in env.items():
+        for key, template in keys.items():
+            for name in PLACEHOLDER.findall(template):
+                if name != "slug" and name not in services:
+                    raise RuntimeError(f"{path}: {file} {key} uses unknown placeholder {{{name}}}")
+    return services, env
+
+
+def split_block(text, path):
+    """Return the lines before the block, the block's lines, and the lines after it."""
+    lines = text.splitlines()
+    if BEGIN not in lines:
+        return lines, None, []
+    start = lines.index(BEGIN)
+    if END not in lines[start:]:
+        raise RuntimeError(f"{path}: {BEGIN} has no {END}")
+    end = lines.index(END, start)
+    return lines[:start], lines[start + 1:end], lines[end + 1:]
+
+
+def read_block(path):
+    try:
+        return split_block(path.read_text(), path)[1]
+    except FileNotFoundError:
+        return None
+
+
+def block_ports(root, env):
+    """Return the service ports and the collision notes a worktree's blocks record."""
+    ports, notes = {}, {}
+    for file in env:
+        for line in read_block(root / file) or []:
+            if line.startswith("# ports:") and not ports:
+                for pair in line[len("# ports:"):].split():
+                    name, _, port = pair.partition("=")
+                    if port.isdecimal():
+                        ports[name] = int(port)
+            match = NOTE.search(line)
+            if match:
+                notes[int(match.group(1))] = f"hash {match.group(1)} taken by {match.group(2).strip()}"
+    return ports, notes
+
+
+def projects_root():
+    return Path(os.environ.get("WTPORTS_PROJECTS") or Path.home() / "projects")
+
+
+def repos(extra=None):
+    found = {}
+    root = projects_root()
+    candidates = sorted(root.iterdir()) if root.is_dir() else []
+    if extra is not None:
+        candidates.append(extra)
+    for path in candidates:
+        if (path / ".git").exists():
+            found.setdefault(path.resolve(), path)
+    return list(found.values())
+
+
+def all_worktrees(extra=None):
+    """Yield (repo, path, branch, is_main) for every worktree of every repo with a .devports.json."""
+    for repo in repos(extra):
+        try:
+            trees = worktrees(repo)
+        except RuntimeError:
+            continue
+        for index, (path, branch) in enumerate(trees):
+            if (path / CONFIG).is_file():
+                yield trees[0][0].name, path, branch, index == 0
+
+
+def listeners():
+    if not shutil.which("ss"):
+        raise RuntimeError("ss is required to read the TCP listeners")
+    result = subprocess.run(["ss", "-ltnH"], capture_output=True, text=True, check=False)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or "ss cannot list TCP listeners")
+    ports = set()
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) >= 4 and fields[3].rsplit(":", 1)[-1].isdecimal():
+            ports.add(int(fields[3].rsplit(":", 1)[-1]))
+    return ports
+
+
+def held_by_others(main, top):
+    """Map each port in another worktree's block to that worktree's branch."""
+    held = {}
+    for _, path, branch, is_main in all_worktrees(main):
+        if is_main or path.resolve() == top.resolve():
+            continue
+        try:
+            _, env = load_config(path)
+        except RuntimeError:
+            continue
+        for port in block_ports(path, env)[0].values():
+            held.setdefault(port, branch)
+    return held
+
+
+def assign(repo, top, branch, services, env, main):
+    kept, notes = block_ports(top, env)
+    held, live = held_by_others(main, top), listeners()
+    ports, assigned = {}, {}
+    for service in services:
+        hashed = hash_port(repo, service, branch)
+        if LOW <= kept.get(service, 0) < LOW + SPAN:
+            ports[service] = kept[service]
+            if kept[service] != hashed and hashed in notes:
+                assigned[service] = notes[hashed]
+            continue
+        port, taker = hashed, None
+        for _ in range(SPAN):
+            owner = (held.get(port) or ("a listener" if port in live else None)
+                     or next((f"service {s}" for s, p in ports.items() if p == port), None))
+            if owner is None:
+                break
+            taker = taker or owner
+            port = LOW + (port - LOW + 1) % SPAN
+        else:
+            raise RuntimeError("no free port from 10000 to 19999")
+        ports[service] = port
+        if taker:
+            assigned[service] = f"hash {hashed} taken by {taker}"
+    return ports, assigned
+
+
+def render(keys, ports, notes, worktree_slug):
+    lines = [BEGIN, "# ports: " + " ".join(f"{s}={p}" for s, p in ports.items())]
+    for key, template in keys.items():
+        value = PLACEHOLDER.sub(
+            lambda m: worktree_slug if m.group(1) == "slug" else str(ports[m.group(1)]), template)
+        bare = PLACEHOLDER.fullmatch(template)
+        note = notes.get(bare.group(1)) if bare else None
+        lines.append(f"{key}={value}  # {note}" if note else f"{key}={value}")
+    return lines + [END]
+
+
+def write(path, lines):
+    """Put the block into the file and keep every other line. Return True when the file changed."""
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        if not path.parent.is_dir():
+            raise RuntimeError(f"{path.parent} does not exist; check {CONFIG}") from None
+        text = ""
+    before, _, after = split_block(text, path)
+    new_text = "\n".join(before + lines + after) + "\n"
+    if new_text == text:
+        return False
+    path.write_text(new_text)
+    return True
+
+
+def apply(main, top, branch):
+    repo = main.name
+    services, env = load_config(top)
+    ports, notes = assign(repo, top, branch, services, env, main)
+    worktree_slug = slug(repo, branch)
+    changed = [file for file, keys in env.items() if write(top / file, render(keys, ports, notes, worktree_slug))]
+    for file in changed:
+        print(f"wrote {file}")
+    width = max(len(s) for s in ports)
+    for service, port in ports.items():
+        print(f"{service:<{width}}  http://localhost:{port}")
+    print("restart pnpm dev to load the new values" if changed else "no change")
+
+
+def clean(top):
+    _, env = load_config(top)
+    for file in env:
+        path = top / file
+        try:
+            text = path.read_text()
+        except FileNotFoundError:
+            continue
+        before, block, after = split_block(text, path)
+        if block is None:
+            continue
+        path.write_text("".join(f"{line}\n" for line in before + after))
+        print(f"removed the block from {file}")
+
+
+def show_list():
+    live = listeners()
+    rows = []
+    for repo, path, branch, is_main in all_worktrees():
+        try:
+            services, env = load_config(path)
+        except RuntimeError as error:
+            print(f"wtports: {error}", file=sys.stderr)
+            continue
+        ports = services if is_main else block_ports(path, env)[0]
+        for service in services:
+            port = ports.get(service)
+            state = "live" if port in live else ""
+            if is_main:
+                state = (state + " default").strip()
+            shown = str(path).replace(str(Path.home()), "~", 1)
+            rows.append((repo, shown, branch, service, str(port) if port else "-", state))
+    if not rows:
+        print(f"wtports: no worktree under {projects_root()} has a {CONFIG}")
+        return
+    header = ("REPO", "WORKTREE", "BRANCH", "SERVICE", "PORT", "STATE")
+    widths = [max(len(row[i]) for row in rows + [header]) for i in range(len(header))]
+    for row in [header] + rows:
+        print("  ".join(cell.ljust(width) for cell, width in zip(row, widths)).rstrip())
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Write this worktree's hashed dev ports into the .env.local files that .devports.json lists.",
+        epilog="Run it in a linked worktree before pnpm dev. WTPORTS_PROJECTS sets the folder that list scans "
+               "(default ~/projects).",
+    )
+    parser.add_argument("command", nargs="?", choices=["list", "clean"],
+                        help="list: show the ports of every worktree; clean: remove this worktree's block")
+    args = parser.parse_args()
+    if args.command == "list":
+        show_list()
+        return 0
+    main_checkout, top, branch = here()
+    if top.resolve() == main_checkout.resolve():
+        print("wtports: the main checkout keeps its default ports", file=sys.stderr)
+        return 1
+    if args.command == "clean":
+        clean(top)
+    else:
+        apply(main_checkout, top, branch)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError) as error:
+        print(f"wtports: {error}", file=sys.stderr)
+        sys.exit(1)
+    except KeyboardInterrupt:
+        sys.exit(130)

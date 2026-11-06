@@ -110,6 +110,7 @@ rows_status() {
   emit_row '🐳' 'docker' "$(status_docker_line)" prune
   emit_row '🔧' 'toolset' "$(toolset_revision)" tools
   emit_rule actions
+  emit_branch '🧽' 'clean' 'the routine reclaim: disk, caches and Docker in one pass' 'clean'
   emit_branch '🧹' 'disk reclaim' 'node_modules, mise versions, worktrees, logs' 'disk'
   emit_branch '🔄' 'ram reclaim' 'restart Paseo, reap orphaned language servers' 'ram'
   emit_branch '🐳' 'docker reclaim' 'build cache and unused images' 'prune'

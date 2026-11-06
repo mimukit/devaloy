@@ -27,6 +27,8 @@ it when it stops answering.
   prerequisite for running Docker on the box without `privileged`.
 - [Run a project stack on devaloy](run-a-project-stack.md) — the optional
   `WITH_DOCKER=true` daemon, where repos go, and how to reach a port.
+- [Run worktrees in parallel](run-worktrees-in-parallel.md) — `wtports` gives each linked worktree its own dev ports, and `wtforward` opens them at `localhost` on the laptop.
+- [Set up a parallel worktree session](set-up-a-parallel-worktree-session.md) — the full procedure to run the main checkout and several linked worktrees at once, with the memory sizing and the start order.
 - [Lock down the host firewall](lock-down-the-host-firewall.md) — the other
   host-side script, and the two guards that stop it locking you out.
 - [Update the toolchain](update-the-toolchain.md) — which command updates what:
