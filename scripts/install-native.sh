@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install devaloy natively on a fresh Ubuntu 24.04 VM, with no Docker, meant to
-# be run via curl:
+# Install devaloy natively on a fresh Ubuntu 24.04 or Debian 13 VM, with no
+# Docker, meant to be run via curl:
 #
 #   curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-native.sh | sudo TS_AUTHKEY=tskey-auth-... bash
 #
@@ -8,18 +8,21 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/<ref>/scripts/install-native.sh | sudo DEVALOY_REF=<ref> TS_AUTHKEY=tskey-auth-... bash
 #
-# It does at install time what the Dockerfile does at build time, then hands
-# over to the same boot steps (lib/steps/) the container entrypoint calls, run
-# by devaloy-boot.service on every boot. In order:
+# It runs the same system install steps the Dockerfile runs at build time
+# (lib/system/, read from the clone), then hands over to the same boot steps
+# (lib/steps/) the container entrypoint calls, run by devaloy-boot.service on
+# every boot. What is left in this file is what only a VM needs: the
+# preflight, the clone, /etc/devaloy/env, Docker's address ranges, the systemd
+# units and the firewall. In order:
 #
-#    1. preflight: root, Ubuntu 24.04, x86_64 or aarch64, systemd, /dev/net/tun,
-#       and a route to github.com and pkgs.tailscale.com
+#    1. preflight: root, Ubuntu 24.04 or Debian 13, x86_64 or aarch64, systemd,
+#       /dev/net/tun, and a route to github.com and pkgs.tailscale.com
 #    2. clone the repo to /opt/devaloy at DEVALOY_REF (default main), or fetch
 #       and check out that ref when the clone is already there
 #    3. merge the environment into /etc/devaloy/env (root, 0600); TS_AUTHKEY is
 #       the one value it asks for, on /dev/tty, and only when it has none
-#    4. apt: Tailscale's repo, config/apt/packages.txt, and the optional
-#       browser libraries and Docker Engine
+#    4. apt: Tailscale's repo, config/apt/packages.txt, zsh-completions, and
+#       the optional browser libraries and Docker Engine
 #    5. the dev user: next free UID, zsh, passwordless sudo
 #    6. the devaloy CLI and lib/ to the paths the Dockerfile uses
 #    7. /opt/devaloy/build-flags (RUNTIME=native)
@@ -34,8 +37,8 @@
 # set the variable, run the one-liner again.
 #
 # The clone comes before apt, unlike the plan's list, because the package
-# lists live in the repo (config/apt/) and a curl-piped script has no repo
-# beside it until it clones one.
+# lists (config/apt/) and the system steps (lib/system/) live in the repo, and
+# a curl-piped script has no repo beside it until it clones one.
 set -euo pipefail
 
 # Files this script writes must be readable by dev (the CLI, lib/, the units),
@@ -51,7 +54,6 @@ DEVALOY_URL="https://github.com/mimukit/devaloy.git"
 ENV_DIR=/etc/devaloy
 ENV_FILE="${ENV_DIR}/env"
 LIB_DIR=/usr/local/lib/devaloy
-BIN_DIR=/usr/local/bin
 UNIT_DIR=/etc/systemd/system
 TS_SOCKET=/var/run/tailscale/tailscaled.sock
 
@@ -98,79 +100,34 @@ warn()  { printf '  \033[33m!\033[0m %s\n' "$1"; }
 head_() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 die()   { printf '\n\033[31m%s\033[0m\n' "$1" >&2; exit 1; }
 
-# --- writing files only when they change -------------------------------------
+# --- the shared system layer ---------------------------------------------------
 #
-# The whole idempotence contract rests on these two. A file is replaced only
-# when its bytes or its mode differ, through a temp file in the same directory
-# and a rename, so a reader never sees half a file and an unchanged file keeps
-# its mtime. PUT_CHANGED tells the caller whether anything moved, which is
-# what decides a daemon-reload or a docker restart.
-PUT_CHANGED=0
-
-put_file() { # put_file SRC DEST MODE
-  local src="$1" dest="$2" mode="$3" tmp
-  PUT_CHANGED=0
-  if [ -f "${dest}" ] && [ ! -L "${dest}" ] && cmp -s "${src}" "${dest}" &&
-     [ "$(stat -c %a "${dest}")" = "${mode#0}" ]; then
-    return 0
-  fi
-  mkdir -p "$(dirname "${dest}")"
-  tmp="$(mktemp "${dest}.devaloy-XXXXXX")"
-  cat "${src}" > "${tmp}"
-  chmod "${mode}" "${tmp}"
-  mv -f "${tmp}" "${dest}"
-  PUT_CHANGED=1
+# put_file, put_content, fetch_to, apt_ensure and the sys_* steps come from
+# lib/system/ in the clone, the same files the Dockerfile runs. They can only
+# load after inst_clone, so the two things that happen before it (the
+# preflight and the clone's own git) use nothing from there.
+load_system_lib() {
+  [ -f "${DEVALOY_DIR}/lib/system/steps.sh" ] ||
+    die "${DEVALOY_DIR}/lib/system/steps.sh is missing. DEVALOY_REF must name a ref that has lib/system/."
+  # shellcheck source=lib/system/common.sh
+  . "${DEVALOY_DIR}/lib/system/common.sh"
+  # shellcheck source=lib/system/steps.sh
+  . "${DEVALOY_DIR}/lib/system/steps.sh"
 }
 
-# Feed it with `put_content DEST MODE < <(cmd)`, never `cmd | put_content`:
-# the right side of a pipe runs in a subshell, and PUT_CHANGED would be set
-# there and lost.
-put_content() { # put_content DEST MODE, content on stdin
-  local tmp
-  tmp="$(mktemp)"
-  cat > "${tmp}"
-  put_file "${tmp}" "$1" "$2"
-  rm -f "${tmp}"
-}
-
-# --- apt -----------------------------------------------------------------------
-#
-# `apt-get update` runs only when a package is actually missing, and once per
-# run unless a repo file changed since, so a re-run on a converged box makes no
-# apt call at all. The lock timeout covers a cloud image whose
-# unattended-upgrades is still running from first boot. NEEDRESTART_MODE=l
-# makes Ubuntu's needrestart list the daemons an upgrade touched instead of
-# restarting them: a restarted tailscaled would cut the Tailscale SSH session
-# this script may be running in.
-export DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l
-APT_FRESH=0
-APT=(apt-get -q -o DPkg::Lock::Timeout=600)
-
-pkg_list() { # pkg_list FILE — the package names, comments and blanks stripped
-  sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$1"
-}
-
-apt_ensure() { # apt_ensure PKG...
+# git, curl and the trust store, for the clone. The one apt call that cannot
+# use apt_ensure, because there is no clone yet to load it from.
+pre_clone_packages() {
   local p missing=()
-  for p in "$@"; do
+  for p in git ca-certificates curl; do
     dpkg-query -W -f='${db:Status-Status}' "${p}" 2>/dev/null | grep -qx installed ||
       missing+=("${p}")
   done
   [ "${#missing[@]}" -gt 0 ] || return 0
-  if [ "${APT_FRESH}" -eq 0 ]; then
-    "${APT[@]}" update </dev/null
-    APT_FRESH=1
-  fi
-  "${APT[@]}" install -y --no-install-recommends "${missing[@]}" </dev/null
+  DEBIAN_FRONTEND=noninteractive apt-get -q -o DPkg::Lock::Timeout=600 update </dev/null
+  DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l \
+    apt-get -q -o DPkg::Lock::Timeout=600 install -y --no-install-recommends "${missing[@]}" </dev/null
   ok "installed: ${missing[*]}"
-}
-
-fetch_to() { # fetch_to URL DEST MODE — download, then put_file
-  local tmp
-  tmp="$(mktemp)"
-  curl -fsSL --retry 3 "$1" -o "${tmp}"
-  put_file "${tmp}" "$2" "$3"
-  rm -f "${tmp}"
 }
 
 # --- /etc/devaloy/env ----------------------------------------------------------
@@ -476,14 +433,19 @@ inst_preflight() {
   head_ "1. Preflight"
   [ "$(id -u)" -eq 0 ] || die "Run as root: curl -fsSL ... | sudo bash"
 
+  # The supported releases. Ubuntu 24.04 is the image's base. Debian 13 is
+  # what InstaBox and the Debian cloud images boot. Every package in
+  # config/apt/ exists in both, and Tailscale and Docker publish apt repos
+  # for both (lib/system/steps.sh builds the repo URL from the codename).
   local id="" version=""
   if [ -r /etc/os-release ]; then
     id="$(sed -n 's/^ID=//p' /etc/os-release | tr -d '"')"
     version="$(sed -n 's/^VERSION_ID=//p' /etc/os-release | tr -d '"')"
   fi
-  [ "${id}" = "ubuntu" ] && [ "${version}" = "24.04" ] ||
-    die "This installer supports Ubuntu 24.04 only (found ${id:-unknown} ${version:-unknown})."
-  ok "Ubuntu ${version}"
+  case "${id} ${version}" in
+    "ubuntu 24.04"|"debian 13") ok "${id} ${version}" ;;
+    *) die "This installer supports Ubuntu 24.04 and Debian 13 only (found ${id:-unknown} ${version:-unknown})." ;;
+  esac
 
   case "$(uname -m)" in
     x86_64|aarch64) ok "architecture $(uname -m)" ;;
@@ -517,7 +479,7 @@ inst_preflight() {
 # /opt/devaloy at all; a fetch only happens when the remote moved.
 inst_clone() {
   head_ "2. The repo at ${DEVALOY_DIR}"
-  apt_ensure git ca-certificates curl
+  pre_clone_packages
 
   local ref="${VAL[DEVALOY_REF]}" remote_sha tag_sha local_sha branch
   if [ ! -d "${DEVALOY_DIR}/.git" ]; then
@@ -622,30 +584,13 @@ Re-run with the key:
 
 inst_apt() {
   head_ "4. Packages"
-  # Tailscale's repo for noble, the same two files the Dockerfile's fetch
-  # stage downloads and the ones Tailscale's own install script writes.
-  fetch_to https://pkgs.tailscale.com/stable/ubuntu/noble.noarmor.gpg \
-    /usr/share/keyrings/tailscale-archive-keyring.gpg 644
-  [ "${PUT_CHANGED}" -eq 0 ] || APT_FRESH=0
-  fetch_to https://pkgs.tailscale.com/stable/ubuntu/noble.tailscale-keyring.list \
-    /etc/apt/sources.list.d/tailscale.list 644
-  [ "${PUT_CHANGED}" -eq 0 ] || APT_FRESH=0
-
-  local pkgs
-  mapfile -t pkgs < <(pkg_list "${DEVALOY_DIR}/config/apt/packages.txt")
-  [ "${#pkgs[@]}" -gt 0 ] || die "config/apt/packages.txt is empty or missing."
-  apt_ensure "${pkgs[@]}"
-
-  # Ubuntu ships bat as batcat and fd as fdfind; the Dockerfile links the
-  # short names in /usr/bin, and so does this.
-  [ -e /usr/bin/bat ] || ln -s /usr/bin/batcat /usr/bin/bat
-  [ -e /usr/bin/fd ] || ln -s /usr/bin/fdfind /usr/bin/fd
-  ok "base packages present ($(printf '%s' "${#pkgs[@]}") listed)"
+  # The same steps as the Dockerfile's package layers.
+  sys_tailscale_repo
+  sys_base_packages "${DEVALOY_DIR}"
+  sys_zsh_completions
 
   if [ "${VAL[WITH_BROWSER]}" = true ]; then
-    mapfile -t pkgs < <(pkg_list "${DEVALOY_DIR}/config/apt/browser.txt")
-    apt_ensure "${pkgs[@]}"
-    ok "browser libraries present (the bootstrap fetches playwright-cli and Chromium)"
+    sys_browser_packages "${DEVALOY_DIR}"
   fi
 
   if [ "${VAL[WITH_DOCKER]}" = true ]; then
@@ -653,19 +598,14 @@ inst_apt() {
   fi
 }
 
-# WITH_DOCKER=true. Docker Engine from Docker's own apt repo, as the
-# Dockerfile's WITH_DOCKER block installs it, but as the VM's own daemon: no
-# Sysbox, no nesting. daemon.json and the OOM drop-in go in BEFORE the
-# packages, so the daemon the package starts on install already runs with
-# them, and a first install needs no restart.
+# WITH_DOCKER=true. Docker Engine from Docker's own apt repo, through the same
+# two steps as the Dockerfile's WITH_DOCKER block, but as the VM's own daemon:
+# no Sysbox, no nesting. daemon.json and the OOM drop-in are VM-only, and go
+# in BEFORE the packages, so the daemon the package starts on install already
+# runs with them, and a first install needs no restart.
 feature_docker() {
   head_ "4b. Docker Engine"
-  fetch_to https://download.docker.com/linux/ubuntu/gpg /usr/share/keyrings/docker.asc 644
-  [ "${PUT_CHANGED}" -eq 0 ] || APT_FRESH=0
-  put_content /etc/apt/sources.list.d/docker.list 644 < <(
-    printf 'deb [arch=%s signed-by=/usr/share/keyrings/docker.asc] https://download.docker.com/linux/ubuntu noble stable\n' \
-      "$(dpkg --print-architecture)")
-  [ "${PUT_CHANGED}" -eq 0 ] || APT_FRESH=0
+  sys_docker_repo
 
   # The address ranges. config/docker/daemon.json pins the bridge to
   # 10.201.0.1/16 and the pool to 10.202.0.0/16; keep both when nothing on
@@ -705,7 +645,7 @@ feature_docker() {
     "${UNIT_DIR}/docker.service.d/devaloy-oom.conf" 644
   [ "${PUT_CHANGED}" -eq 0 ] || systemctl daemon-reload
 
-  apt_ensure docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  sys_docker_engine
   set_oom docker -250
 
   if [ "${daemon_changed}" -eq 1 ] && [ "${docker_was_active}" -eq 1 ]; then
@@ -725,72 +665,22 @@ set_oom() { # set_oom UNIT VALUE
   echo "$2" > "/proc/${pid}/oom_score_adj" 2>/dev/null || true
 }
 
+# No fixed UID: the cloud image's own user usually holds 1000, and it stays
+# as the provider console's way in. sys_dev_user takes the next free one, and
+# adds dev to the docker group when Docker is installed.
 inst_user() {
   head_ "5. The dev user"
-  if id dev >/dev/null 2>&1; then
-    ok "dev exists (uid $(id -u dev))"
-  else
-    # No fixed UID: the cloud image's ubuntu user usually holds 1000, and it
-    # stays as the provider console's way in. useradd takes the next free one.
-    if getent group dev >/dev/null 2>&1; then
-      useradd --create-home --home-dir /home/dev --shell /usr/bin/zsh --gid dev dev
-    else
-      useradd --create-home --home-dir /home/dev --shell /usr/bin/zsh --user-group dev
-    fi
-    ok "created dev (uid $(id -u dev))"
-  fi
-
-  local tmp
-  tmp="$(mktemp)"
-  echo 'dev ALL=(ALL) NOPASSWD:ALL' > "${tmp}"
-  visudo -cqf "${tmp}" || die "visudo rejected the dev sudoers drop-in."
-  put_file "${tmp}" /etc/sudoers.d/dev 440
-  rm -f "${tmp}"
-  ok "passwordless sudo"
-
-  if [ "${VAL[WITH_DOCKER]}" = true ] && ! id -nG dev | tr ' ' '\n' | grep -qx docker; then
-    usermod -aG docker dev
-    ok "dev added to the docker group"
-  fi
-}
-
-# The paths the Dockerfile COPYs to: the three scripts in /usr/local/bin, lib/
-# in /usr/local/lib/devaloy, and the five old verb names as symlinks. A file in
-# /usr/local/lib/devaloy that the repo no longer has is removed, which a fresh
-# image gets for free.
-install_cli() {
-  local f rel mode
-  for f in devaloy bootstrap-toolchain.sh link-shims; do
-    put_file "${DEVALOY_DIR}/${f}" "${BIN_DIR}/${f}" 755
-  done
-  while IFS= read -r f; do
-    rel="${f#"${DEVALOY_DIR}/lib/"}"
-    mode=644
-    [ -x "${f}" ] && mode=755
-    put_file "${f}" "${LIB_DIR}/${rel}" "${mode}"
-  done < <(find "${DEVALOY_DIR}/lib" -type f | sort)
-  while IFS= read -r f; do
-    rel="${f#"${LIB_DIR}/"}"
-    [ -e "${DEVALOY_DIR}/lib/${rel}" ] || rm -f "${f}"
-  done < <(find "${LIB_DIR}" -type f)
-  for f in devaloy-update devaloy-disk devaloy-ram devaloy-prune devaloy-nvim-sync; do
-    [ "$(readlink "${BIN_DIR}/${f}" 2>/dev/null)" = "${BIN_DIR}/devaloy" ] ||
-      ln -sfn "${BIN_DIR}/devaloy" "${BIN_DIR}/${f}"
-  done
+  sys_dev_user
 }
 
 inst_cli() {
   head_ "6. The devaloy CLI"
-  install_cli
-  ok "devaloy, bootstrap-toolchain.sh, link-shims, ${LIB_DIR}"
+  sys_install_cli "${DEVALOY_DIR}"
 }
 
 inst_build_flags() {
   head_ "7. build-flags"
-  put_content "${DEVALOY_DIR}/build-flags" 644 < <(
-    printf 'WITH_DOCKER=%s\nWITH_BROWSER=%s\nRUNTIME=native\n' \
-      "${VAL[WITH_DOCKER]}" "${VAL[WITH_BROWSER]}")
-  ok "WITH_DOCKER=${VAL[WITH_DOCKER]} WITH_BROWSER=${VAL[WITH_BROWSER]} RUNTIME=native"
+  sys_build_flags "${DEVALOY_DIR}" native "${VAL[WITH_DOCKER]}" "${VAL[WITH_BROWSER]}"
 }
 
 # The values the steps read, exported for the step functions sourced below.
@@ -960,7 +850,8 @@ main() {
   if [ "${CLI_ONLY}" -eq 1 ]; then
     [ "$(id -u)" -eq 0 ] || die "--cli-only needs root: sudo $0 --cli-only"
     [ -f "${DEVALOY_DIR}/devaloy" ] || die "${DEVALOY_DIR} holds no clone to install from."
-    install_cli
+    load_system_lib
+    sys_install_cli "${DEVALOY_DIR}"
     echo "devaloy: cli reinstalled from ${DEVALOY_DIR}"
     exit 0
   fi
@@ -968,6 +859,7 @@ main() {
   inst_preflight
   resolve_env
   inst_clone
+  load_system_lib
   inst_secrets
   inst_apt
   inst_user
