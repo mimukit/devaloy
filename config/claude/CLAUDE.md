@@ -30,6 +30,17 @@ Prose for a human reader (docs, READMEs, PR and issue bodies, commit bodies) mus
 
 Never hard-wrap Markdown. Write each paragraph and each list item as one continuous line, and let the editor soft-wrap it. Keep the line structure only where it carries meaning: code fences, tables, and YAML frontmatter. No setting on this box wraps Markdown for you, so a wrapped file is your own doing. This rule covers every Markdown file you write or edit for me. If a repository states its own line rule, follow the repository instead.
 
+## Images and mockups
+
+Claude Code cannot generate images. Codex can, so send every image task to Codex: a UI mockup, a screen variant, an icon, an illustration, or any other generated picture.
+
+- Do not write an HTML mockup page and screenshot it to make or iterate on a design. Write HTML only when the request asks for code.
+- Start a Codex sub-agent for each image task, on the newest Sol model. Today that is `gpt-6.1-sol`. To confirm the newest, read the `*-sol` slugs in `~/.codex/models_cache.json`.
+- In T3 Code, use `delegate_task` with the Codex provider and the Sol model. Elsewhere, run `codex exec -m gpt-6.1-sol "<prompt>"` in the project directory.
+- Give the sub-agent the screen, the content, the size, and the path for the PNG. Codex also keeps a copy under `~/.codex/generated_images/`.
+- Show me the image, take my feedback, and send the next round to Codex. Repeat until I approve the mockup.
+- If `command -v codex` prints nothing, or Codex is not signed in, say so. Do not fall back to an HTML screenshot.
+
 ## Where you are
 
 You are running on **devaloy**, a headless remote dev box. It is an `ubuntu:24.04` container reached only over Tailscale SSH — no public IP, no published ports, no desktop browser. Nobody is watching a GUI here, so anything that wants to open a browser window, print a QR code, or wait on a localhost callback will hang rather than fail.
