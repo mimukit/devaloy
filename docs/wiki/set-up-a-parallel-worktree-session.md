@@ -15,7 +15,7 @@ cat /sys/fs/cgroup/memory.max               # the container RAM ceiling, in byte
 cat /sys/fs/cgroup/memory.swap.max          # the swap this container may use, in bytes
 ```
 
-On the laptop, `ssh devaloy` must work and `wtforward` must be installed. Step 1 of [Run worktrees in parallel](run-worktrees-in-parallel.md#1-install-wtforward-on-the-laptop) installs it.
+On the laptop, SSH access to the server must work and `wtforward` must be installed. Install `fzf` to select a host interactively. Step 1 of [Run worktrees in parallel](run-worktrees-in-parallel.md#1-install-wtforward-on-the-laptop) installs it.
 
 ### Size the memory first
 
@@ -90,8 +90,8 @@ Each linked worktree shows 3 ports from 10000 to 19999, and no port appears twic
 In a laptop terminal, start it and leave the terminal open:
 
 ```sh
-wtforward            # the box at the SSH host devaloy
-wtforward mybox      # another box, by its SSH host name
+wtforward                # select an SSH host with fzf
+wtforward devaloy-ovh    # connect directly to this SSH host
 ```
 
 It forwards each dev port when the server on the box starts to listen. It forwards 3000, 3001, 3002 and 4000 for the main checkout too.

@@ -14,11 +14,13 @@ A forward connects to `127.0.0.1` on the box. A dev server must listen on `127.0
 
 ## 1. Install `wtforward` on the laptop
 
-The script uses only POSIX `sh` and `ssh`, so it runs on macOS and Linux with nothing else installed. `ssh devaloy` must already work from the laptop, through Tailscale SSH.
+The script runs on macOS and Linux with POSIX `sh` and `ssh`. Install `fzf` on the laptop to select a host interactively. An explicit host argument does not require `fzf`.
+
+The examples use the SSH alias `devaloy-ovh`. Replace it with your server alias. Confirm that `ssh devaloy-ovh` works before you start.
 
 ```sh
 mkdir -p ~/.local/bin
-scp devaloy:projects/devaloy/scripts/wtforward ~/.local/bin/
+scp devaloy-ovh:projects/devaloy/scripts/wtforward ~/.local/bin/
 chmod +x ~/.local/bin/wtforward
 ```
 
@@ -51,17 +53,21 @@ When the hashed port is taken by another worktree's block or by a running listen
 On the laptop, start it in a terminal and leave it open:
 
 ```sh
-wtforward            # the box at the SSH host devaloy
-wtforward mybox      # another SSH host
+wtforward                # select an SSH host with fzf
+wtforward devaloy-ovh    # connect directly to this SSH host
 ```
+
+Without an argument, `wtforward` lists concrete host aliases from `~/.ssh/config`, `/etc/ssh/ssh_config`, and their included files. It removes duplicate aliases and excludes wildcard patterns. Type to filter the list. Press Enter to connect to the selected host. Press Esc to cancel without connecting.
+
+Host selection requires an interactive terminal. For a script, pass the SSH host as an argument.
 
 It prints one line for each forward it adds or removes:
 
 ```
-connected to devaloy; checking its listeners every 2s
-forward localhost:16460 -> devaloy:16460
-forward localhost:3000 -> devaloy:3000
-cancel localhost:16460 (devaloy:16460 stopped)
+connected to devaloy-ovh; checking its listeners every 2s
+forward localhost:16460 -> devaloy-ovh:16460
+forward localhost:3000 -> devaloy-ovh:3000
+cancel localhost:16460 (devaloy-ovh:16460 stopped)
 ```
 
 Open the URL that `wtports` printed. A new dev server opens on the laptop within one interval after it starts listening on the box.
@@ -75,7 +81,7 @@ Press `Ctrl+C` to stop it. It closes the SSH connection and removes its control 
 
 When a port is already in use on the laptop, for example by a local dev server on 3000, `wtforward` prints one warning and skips that port. It forwards each port on `127.0.0.1` and on `::1` separately, so a laptop process on either address counts as in use. On a laptop with no IPv6 loopback, it prints one notice at the start and forwards on `127.0.0.1` only. It tries the port again after the box server on that port stops and starts again. To try at once, stop the laptop process and restart `wtforward`.
 
-When the SSH connection drops, for example after the laptop sleeps, `wtforward` prints `the connection to devaloy closed` and exits. Start it again.
+When the SSH connection drops, for example after the laptop sleeps, `wtforward` prints `the connection to devaloy-ovh closed` and exits. Start it again.
 
 ## Restart the dev server after `wtports` changes a port
 
