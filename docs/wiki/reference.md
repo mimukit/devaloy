@@ -11,6 +11,8 @@ except `TS_AUTHKEY` on a first boot.
 
 On a native VM the same names live in `/etc/devaloy/env` instead, and the compose-only ones (`DEVALOY_NAME`, `DEVALOY_RUNTIME`, `DEVALOY_PRIVILEGED`, the resource ceilings) do not apply. See [Native install](#native-install).
 
+On an Upstash Box they live in `/workspace/.devaloy/env`, with `WITH_T3CODE`, `WITH_DOCKER`, `WITH_PASEO` and `RUNTIME` fixed and two keys of its own. See [Upstash install](#upstash-install).
+
 ### Identity
 
 | Variable | Default | Effect |
@@ -373,6 +375,55 @@ Each `WITH_*` takes only `true` or `false`. The installer also stores `GITHUB_TO
 
 All three `devaloy-*` unit files load `/etc/devaloy/env` and are always installed; the two servers are enabled only when their flag is on. `native-serve.sh` starts each server with a login environment, so `TS_AUTHKEY` and the other tokens in the file do not reach the agents it spawns. The boot logs to `journalctl -u devaloy-boot` with a `[devaloy]` prefix in place of `[entrypoint]`.
 
+## Upstash install
+
+`scripts/install-upstash.sh` installs devaloy on an Upstash Box on the Node runtime (Debian 12 or newer, `x86_64` or `aarch64`). It runs on the box as `boxuser`, not as root, usually piped from curl, and calls `sudo -n` for the root steps. The task page is [Install on an Upstash Box](install-on-an-upstash-box.md).
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-upstash.sh | bash
+```
+
+| Flag | Effect |
+|---|---|
+| `--no-sdk` | Install and boot, but leave the init command and the public URL alone. Needs no API key. |
+| `--sdk-only` | Only the SDK step: set the init command and open the public URL for port 3773. Run it after a snapshot restore. |
+| `--cli-only` | Reinstall the CLI and `lib/` from `/workspace/devaloy` and stop. Internal: `devaloy update` runs it after its pull. |
+| `-h`, `--help` | Usage |
+
+The three flags do not combine.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `UPSTASH_BOX_API_KEY` | none | The Upstash API key for the SDK step. Asked for on `/dev/tty` when missing. Passed to one Node process only, never stored. With no key and no tty, the installer prints the two console steps. |
+| `DEVALOY_REF` | `main` | Branch or tag to clone to `/workspace/devaloy`. Put the same ref in the curl URL. |
+| `WITH_TAILSCALE` | `false` | Userspace `tailscaled` (`--tun=userspace-networking`) and Tailscale SSH, plus a same-uid `dev` user. |
+| `TS_AUTHKEY` | none | With `WITH_TAILSCALE=true`. Asked for on `/dev/tty` when the node has no saved state. |
+| `TS_HOSTNAME` | the box's `UPSTASH_BOX_NAME` | Node name on the tailnet and the T3 environment label. |
+| `WITH_BROWSER` | `false` | The packages in `config/apt/browser.txt`. |
+| `DEVALOY_SLIM` | `false` | Leave `neovim`, `tree-sitter`, `npm:wrangler`, `npm:cf` and `infisical` out of the toolset. Recorded in `runtime-flags`, read by `bootstrap-toolchain.sh`. |
+| `UPSTASH_HOME_MODE` | `move` | `move` sets the passwd home of `boxuser` to `/workspace/home`. `links` keeps `/home/boxuser` and links a fixed list of names into `/workspace/home`. |
+| `DEVALOY_SRC` | unset | Test only: the clone URL or path. `scripts/upstash-lookalike.sh` uses `/srv/devaloy`. |
+
+The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `TS_ACCEPT_DNS` and `MISE_NODE_VERSION`, with the meanings in [Environment variables](#environment-variables).
+
+`/workspace/.devaloy/env` holds every key above except `UPSTASH_BOX_API_KEY` and `DEVALOY_SRC`, plus `WITH_T3CODE="true"`, `WITH_DOCKER="false"`, `WITH_PASEO="false"` and `RUNTIME="upstash"`, which are fixed. It is owned by `boxuser`, mode 0600, in the same grammar as `/etc/devaloy/env`, and both installers read and write it through `lib/system/envfile.sh`. The precedence is the native one. To apply a change, run `bash /workspace/devaloy/lib/steps/upstash-boot.sh`.
+
+| Script | Runs |
+|---|---|
+| `lib/steps/upstash-boot.sh` | The boot, as `boxuser`; it re-runs itself as root with `sudo -n`. Reinstalls the overlay (the `/opt/devaloy` link, the passwd home and shell, the apt packages, the CLI, `build-flags` with `RUNTIME=upstash`), runs the `native-boot.sh` steps minus Docker and Paseo, writes `t3-pair` and `boot-status`, and starts the server loops. `--detach` starts the same boot with `setsid` and exits 0; that form is the Upstash init command. |
+| `lib/steps/upstash-serve.sh` | `t3 [start\|stop\|restart]` and `tailscaled [start\|stop\|restart]`. Each runs a `setsid nohup` restart loop with a pidfile in `/workspace/.devaloy/run/`. `t3 serve` binds `0.0.0.0:3773` with the login environment of `native-serve.sh`. |
+| `~/.local/bin/t3-pair` | `t3 pair` with every printed link rewritten to `https://<box-id>-3773.preview.box.upstash.com`. Written by the boot. |
+| `scripts/upstash-lookalike.sh` | Test only: `start\|sync\|shell\|root\|stop` for a local container shaped like an Upstash Box. |
+
+| Path | What it is |
+|---|---|
+| `/workspace/devaloy` | The clone, owned by `boxuser`. `/opt/devaloy` links to it. |
+| `/workspace/home` | The home of `boxuser`, with the toolchain and repos. |
+| `/workspace/.devaloy/logs/boot.log`, `boot.log.1` | The last boot and the one before. `t3.log` and `tailscaled.log` sit beside them. |
+| `/workspace/.devaloy/boot-status` | `ok <time>` or `failed <step> <time>`. |
+| `/workspace/.devaloy/run/` | `t3.pid`, `tailscaled.pid` and `boot.lock`. |
+| `/workspace/.devaloy/tailscale/` | The Tailscale node state. |
+
 ## Managed files
 
 Written or overwritten on **every boot** by the step functions in `lib/steps/`, which `entrypoint.sh` calls in the container and `devaloy-boot.service` calls on a native VM. Editing any of these
@@ -438,6 +489,7 @@ One more key is rewritten rather than set: `credential.https://<host>.helper`, f
 |---|---|---|
 | 22 | Tailnet address only, inside the container's network namespace | Always. Not changeable — Tailscale SSH assumes 22. |
 | 3773 | Tailnet address only | Only with `WITH_T3CODE=true`. The T3 Code server. |
+| 3773 (Upstash Box) | `0.0.0.0`, reached through `https://<box-id>-3773.preview.box.upstash.com` and the Upstash internal network | Always. The T3 pairing token is the only lock. |
 | 22 (native VM) | Every address, the VM's own sshd | Until `install-native.sh --lockdown` sets `ufw` to allow inbound only on `tailscale0`. |
 | 6767 | Tailnet address only | Only with `WITH_PASEO=true`. The Paseo daemon. |
 | whatever a project stack publishes | `0.0.0.0` inside the container | Only on a `WITH_DOCKER=true` build. Reachable at `http://<tailnet-name>:<port>` and from the Docker host. |

@@ -15,6 +15,7 @@ it when it stops answering.
 ## Tasks
 
 - [Install on a VM](install-on-a-vm.md): run devaloy straight on a fresh Ubuntu 24.04 or Debian 13 VM with one command, no Docker.
+- [Install on an Upstash Box](install-on-an-upstash-box.md): turn a fresh Upstash Box into a devaloy box that runs T3 Code, reached from the phone through the box's preview URL.
 - [Manage the box with `devaloy`](manage-the-box.md) — one command for the
   status screen, the reclaims, the toolchain update and `doctor`.
 - [Manage the fleet with `devaloy fleet`](manage-the-fleet.md): list, check and update every `devaloy-*` box on the tailnet from one box.

@@ -24,6 +24,7 @@ ground in shorter, task-shaped pages:
 - [Reference](docs/wiki/reference.md) — every `.env` variable, command, flag and
   managed file.
 - [Install on a VM](docs/wiki/install-on-a-vm.md): one command on a fresh Ubuntu 24.04 or Debian 13 VM, no Docker.
+- [Install on an Upstash Box](docs/wiki/install-on-an-upstash-box.md): one command on a fresh Upstash Box, for T3 Code from the phone with no VPS.
 - [Recover a box you cannot reach](docs/wiki/recover-an-unreachable-box.md) —
   when Tailscale SSH stops answering.
 - [All docs](docs/wiki/index.md)
