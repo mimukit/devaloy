@@ -61,6 +61,10 @@ neovim = "latest"
 # The tree-sitter CLI, which `:checkhealth lazyvim` reports as an error without.
 # nvim-treesitter needs it to build a grammar that ships no prebuilt parser.
 "tree-sitter" = "latest"
+# shellcheck, the lint for every shell file in this repo: the devaloy CLI, its
+# lib/ modules and the boot scripts. The repo has no other test runner, so this
+# is the check a change to lib/ gets before it ships.
+shellcheck = "latest"
 
 # --- the AI agents ------------------------------------------------------------
 # mise's registry entries fetch the same upstream artifacts the agents' own
