@@ -133,14 +133,13 @@ pre_clone_packages() {
 # --- /etc/devaloy/env ----------------------------------------------------------
 #
 # The VM's .env, and the EnvironmentFile= of every devaloy unit, so it has to
-# parse the way systemd parses it. Every value is written in double quotes,
-# with the four characters systemd unescapes inside them (\ " ` $) escaped.
-# Inside double quotes systemd keeps every other byte, a newline included, so
-# any value survives the trip.
+# parse the way systemd parses it. The parser, the merge and the writer are in
+# lib/system/envfile.sh, shared with the Upstash installer; see that file for
+# the grammar. It loads from the clone (load_envfile_lib below), so the merge
+# runs after the first clone. What stays here is this installer's own part:
+# the key list, the defaults, and the header of the file.
 #
-# It is read back with read_env_file, a parser of the same grammar, and never
-# with `source`: a token can hold a `$` or a backtick, and a shell would
-# expand them. The keys are the .env.example names that mean something on a
+# The keys are the .env.example names that mean something on a
 # VM (the compose-only DEVALOY_RUNTIME, DEVALOY_PRIVILEGED and the resource
 # ceilings do not), plus TS_HOSTNAME, DEVALOY_REF and RUNTIME. INFISICAL_* are
 # not in .env.example but the steps read them, so they are here too. A key
@@ -170,134 +169,21 @@ env_default() { # env_default KEY — the value a key takes when no one set it
   esac
 }
 
-# read_env_file FILE — fill FILE_VAL and FILE_ORDER from a systemd environment
-# file. The grammar is systemd's (src/basic/env-file.c): `#` and `;` start a
-# comment line; KEY=VALUE, whitespace around the `=` dropped; a double-quoted
-# value unescapes \" \\ \` \$, keeps any other backslash pair as it is, drops a
-# backslash-newline and keeps a bare newline; a single-quoted value is literal;
-# an unquoted value ends at the newline, a backslash takes the next byte
-# literally, and trailing blanks go. A line without `=` is skipped, as systemd
-# skips it.
-read_env_file() {
-  local LC_ALL=C
-  local data n i c c2 key val
-  FILE_VAL=()
-  FILE_ORDER=()
-  [ -f "$1" ] || return 0
-  data="$(cat "$1"; printf x)"
-  data="${data%x}"
-  n=${#data}
-  i=0
-  while [ "${i}" -lt "${n}" ]; do
-    c="${data:i:1}"
-    case "${c}" in
-      ' '|$'\t'|$'\n'|$'\r') i=$((i + 1)); continue ;;
-      '#'|';')
-        while [ "${i}" -lt "${n}" ] && [ "${data:i:1}" != $'\n' ]; do i=$((i + 1)); done
-        continue
-        ;;
-    esac
-    key=""
-    while [ "${i}" -lt "${n}" ]; do
-      c="${data:i:1}"
-      [ "${c}" = "=" ] || [ "${c}" = $'\n' ] && break
-      key+="${c}"
-      i=$((i + 1))
-    done
-    key="${key%"${key##*[![:space:]]}"}"
-    if [ "${c}" != "=" ]; then
-      continue
-    fi
-    i=$((i + 1))
-    while [ "${i}" -lt "${n}" ] && { [ "${data:i:1}" = ' ' ] || [ "${data:i:1}" = $'\t' ]; }; do
-      i=$((i + 1))
-    done
-    val=""
-    c="${data:i:1}"
-    if [ "${c}" = '"' ]; then
-      i=$((i + 1))
-      while [ "${i}" -lt "${n}" ]; do
-        c="${data:i:1}"
-        if [ "${c}" = '"' ]; then
-          i=$((i + 1))
-          break
-        elif [ "${c}" = "\\" ]; then
-          c2="${data:i+1:1}"
-          case "${c2}" in
-            '"'|"\\"|'`'|'$') val+="${c2}" ;;
-            $'\n') ;;
-            *) val+="\\${c2}" ;;
-          esac
-          i=$((i + 2))
-        else
-          val+="${c}"
-          i=$((i + 1))
-        fi
-      done
-    elif [ "${c}" = "'" ]; then
-      i=$((i + 1))
-      while [ "${i}" -lt "${n}" ] && [ "${data:i:1}" != "'" ]; do
-        val+="${data:i:1}"
-        i=$((i + 1))
-      done
-      i=$((i + 1))
-    else
-      while [ "${i}" -lt "${n}" ] && [ "${data:i:1}" != $'\n' ]; do
-        c="${data:i:1}"
-        if [ "${c}" = "\\" ]; then
-          c2="${data:i+1:1}"
-          [ "${c2}" = $'\n' ] || val+="${c2}"
-          i=$((i + 2))
-        else
-          val+="${c}"
-          i=$((i + 1))
-        fi
-      done
-      val="${val%"${val##*[![:space:]]}"}"
-    fi
-    # Anything after a closing quote up to the newline is dropped.
-    while [ "${i}" -lt "${n}" ] && [ "${data:i:1}" != $'\n' ]; do i=$((i + 1)); done
-    case "${key}" in
-      ''|[0-9]*|*[!A-Za-z0-9_]*) continue ;;
-    esac
-    [ -n "${FILE_VAL[${key}]+set}" ] || FILE_ORDER+=("${key}")
-    FILE_VAL[${key}]="${val}"
-  done
-}
-
-env_quote() { # env_quote VALUE — the double-quoted form systemd reads back
-  local v="$1"
-  v="${v//\\/\\\\}"
-  v="${v//\"/\\\"}"
-  v="${v//\`/\\\`}"
-  v="${v//\$/\\\$}"
-  printf '"%s"' "${v}"
-}
-
-is_env_key() {
-  local k
-  for k in "${ENV_KEYS[@]}"; do [ "${k}" = "$1" ] && return 0; done
-  return 1
+# env_fixed KEY — RUNTIME is not an input: it is native because this script
+# is running.
+env_fixed() {
+  case "$1" in
+    RUNTIME) printf 'native' ;;
+    *) return 1 ;;
+  esac
 }
 
 # resolve_env — the precedence from the plan: a non-empty environment variable
 # wins, then the file, then the default. RUNTIME is not an input; it is native
 # because this script is running.
 resolve_env() {
-  local k envv
-  read_env_file "${ENV_FILE}"
-  for k in "${ENV_KEYS[@]}"; do
-    envv="${!k:-}"
-    if [ "${k}" = RUNTIME ]; then
-      VAL[${k}]=native
-    elif [ -n "${envv}" ]; then
-      VAL[${k}]="${envv}"
-    elif [ -n "${FILE_VAL[${k}]:-}" ]; then
-      VAL[${k}]="${FILE_VAL[${k}]}"
-    else
-      VAL[${k}]="$(env_default "${k}")"
-    fi
-  done
+  local k
+  env_merge "${ENV_FILE}"
   for k in WITH_DOCKER WITH_BROWSER WITH_PASEO WITH_T3CODE; do
     case "${VAL[${k}]}" in
       true|false) ;;
@@ -307,7 +193,6 @@ resolve_env() {
 }
 
 render_env() {
-  local k
   cat <<'EOF'
 # devaloy's environment on this VM: the native counterpart of the container's
 # .env, read by devaloy-boot, devaloy-paseo and devaloy-t3code through
@@ -321,13 +206,33 @@ render_env() {
 # Keep the double quotes. Inside them, write \\ \" \` and \$ for a literal
 # backslash, quote, backtick and dollar sign.
 EOF
-  for k in "${ENV_KEYS[@]}"; do
-    printf '%s=%s\n' "${k}" "$(env_quote "${VAL[${k}]}")"
-  done
-  for k in "${FILE_ORDER[@]}"; do
-    is_env_key "${k}" && continue
-    printf '%s=%s\n' "${k}" "$(env_quote "${FILE_VAL[${k}]}")"
-  done
+  env_render_keys
+}
+
+# load_envfile_lib — source lib/system/envfile.sh before resolve_env needs it.
+# The merge must run before the clone moves to DEVALOY_REF, because the ref
+# can come from the env file, so the file is read from whatever the clone holds
+# now: the fresh clone inst_clone_start just made, or the clone a past run left
+# at its ref. A clone left at a ref older than envfile.sh does not have it;
+# then the file is read from origin's default branch with `git show`, which
+# leaves the work tree alone.
+load_envfile_lib() {
+  local lib="${DEVALOY_DIR}/lib/system/envfile.sh" tmp
+  if [ -f "${lib}" ]; then
+    # shellcheck source=lib/system/envfile.sh
+    . "${lib}"
+    return 0
+  fi
+  tmp="$(mktemp)"
+  if git -C "${DEVALOY_DIR}" fetch --quiet origin HEAD </dev/null &&
+     git -C "${DEVALOY_DIR}" show FETCH_HEAD:lib/system/envfile.sh > "${tmp}"; then
+    # shellcheck source=lib/system/envfile.sh
+    . "${tmp}"
+    rm -f "${tmp}"
+  else
+    rm -f "${tmp}"
+    die "Could not read lib/system/envfile.sh from ${DEVALOY_DIR} or from origin."
+  fi
 }
 
 # --- the free 10.x range probe -------------------------------------------------
@@ -477,11 +382,14 @@ inst_preflight() {
 # Branch or tag, decided by asking the remote. ls-remote writes nothing, so a
 # re-run on a clone that is already at the remote's commit makes no write in
 # /opt/devaloy at all; a fetch only happens when the remote moved.
-inst_clone() {
+#
+# In two parts. inst_clone_start makes the clone when there is none, so
+# load_envfile_lib has the env-file parser to load and resolve_env can read
+# DEVALOY_REF from the file; inst_clone then moves the clone to that ref.
+inst_clone_start() {
   head_ "2. The repo at ${DEVALOY_DIR}"
   pre_clone_packages
 
-  local ref="${VAL[DEVALOY_REF]}" remote_sha tag_sha local_sha branch
   if [ ! -d "${DEVALOY_DIR}/.git" ]; then
     if [ -e "${DEVALOY_DIR}" ] && [ -n "$(ls -A "${DEVALOY_DIR}" 2>/dev/null)" ]; then
       die "${DEVALOY_DIR} exists and is not a git clone. Move it aside and re-run."
@@ -492,7 +400,10 @@ inst_clone() {
        [ "$(git -C "${DEVALOY_DIR}" remote get-url origin)" != "${DEVALOY_SRC}" ]; then
     git -C "${DEVALOY_DIR}" remote set-url origin "${DEVALOY_SRC}"
   fi
+}
 
+inst_clone() {
+  local ref="${VAL[DEVALOY_REF]}" remote_sha tag_sha local_sha branch
   local g=(git -C "${DEVALOY_DIR}")
   remote_sha="$("${g[@]}" ls-remote --heads origin "refs/heads/${ref}" </dev/null |
     awk -v r="refs/heads/${ref}" '$2 == r {print $1}')"
@@ -860,6 +771,8 @@ main() {
   fi
 
   inst_preflight
+  inst_clone_start
+  load_envfile_lib
   resolve_env
   inst_clone
   load_system_lib
@@ -882,8 +795,15 @@ main() {
 }
 
 # Tests source this file for its functions (the env-file parser, the SSH
-# session lookup) without running an install.
-if [ "${DEVALOY_INSTALL_LIB_ONLY:-0}" != 1 ]; then
+# session lookup) without running an install. The parser is in
+# lib/system/envfile.sh now, so a test that sources this file from a checkout
+# gets it from the checkout beside it.
+if [ "${DEVALOY_INSTALL_LIB_ONLY:-0}" = 1 ]; then
+  if [ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/system/envfile.sh" ]; then
+    # shellcheck source=lib/system/envfile.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/../lib/system/envfile.sh"
+  fi
+else
   # main is called on the last line on purpose. Under `curl | bash`, bash
   # reads the script from stdin as it goes; by the time main runs, bash has
   # read every function above it, so a command inside that reads stdin cannot
