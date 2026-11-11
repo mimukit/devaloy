@@ -100,10 +100,22 @@ t3_loop() {
   while :; do
     log "starting the T3 Code server on 0.0.0.0:${T3CODE_PORT}"
     "${login_env[@]}" /bin/sh -c "export T3CODE_TELEMETRY_ENABLED=false T3CODE_SERVER_BROWSER_SANDBOX=0; \
-      ${secrets_line} exec t3 serve --host 0.0.0.0 --port '${T3CODE_PORT}' --no-browser" || true
+      ${secrets_line} exec t3 serve --host 0.0.0.0 --port '${T3CODE_PORT}' --no-browser" 2>&1 |
+      t3_log_filter || true
     log "WARNING: the T3 Code server exited, restarting in 10s"
     sleep 10
   done
+}
+
+# t3 serve prints a pairing link and its QR code at every start, and that
+# token pairs a device with this box until it expires. Phase 7 found four
+# live ones in t3.log. The filter blanks the token in each link form and
+# drops the QR block (its lines are drawn with the half-block characters).
+# sed -u, so each line reaches the log as the server writes it.
+t3_log_filter() {
+  sed -u -E \
+    -e '/▀|▄|█/d' \
+    -e 's/(Token:[[:space:]]*|token=|token%3D)[A-Za-z0-9_%.-]+/\1<redacted>/g'
 }
 
 t3_start() {
@@ -122,6 +134,9 @@ t3_start() {
     log "WARNING: toolchain bootstrap did not finish; read the boot log."
     return 1
   fi
+  # 0600: older logs from before the filter can still hold a token.
+  ( umask 077; : >> "${LOG_DIR}/t3.log" )
+  chmod 600 "${LOG_DIR}/t3.log"
   setsid nohup bash "${SELF}" t3 loop >> "${LOG_DIR}/t3.log" 2>&1 < /dev/null &
   log "T3 Code: serve loop started, log in ${LOG_DIR}/t3.log"
 }
