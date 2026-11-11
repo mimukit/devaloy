@@ -66,7 +66,7 @@ Each feature is a variable on the same line. All four default to `false`, and ea
 | `WITH_DOCKER` | Installs Docker Engine from Docker's apt repo and adds `dev` to the `docker` group. Writes `/etc/docker/daemon.json` with the repo's address ranges, or with free `10.x/16` ranges when the repo's overlap the VM's own network. No Sysbox and no nested daemon. Setting it back to `false` leaves Docker installed and running. |
 | `WITH_BROWSER` | Installs the headless Chromium libraries from `config/apt/browser.txt`. The bootstrap then fetches `playwright-cli` and Chromium into the home directory. |
 | `WITH_PASEO` | Enables `devaloy-paseo.service`, the Paseo daemon on `<tailnet-ip>:6767`. See [Connect the Paseo apps](connect-the-paseo-apps.md). |
-| `WITH_T3CODE` | Enables `devaloy-t3code.service`, the T3 Code server on `<tailnet-ip>:3773`. The pairing link is in `journalctl -u devaloy-t3code`. See [Connect the T3 Code apps](connect-the-t3-code-apps.md). |
+| `WITH_T3CODE` | Enables `devaloy-t3code.service`, the T3 Code server on `<tailnet-ip>:3773`. The pairing link is in `journalctl -u devaloy-t3code`. See [Connect the T3 Code apps](connect-the-t3-code-apps.md). Do not also run `t3 up` on the VM; see [Fix a box where someone ran `t3 up`](connect-the-t3-code-apps.md#fix-a-box-where-someone-ran-t3-up). |
 
 For example:
 

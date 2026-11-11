@@ -117,6 +117,56 @@ To stop push, run `t3 connect publish --disable` and restart the server. `t3 con
 
 The [ntfy push](push-notifications.md) is a separate route. It sends to the ntfy app, not to the T3 Code app, and it needs no T3 Connect account.
 
+## Fix a box where someone ran `t3 up`
+
+Do not run `t3 up` or `t3 service install` on a devaloy box. devaloy already runs the server, and `t3 up` adds a second setup next to it:
+
+- a user service, `~/.config/systemd/user/t3code.service`, that runs its own `t3 serve` on `127.0.0.1:3773` from a pinned `t3` version;
+- a full T3 Connect link with a managed cloudflared tunnel, in place of the publish-only link from [step 4](#4-turn-on-phone-notifications).
+
+The user service takes the lock on `~/.t3/userdata` first. The devaloy server then exits on every start with `ServerAlreadyRunningError`, and `devaloy doctor` shows the `t3 server` row as `activating` on a VM. Once the devaloy server runs on the tailnet address, the tunnel cannot reach `127.0.0.1:3773`, and `t3 connect status` prints `T3 Connect is NOT reachable from other devices`.
+
+To put the box back on the devaloy setup, run these as `dev`:
+
+1. Check that t3's own service is there:
+
+   ```sh
+   t3 status
+   ```
+
+   `Service` shows `installed`.
+
+2. Remove the service. Threads and projects in `~/.t3/userdata` are kept.
+
+   ```sh
+   t3 service uninstall
+   ```
+
+3. Change the T3 Connect link to publish-only. A box that is already signed in reuses the stored sign-in, so no code is printed.
+
+   ```sh
+   t3 connect link --publish-only --headless
+   ```
+
+4. Restart the devaloy server. The restart cancels running turns.
+
+   ```sh
+   devaloy ram --t3 --apply
+   ```
+
+5. Check the result:
+
+   ```sh
+   pgrep -af cloudflared; t3 connect status; devaloy doctor
+   ```
+
+   `pgrep` prints nothing. `t3 connect status` shows `Environment link: provisioned` and `Publish agent activity: enabled`, with no `NOT reachable` line. The `t3 server` and `t3 push` rows of `devaloy doctor` are green.
+
+6. In the desktop app, open **Settings → Environments** and remove the old connection to the box.
+7. Pair the app again over the tailnet, as in [step 2](#2-pair-the-laptop). The new entry shows `http://<tailnet-ip>:3773/` and `Connected`.
+
+The list in the app also keeps a T3 Connect entry for the box, with `Relay offline` and an **Add route** button. That entry is expected with a publish-only link. Do not add a route to it.
+
 ## Open a thread on each new worktree
 
 gitkit, issuekit `start`, and mergekit `start` end with a `Workspace ready` block when they hand you a worktree. The block names no tool. In T3 Code, a short instruction file tells Claude to open an idle thread bound to that worktree. You type the first prompt in that thread yourself.
@@ -181,6 +231,8 @@ All T3 Code state is in `~/.t3` on the `home` volume. A redeploy keeps it, and p
 | The phone cannot connect | Tailscale is off on the phone, or the tailnet policy blocks port 3773 | Connect Tailscale on the phone. Check the policy. |
 | The phone app shows no notifications | The box has no T3 Connect link, or the server has not restarted since the link | Run `devaloy doctor` and read the `t3 push` row. Follow [step 4](#4-turn-on-phone-notifications). |
 | `ssh devaloy t3 pair` finds no server | The server is down | Run `devaloy doctor`. Check the `t3 server` row. |
+| The log says `ServerAlreadyRunningError`, and on a VM the `t3 server` row shows `activating` | Someone ran `t3 up`, and t3's own service holds the lock on `~/.t3/userdata` | Follow [Fix a box where someone ran `t3 up`](#fix-a-box-where-someone-ran-t3-up). |
+| `t3 connect status` says `T3 Connect is NOT reachable from other devices` | The box has a full T3 Connect link with a tunnel, not the publish-only link | Follow steps 3 to 5 of [Fix a box where someone ran `t3 up`](#fix-a-box-where-someone-ran-t3-up). |
 
 ## Manage the server
 
