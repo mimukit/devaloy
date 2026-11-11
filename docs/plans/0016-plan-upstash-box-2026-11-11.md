@@ -1,14 +1,12 @@
 # Plan: devaloy on an Upstash Box
 
-Grilled: 2026-11-11
-
 ## Context
 
 An Upstash Box is a cheap, pausable container that Upstash hosts. It can be a T3 Code remote environment that the phone reaches with no VPS to run. On one box (smiling-molly-74011, 2026-11-11) a hand setup works: `t3` from npm in `/workspace/home/.local`, a `t3-start` script that the Upstash init command runs, a public preview URL for port 3773, and a `t3-pair` helper that prints the preview pairing link. Pause and resume through the SDK bring the server back.
 
-devaloy cannot install there today. `scripts/install-native.sh` wants Ubuntu 24.04 or Debian 13, systemd and `/dev/net/tun`. The box is Debian 12 bookworm on aarch64, PID 1 is `docker-init`, and there is no tun. The user is `boxuser` (uid 1002), not `dev`. Only `/workspace` (xfs, 10G) survives a reset. Pause keeps the filesystem but kills every process. The hand setup also has none of the devaloy layers: no mise toolchain, no skills, no Claude and Codex config seed, no git identity, no repo clones, no ntfy, no `devaloy` CLI.
+devaloy cannot install there today. `scripts/install-native.sh` wants Ubuntu 24.04 or Debian 13, systemd and `/dev/net/tun`. The box is Debian 12 bookworm on aarch64, PID 1 is `docker-init`, and there is no tun. The user is `boxuser` (uid 1002), not `dev`. Only `/workspace` (xfs, 10G) is persistent storage. The handoff said it survives a reset; Phase 7 showed a reset wipes it too. Pause keeps the filesystem but kills every process. The hand setup also has none of the devaloy layers: no mise toolchain, no skills, no Claude and Codex config seed, no git identity, no repo clones, no ntfy, no `devaloy` CLI.
 
-Goal: one command turns a fresh Upstash Box into a devaloy box that runs T3 Code, as close to a native VM as the box allows, and the box keeps working through pause, resume and reset with no second command.
+Goal: one command turns a fresh Upstash Box into a devaloy box that runs T3 Code, as close to a native VM as the box allows, and the box keeps working through pause and resume with no second command. A reset wipes the whole box, `/workspace` included (found in Phase 7), so after a reset the one-liner is the way back. Decision by the user, 2026-11-11: reset means reinstall, with no self-healing init command and no tokens stored in Upstash box env.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/install-upstash.sh | bash
@@ -19,7 +17,7 @@ Success outcome:
 - On a fresh Upstash Box (Node runtime), that command exits 0 only after the toolchain is ready and the T3 server listens on 3773.
 - The T3 phone app pairs through `https://<box-id>-3773.preview.box.upstash.com`.
 - After an SDK pause and resume, the preview URL answers 200 with no human action.
-- After a reset, the next container start reinstalls what lived outside `/workspace`, and the URL answers 200 again.
+- After a reset, the one-liner run again brings the box back, and the URL answers 200 again.
 - A second run of the installer exits 0 and changes no file under `/workspace` apart from logs and the toolchain stamp.
 
 Target: open, no baseline. Phase 7 measures the cold install time, the resume-to-200 time and the reset-to-200 time, and records them here. The numbers do not gate a phase.
@@ -148,10 +146,10 @@ Attended: the user creates a new free Upstash Box, enters the API key through `r
 1. Run the one command on a fresh box with the key at the prompt. Record the time to exit 0.
 2. Pair the phone through the printed link, and start a Claude thread.
 3. Pause and resume through the SDK. Record the time until the preview URL answers 200.
-4. Reset the box, then send a request to the preview URL. Record the time until it answers 200, and check that `devaloy doctor` exits 0.
+4. Reset: skipped by the user, 2026-11-11. On box needed-tortoise-40254 a console reset wiped `/workspace`, and the new container ran with root's capabilities dropped (`CapEff 00000000200000c0`, no `CAP_CHOWN`), so no reinstall could run; after a pause, `resume()` returned HTTP 500. The wiki now says not to reset a devaloy box, and the preflight stops on a root that cannot chown. Steps 3 and 5 run on a new box instead.
 5. Run the command again and check that it is converged.
 
-Done when: steps 1 to 5 pass, and the three times are written into the Target line of Context. The first request after a resume may return a short 502; the wiki states the measured wait (grill Q12).
+Done when: steps 1, 2, 3 and 5 pass on a new box, and the cold install time and the resume-to-200 time are written into the Target line of Context. The first request after a resume may return a short 502; the wiki states the measured wait (grill Q12).
 
 ## Open questions
 
