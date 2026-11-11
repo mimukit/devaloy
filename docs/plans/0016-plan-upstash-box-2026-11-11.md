@@ -153,6 +153,24 @@ Attended: the user creates a new free Upstash Box, enters the API key through `r
 
 Done when: steps 1, 2, 3 and 5 pass on a new box, and the cold install time and the resume-to-200 time are written into the Target line of Context. The first request after a resume may return a short 502; the wiki states the measured wait (grill Q12).
 
+#### Phase 7 results (box in-whale-20356)
+
+Run on 2026-11-11 from devaloy-insta (Linux, x86_64) against Upstash Box in-whale-20356 (tailnet name devaloy-upbox), installed from main 5d0bc08 with Tailscale on. The one-liner, the SDK step, the last screen and the t3.log checks had passed from devaloy-ovh before this run; this table covers steps 5 and 3.
+
+| Step | Result | Evidence |
+|------|--------|----------|
+| 5, converged re-run | PASS. The one-liner, run again over Upstash SSH with the API key on stdin, exited 0 in 5 s. Every step reported "already" or "current": mise "All tools are up to date", t3 v0.1.9 current, "the serve loop already runs", "init command already set". | The stamp was `/tmp/p7-stamp`, made 60 s before the run. `/workspace` is `root:root 0711`, so `find` as `boxuser` lists nothing and the check needs `sudo -n find /workspace -newer /tmp/p7-stamp -type f`. The API key did not appear in the output. |
+| 5, files newer than the stamp | 5 files. Expected: `/workspace/.devaloy/boot-status` and `/workspace/.devaloy/logs/boot.log`. From the T3 server: `/workspace/home/.t3/userdata/logs/server.trace.ndjson` (its own trace log), and `statev2.sqlite-wal` and `statev2.sqlite-shm` in `/workspace/home/.t3/userdata/`. The WAL write at 20:59:55, 3 s after the boot ended, matches the one-use pairing link the last screen prints. No file in the clone, the env file, a dotfile or the toolchain changed. | The toolchain stamp did not change either, because mise had nothing to do. See finding 3 below. |
+| 3, SDK pause to preview 200 | PASS. 7.5 s from the first preview request to 200, with one 503 at 5.4 s. | `pause()` took 1.5 s and `getStatus` gave `paused` at once. The request started after `tailscale status` on devaloy-insta showed the node offline. |
+
+### Findings from the Part 1 and Part 2 test run (2026-11-11, box in-whale-20356)
+
+1. **The tailnet comes back 42 to 69 s after a wake, and the first Tailscale control request is most of it.** The container itself resumes at once: in every cycle `tailscaled.log` has `Program starting` in the same second as the wake request. In the 67 s cycle of Phase 8, the first `RegisterReq` went out at 21:05:21 and failed at 21:06:21 with `register request: Post "https://controlplane.tailscale.com/machine/register": unexpected EOF`; the retry logged `controlhttp: forcing port 443 dial due to recent noise dial`, got its response at 21:06:22, and the first SSH login was at 21:06:26. In the 42 s cycle, the first `RegisterReq` at 21:07:23 got no answer until the boot's `tailscale up` restarted the client at 21:07:54; that dial also logged `forcing port 443`, got its response at 21:07:55, and the state went to `Running` at 21:08:00. A plain request from the box to `http://controlplane.tailscale.com/key` on port 80 answered 302 in 0.18 s, so port 80 is not simply blocked, and the cause is not proven. Proposed fix: start tailscaled with `TS_FORCE_NOISE_443=true` in `tailscaled_loop` in `lib/steps/upstash-serve.sh` (the knob is in the tailscaled 1.104 binary), so the first dial is the one that worked. It settles the question when three Phase 8 cycles with the knob give port 22 in about 10 s.
+2. **A Tailscale SSH session outlives a killed client.** After the client `ssh dev@devaloy-upbox 'sleep 4800'` on devaloy-insta got SIGTERM, the `tailscaled be-child ssh` process and its `sleep 4800` were still running on the box 6 minutes later, and had to be killed by hand. This matters for the idle-pause question in Phase 8: a dead session can keep a process on the box. No change proposed; noted for the wiki if the idle test shows that sessions count as activity.
+3. **A converged re-run still writes the T3 state database.** The last screen runs `t3 pair` and prints a new one-use pairing link on every run, so the T3 state database changes and a new pairing token exists after each re-run. The Success outcome line ("changes no file under `/workspace` apart from logs and the toolchain stamp") does not hold as written. Proposed fix: on a re-run where the boot reports the serve loop already running, print "Pair a device with: t3-pair" in place of a fresh link, and add "the T3 server's own state and logs under `~/.t3`" to the Success outcome line and the wiki's re-run sentence.
+4. **A stale comment.** `tailscaled_loop` in `lib/steps/upstash-serve.sh` says the state on `/workspace` lets the node keep its identity "through a reset". Phase 7 found that a reset wipes `/workspace`. Proposed fix: change it to "through a pause".
+5. **Still present from Phase 1:** `fleet status` prints the container hostname (`6028be44f7fa`) for devaloy-upbox, not the box name.
+
 ## Part 2: Tailscale by default, with a wake step (added 2026-11-11)
 
 ### Context
@@ -161,7 +179,7 @@ Every other devaloy box is reached over Tailscale: `ssh dev@<name>`, `devaloy fl
 
 Goal: `ssh dev@<name>`, `wtforward <alias>` and `devaloy fleet status` reach an Upstash Box that has paused, with no manual wake.
 
-Target: open, no baseline beyond Phase 1b (tailnet 200 at 45 s after a resume, which included a device-approval wait that is now fixed). Phase 8 measures the time from a wake request to a tailnet SSH login, and Phase 13 the time from `ssh` on a paused box to a shell prompt.
+Target: measured on 2026-11-11 from devaloy-insta (Linux) on box in-whale-20356. From a preview URL request on a paused box to a tailnet SSH login: 68.2 s, 67.1 s and 42.1 s (Phase 8). From `ssh dev@devaloy-upbox true` on a paused box to exit 0: 68.2 s (Phase 13 step 1).
 
 ### Design decisions (settled)
 
@@ -190,6 +208,21 @@ Attended: needs an Upstash Box with Tailscale on, the API key, and a pre-approve
 Measure: the time from a preview URL request on a paused box to a tailnet SSH login, three times; whether an open tailnet SSH session stops the idle pause (for the wiki only, grill Q35).
 Done when: the plan holds a results table with the times and the answer.
 
+#### Phase 8 results
+
+Run on 2026-11-11 from devaloy-insta (Linux), whose route to the box's home DERP relay iad works (`derp27b.tailscale.com/derp/probe` 200, `tailscale ping` 4 to 8 ms via DERP(iad)). Each cycle: wait until `ssh dev@devaloy-upbox` reads `boot-status` ok and the node is online, wait 30 s more, SDK `pause()`, wait until `tailscale status` shows the node offline, then send one preview URL request (30 s timeout) and, at the same time, poll port 22 with `nc -z -w 2` and `ssh dev@devaloy-upbox true` (5 s connect timeout) every second. Times count from the preview request.
+
+| Cycle | Preview request | Port 22 open | `ssh dev@devaloy-upbox true` ok |
+|-------|-----------------|--------------|---------------------------------|
+| 1 | 503 at 5.4 s | 69.1 s | 68.2 s |
+| 2 | 503 at 5.9 s | 67.1 s | 67.1 s |
+| 3 | no response, timed out at 30.0 s | 42.0 s | 42.1 s |
+| Extra, not counted | no response, timed out at 30.0 s | 42.0 s | 42.2 s |
+
+The extra cycle paused the box about 15 s after the Phase 7 step 3 resume, before the node was back on the tailnet, so it is not a clean cycle. In every cycle the SDK status was `idle` again at the end. The time is spent in the first Tailscale control request after the resume, not in the resume itself; see finding 1 under Phase 7.
+
+Idle pause with an open tailnet SSH session: not answered. The test held `ssh dev@devaloy-upbox 'sleep 4800'` open from 21:16:07, with the Upstash SSH master closed, and `getStatus` gave `idle` at 5 minutes. The user stopped the test there, 2026-11-11, and will report from live use if an open session does not keep the box awake. The open question stays open.
+
 ### Phase 9: Tailscale on by default in the installer and the boot (built 2026-11-11)
 - `WITH_TAILSCALE` defaults to true in `scripts/install-upstash.sh` and `lib/steps/upstash-boot.sh`.
 - The `TS_AUTHKEY` prompt and the no-terminal fallback from the No `TS_AUTHKEY` row.
@@ -214,6 +247,19 @@ Attended: needs the laptop, a paused Upstash Box with Tailscale on, and the mapp
 2. Pause the box. Start `wtforward <alias>`: it connects and forwards a port.
 3. Pause the box. `devaloy fleet list` on devaloy-ovh shows it `paused`; `devaloy fleet status` wakes it and reports it up.
 Done when: steps 1 to 3 pass, and the step 1 time is written into the Part 2 Target line.
+
+#### Phase 13 results
+
+Run on 2026-11-11 with devaloy-insta (Linux) as the laptop, against box in-whale-20356 (devaloy-upbox). The real `~/.ssh/config` and `~/.config/devaloy/upstash-boxes` were not touched: a scratch SSH config had `Match exec "<repo>/config/bin/upwake %h"` at the top, and `UPWAKE_MAP` pointed at a scratch mapping file with the line `devaloy-upbox in-whale-20356`. Before each step the box was paused with the SDK and the node was offline in `tailscale status`.
+
+| Step | Result | Time | Evidence |
+|------|--------|------|----------|
+| 1, `ssh -F <cfg> dev@devaloy-upbox true` | PASS, exit 0 | 68.2 s | upwake stderr: `upwake: waking devaloy-upbox …`, then `upwake: devaloy-upbox is up after 66s`. |
+| 2, `wtforward devaloy-upbox` | PASS | connected 50 s after the start | upwake printed `is up after 46s`, then wtforward printed `connected to devaloy-upbox`. After `python3 -m http.server 10123 --bind 127.0.0.1` started on the box, wtforward printed `forward localhost:10123 -> devaloy-upbox:10123`, and `curl http://127.0.0.1:10123/` on devaloy-insta gave 200. When the server stopped, it printed `cancel localhost:10123`. wtforward exited on SIGTERM and removed its socket directory. |
+| 3, `DEVALOY_LIB=./lib ./devaloy fleet list` | PASS | 2.4 s | `devaloy-upbox  paused  -  upwake devaloy-upbox`. The SDK status was still `paused` after the command, so it sent no wake. |
+| 3, `DEVALOY_LIB=./lib ./devaloy fleet status` | PASS, exit 0 | 71.2 s | `fleet: waking devaloy-upbox`, upwake `is up after 66s`, then the status block for all three boxes and `devaloy-upbox: ok`. The box block shows `/workspace` with 7.0G free. |
+
+Test notes, not bugs in devaloy. OpenSSH reads `~/.ssh/config` from the passwd home, not from `$HOME`, so the step 2 run with `HOME` set to a scratch home also needed a one-line `ssh` wrapper on `PATH` that adds `-F "$HOME/.ssh/config"`; on a real laptop the line sits in the real config and needs no wrapper. For step 3, `config/bin` was first on `PATH`, and a second wrapper sent fleet's `accept-new` host key to a scratch `known_hosts`. In this run every wake took 42 to 69 s; finding 1 under Phase 7 shows where that time goes.
 
 ## Open questions
 
