@@ -466,6 +466,7 @@ upstash_boot() {
   step t3code
   step_t3code_config
   step_t3code_label
+  step_t3code_projects
   write_t3_pair
   if "${SERVE[@]}" t3 start 9>&-; then
     log "T3 Code server on :${T3CODE_PORT}, reached at"

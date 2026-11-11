@@ -29,6 +29,43 @@ step_t3code_config() {
   fi
 }
 
+# --- ~/projects as T3 Code projects ---
+# Each top-level directory in ~/projects becomes a T3 Code project, so a box
+# whose DEVALOY_REPOS clones land there opens with them listed. Hidden
+# directories are skipped. `t3 project add` writes the T3 database itself and
+# works with or without a running server.
+#
+# ~/.t3/devaloy-projects records every path this step has handled, one per
+# line. A recorded path is never added again, so a project removed in T3 stays
+# removed: `t3 project add` accepts a path whose project was removed. A path
+# T3 already holds (added by hand) fails with ProjectAlreadyExistsError, which
+# counts as done and is recorded. Any other failure logs a warning, is not
+# recorded, and is tried again on the next boot.
+step_t3code_projects() {
+  local dir="${DEV_HOME}/projects" record="${DEV_HOME}/.t3/devaloy-projects" path out
+  [ -d "${dir}" ] || return 0
+  if ! as_dev "mkdir -p $(sq "${DEV_HOME}/.t3") && touch $(sq "${record}")"; then
+    log "WARNING: could not write ${record}. T3 Code: ~/projects is not added"
+    log "WARNING: as projects until the next boot."
+    return 0
+  fi
+  for path in "${dir}"/*/; do
+    [ -d "${path}" ] || continue
+    path="${path%/}"
+    if grep -qxF -- "${path}" "${record}"; then
+      continue
+    fi
+    if out="$(as_dev "t3 project add $(sq "${path}")" 2>&1)"; then
+      log "T3 Code: added ~/projects/${path##*/} as a project"
+    elif ! printf '%s' "${out}" | grep -q 'ProjectAlreadyExistsError'; then
+      log "WARNING: T3 Code: could not add ~/projects/${path##*/} as a project."
+      log "WARNING: run 't3 project add ${path}' to see why. The next boot tries again."
+      continue
+    fi
+    as_dev "printf '%s\n' $(sq "${path}") >> $(sq "${record}")" || true
+  done
+}
+
 # --- the environment label ---
 # T3 Code names this box in its apps and in `t3 environment list` on the
 # other boxes. It reads PRETTY_HOSTNAME from /etc/machine-info first and falls

@@ -119,6 +119,7 @@ native_boot() {
       if [ -n "${T3CODE_IP}" ]; then
         step_t3code_config
         step_t3code_label
+        step_t3code_projects
         log "T3 Code server on http://${T3CODE_IP}:${T3CODE_PORT} — pair the first device"
         log "with the link in 'journalctl -u devaloy-t3code'. For the next one, run on"
         log "your laptop:"

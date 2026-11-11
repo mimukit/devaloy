@@ -219,6 +219,8 @@ At boot, devaloy links `~/.t3/worktrees` to `~/worktrees`, the same root Paseo u
 
 At boot, devaloy also writes `PRETTY_HOSTNAME="<TS_HOSTNAME>"` to `/etc/machine-info`. T3 Code reads that value as the environment label, so the apps and `t3 environment list` on other boxes show the tailnet name, not the provider's hostname. Other keys in the file stay. The server reads the label when it starts, so a change shows after `sudo systemctl restart devaloy-t3code` on a VM, or after the next container start.
 
+At boot, devaloy also adds each top-level directory in `~/projects` as a T3 Code project, with `t3 project add`. Hidden directories are skipped. This includes every repo that [`DEVALOY_REPOS`](reference.md#cloning-repos-on-boot) clones, so a new box opens with its repos listed. The boot records each path it handled in `~/.t3/devaloy-projects` and never adds a recorded path again. A project you remove in T3 stays removed. To have the boot add it again, delete its line from that file. A failed add logs one `WARNING` line, and the next boot tries again.
+
 All T3 Code state is in `~/.t3` on the `home` volume. A redeploy keeps it, and paired devices stay paired.
 
 ## Troubleshooting

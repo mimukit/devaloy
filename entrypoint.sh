@@ -334,6 +334,7 @@ if [ "${WITH_T3CODE:-false}" = "true" ]; then
       # labels the environment with TS_HOSTNAME.
       step_t3code_config
       step_t3code_label
+      step_t3code_projects
 
       (
         # -250, the same slot as the Paseo daemon and for the same reason: above

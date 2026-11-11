@@ -69,6 +69,8 @@ The step runs on every boot and is idempotent. A repo already cloned in `~/proje
 
 Failures never stop the box. An entry with an illegal character, an unrecognized form, a failed clone, or a name already taken by something that is not a clone logs one `[entrypoint] WARNING` line and the rest of the list continues. Two repos of the same name from different owners hit that last case: the second is skipped, and you clone it by hand under another name.
 
+When T3 Code is on, the boot then adds each directory in `~/projects` as a T3 Code project. See [What devaloy sets](connect-the-t3-code-apps.md#what-devaloy-sets-and-what-it-leaves-to-you).
+
 ### Push notifications
 
 Off entirely unless `NTFY_TOPIC` is set. Full behavior is in
