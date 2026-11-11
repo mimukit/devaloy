@@ -2,14 +2,16 @@
 # devaloy on an Upstash Box: the per-start work, run by the Upstash init
 # command and by scripts/install-upstash.sh.
 #
-# The Upstash twin of native-boot.sh. An Upstash Box has no systemd, only
-# /workspace survives a reset, and a pause kills every process but keeps the
-# filesystem. The init command runs once per container start (create, resume,
+# The Upstash twin of native-boot.sh. An Upstash Box has no systemd, and a
+# pause kills every process but keeps the filesystem. A reset wipes all of it,
+# /workspace included (Phase 7, box needed-tortoise-40254); only the init
+# command and the public URL survive, so after a reset the init command finds
+# no clone and the one-liner is the way back. The init command runs once per container start (create, resume,
 # snapshot restore), so this one script is the boot unit and the supervisor
 # both. In order:
 #
-#   1. converge the overlay: what lived outside /workspace and a reset threw
-#      away. The /opt/devaloy link to the clone, the box user's home and shell,
+#   1. converge the overlay: what lives outside /workspace, which a new
+#      container from a snapshot may not carry. The /opt/devaloy link to the clone, the box user's home and shell,
 #      the apt packages, zsh-completions, the devaloy CLI and build-flags.
 #      Every piece checks before it writes, so on a resume this costs a few
 #      dpkg queries and no download.
@@ -34,7 +36,7 @@
 # The log is /workspace/.devaloy/logs/boot.log; the one from the boot before
 # is boot.log.1. Runs as the box user and re-runs itself as root with
 # `sudo -n`. Lives on /workspace, not in /usr/local/lib/devaloy, because the
-# init command must find it after a reset.
+# init command must find it in a container whose overlay is new.
 set -euo pipefail
 
 # Files the boot writes must be readable by the box user, and a `docker exec`
@@ -161,11 +163,11 @@ export UPSTASH_BOX_ID UPSTASH_BOX_NAME
 # sets it, else the box's Upstash name.
 export TS_HOSTNAME="${TS_HOSTNAME:-${UPSTASH_BOX_NAME:-devaloy}}"
 # tailscaled's state sits on /workspace, so the node keeps its identity
-# through a reset. upstash-serve.sh starts it with the same directory.
+# through a pause and a snapshot restore. upstash-serve.sh starts it with the same directory.
 export TS_STATE_DIR="${UPSTASH_DIR}/tailscale"
 
 # The home. `move` (the default) sets the box user's passwd home to
-# /workspace/home, so every dotfile lands on the disk a reset keeps with no
+# /workspace/home, so every dotfile lands on the persistent disk with no
 # link list. `links` is the Home fallback from the plan: the passwd home stays
 # /home/boxuser, and a fixed list of names in it links into /workspace/home.
 UPSTASH_HOME_MODE="${UPSTASH_HOME_MODE:-move}"
@@ -244,7 +246,7 @@ overlay_apt() {
 
 # The passwd entry. usermod -d without -m only rewrites the entry: nothing
 # moves, and /home/boxuser keeps its Upstash links. /etc/passwd is on the
-# overlay, so a reset puts the old entry back and this runs again.
+# overlay, so a new container has the old entry and this runs again.
 overlay_user() {
   local home shell want_home d
   user_dir "${WORKSPACE_HOME}"
