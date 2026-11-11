@@ -44,7 +44,7 @@ down and `restart: unless-stopped` brings it back.
 
 On a native VM, `devaloy-boot.service` runs the same steps in the same order through `lib/steps/native-boot.sh`, and systemd starts `tailscaled`, `dockerd`, Paseo and T3 Code in place of the entrypoint. See [Install on a VM](install-on-a-vm.md).
 
-On an Upstash Box (`RUNTIME=upstash`) there is no systemd. The Upstash init command is the boot unit: it runs `lib/steps/upstash-boot.sh` on every container start, which reinstalls what a reset threw away, runs the same steps minus Docker and Paseo, and starts the T3 Code server loop through `lib/steps/upstash-serve.sh`. The env file `/workspace/.devaloy/env` uses the same parser as `/etc/devaloy/env`, from `lib/system/envfile.sh`. See [Install on an Upstash Box](install-on-an-upstash-box.md).
+On an Upstash Box (`RUNTIME=upstash`) there is no systemd. The Upstash init command is the boot unit: it runs `lib/steps/upstash-boot.sh` on every container start, which reinstalls what a reset threw away, runs the same steps minus Docker and Paseo, and starts the T3 Code server loop through `lib/steps/upstash-serve.sh`. The env file `/workspace/.devaloy/env` uses the same parser as `/etc/devaloy/env`, from `lib/system/envfile.sh`. Tailscale is on by default there, and since a paused box is off the tailnet, `config/bin/upwake` wakes it through the preview URL before `ssh` connects. See [Install on an Upstash Box](install-on-an-upstash-box.md).
 
 Three orderings in there matter more than they look.
 

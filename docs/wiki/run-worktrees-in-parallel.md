@@ -83,6 +83,8 @@ When a port is already in use on the laptop, for example by a local dev server o
 
 When the SSH connection drops, for example after the laptop sleeps, `wtforward` prints `the connection to devaloy-ovh closed` and exits. Start it again.
 
+An Upstash Box drops the connection when it pauses. With the `Match exec "upwake %h"` line in `~/.ssh/config`, starting `wtforward` again wakes the box first. See [Reach a paused box](install-on-an-upstash-box.md#reach-a-paused-box).
+
 ## Restart the dev server after `wtports` changes a port
 
 A dev server reads `.env.local` when it starts. The Cloudflare Vite plugin watches only `.env` and `.dev.vars` for changes, so a change to `.env.local` takes effect only after a restart. When `wtports` changes a block, it says to restart `pnpm dev`. When it prints `no change`, the running server is already current.

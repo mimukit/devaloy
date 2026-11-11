@@ -14,12 +14,22 @@ The repo is public, so nothing about your boxes is written into it. Each run rea
 
 | Command | What it does |
 |---|---|
-| `devaloy fleet` or `devaloy fleet list` | One row per box: name, `online` or `offline`, runtime (`container` or `native`), and the clone of `~/projects/devaloy` as branch and short commit. A `*` after the commit means uncommitted changes. |
+| `devaloy fleet` or `devaloy fleet list` | One row per box: name, `online`, `offline` or `paused`, runtime (`container` or `native`), and the clone of `~/projects/devaloy` as branch and short commit. A `*` after the commit means uncommitted changes. |
 | `devaloy fleet status` | Runs `devaloy status` on every online box at the same time. Prints each box's output as one block, every line prefixed `<box>:`, then one `ok` or `failed (exit N)` line per box. |
 | `devaloy fleet doctor` | The same for `devaloy doctor`. Exits `1` when any box fails. |
 | `devaloy fleet update [box...]` | Updates the named boxes, or every online box. One box at a time, the box you run it on last. Stops at the first failed step. |
 
 Offline boxes appear in `list` and are skipped by the other commands. An online box that SSH cannot reach shows `unreachable` in `list` and `failed (exit 255)` in `status`.
+
+## Paused Upstash Boxes
+
+An [Upstash Box](install-on-an-upstash-box.md) pauses when it is idle, and a paused box is off the tailnet. `devaloy fleet` tells it from an offline box by the `upwake` mapping file, `~/.config/devaloy/upstash-boxes`, on the box that runs `fleet`. An offline node whose name is in that file is `paused`. The box counts only with a `devaloy-` name, so set `TS_HOSTNAME` in its env file when the Upstash box name does not start with `devaloy-`. See [Reach a paused box](install-on-an-upstash-box.md#reach-a-paused-box) for the file and `upwake`.
+
+- `fleet list` never wakes a box. A paused box shows `paused`, and its last column shows the hint `upwake <name>`. Run that command to wake it by hand.
+- `fleet status`, `fleet doctor` and `fleet update` run `upwake` on every paused box first, all at the same time. Then they wait up to `DEVALOY_FLEET_WAKE_WAIT` seconds (default `30`) for Tailscale to show each woken box online.
+- A box that does not wake shows `failed (paused, did not wake; try: upwake <name>)` in `status` and `doctor`, and counts as a failure. `update` skips it and updates the others. A named box that does not wake is refused before any box changes.
+
+The mapping file must exist on the box that runs `fleet`, and `upwake` must be on its `PATH`. Every devaloy box has `upwake` in `~/.local/bin`. Without the file, a paused box reads as `offline` and nothing wakes it.
 
 From your laptop, run it through any box:
 
@@ -39,7 +49,7 @@ When the gate stops a box, its message names the fix: switch the clone to `main`
 
 The box you run `fleet update` on goes last because its update can replace the CLI, and the Claude Code or Codex binary of a session running there. Start a new agent session after it.
 
-A name that is not a `devaloy-*` box, or a box that is offline, is refused before any box changes.
+A name that is not a `devaloy-*` box, or a box that is offline or stays paused, is refused before any box changes.
 
 ## Keep notes outside the repo
 

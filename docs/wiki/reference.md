@@ -229,7 +229,7 @@ Every management verb belongs to one command, `devaloy`. The five older names ar
 | `devaloy status` | Disk on the home volume, memory and swap against the container's ceiling, the Paseo daemon, the T3 Code server, Docker, and the toolset revision. |
 | `devaloy doctor` | What this box was built with and what is working. Exits `1` only when a capability the image *was* built with is broken; absent by build flag exits `0`. Reads `/opt/devaloy/build-flags`, which the Dockerfile writes (the native installer on a VM). Prints `runtime: container` or `runtime: native` under the date, from `RUNTIME` in the environment, then `RUNTIME` in build-flags, then `container`. On native it checks the units in place of `docker info` and the process probes: `tailscaled.service`, `devaloy-boot.service` (a oneshot: ok after a successful run, an off row while it still runs), and `docker.service`, `devaloy-paseo.service` and `devaloy-t3code.service` when their `WITH_*` key in `/opt/devaloy/runtime-flags` is `true`. |
 | `devaloy health` | The Docker healthcheck's probe. Exits `0` when Tailscale's backend state is `Running` and, where the entrypoint starts dockerd (`WITH_DOCKER=true` in `/opt/devaloy/runtime-flags` and `/usr/bin/dockerd` present), `docker info` answers. Otherwise prints one line per failure to stderr and exits `1`. Each probe has a 5 second timeout. Unlike `doctor`, it ignores the toolchain, Paseo and T3 Code, because none of them decides whether you can get in. On native it checks `systemctl is-active tailscaled.service`, Tailscale's backend state, and `systemctl is-active docker.service` when `WITH_DOCKER=true` in runtime-flags. |
-| `devaloy fleet [list \| status \| doctor \| update [box...]]` | Runs the `devaloy` verbs on every Linux tailnet node whose Tailscale machine name starts with `devaloy-`. `list` shows each box's state, runtime and `~/projects/devaloy` clone. `status` and `doctor` run on every online box in parallel and print one prefixed block per box. `update` runs a clone gate (clean `main`, not ahead of `origin/main`, then a fast-forward), `devaloy update` and `devaloy health` on one box at a time, this box last, and stops at the first failure. Run as root, it switches to the dev user first. See [Manage the fleet](manage-the-fleet.md). |
+| `devaloy fleet [list \| status \| doctor \| update [box...]]` | Runs the `devaloy` verbs on every Linux tailnet node whose Tailscale machine name starts with `devaloy-`. `list` shows each box's state, runtime and `~/projects/devaloy` clone. `status` and `doctor` run on every online box in parallel and print one prefixed block per box. `update` runs a clone gate (clean `main`, not ahead of `origin/main`, then a fast-forward), `devaloy update` and `devaloy health` on one box at a time, this box last, and stops at the first failure. An offline box in the `upwake` mapping file shows `paused`; `status`, `doctor` and `update` run `upwake` on it first and wait up to `DEVALOY_FLEET_WAKE_WAIT` seconds (default `30`) for Tailscale to show it online. Run as root, it switches to the dev user first. See [Manage the fleet](manage-the-fleet.md). |
 | `devaloy update` (`devaloy-update`) | Re-runs the bootstrap with `--force`, refreshes the `/usr/local/bin` mirror, then runs `mise prune` to delete tool versions no tracked config still asks for. A failed prune warns and does not fail the update. Run as root, it switches to the dev user first. Takes `--config-only` (seed the config and stop) and `--no-config` (toolchain only). On native, unless `--no-config`, it first runs `sudo git -C /opt/devaloy pull --ff-only` and `sudo /opt/devaloy/scripts/install-native.sh --cli-only`; on a detached tag it skips the pull and says so. |
 | `bootstrap-toolchain.sh` | Seeds `config/mise/` into `~/.config/mise` and installs the toolchain, but **skips itself** if the home volume already records the hash of that config. |
 | `bootstrap-toolchain.sh --force` | Installs regardless, and additionally runs `mise upgrade` to re-resolve everything tracking `latest`. |
@@ -396,8 +396,8 @@ The three flags do not combine.
 |---|---|---|
 | `UPSTASH_BOX_API_KEY` | none | The Upstash API key for the SDK step. Asked for on `/dev/tty` when missing. Passed to one Node process only, never stored. With no key and no tty, the installer prints the two console steps. |
 | `DEVALOY_REF` | `main` | Branch or tag to clone to `/workspace/devaloy`. Put the same ref in the curl URL. |
-| `WITH_TAILSCALE` | `false` | Userspace `tailscaled` (`--tun=userspace-networking`) and Tailscale SSH, plus a same-uid `dev` user. |
-| `TS_AUTHKEY` | none | With `WITH_TAILSCALE=true`. Asked for on `/dev/tty` when the node has no saved state. |
+| `WITH_TAILSCALE` | `true` | Userspace `tailscaled` (`--tun=userspace-networking`) and Tailscale SSH, plus a same-uid `dev` user. `false` turns it off. A box installed before this default has `WITH_TAILSCALE="false"` in its env file and stays off until you remove the line or set it to `true`. |
+| `TS_AUTHKEY` | none | With `WITH_TAILSCALE=true`. Use a reusable, pre-approved, untagged key that is not ephemeral. Asked for on `/dev/tty` when the node never logged in. With no key, every boot leaves Tailscale off and logs a warning, and the env file keeps `WITH_TAILSCALE="true"`. |
 | `TS_HOSTNAME` | the box's `UPSTASH_BOX_NAME` | Node name on the tailnet and the T3 environment label. |
 | `WITH_BROWSER` | `false` | The packages in `config/apt/browser.txt`. |
 | `DEVALOY_SLIM` | `false` | Leave `neovim`, `tree-sitter`, `npm:wrangler`, `npm:cf` and `infisical` out of the toolset. Recorded in `runtime-flags`, read by `bootstrap-toolchain.sh`. |
@@ -414,6 +414,7 @@ The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE
 | `lib/steps/upstash-serve.sh` | `t3 [start\|stop\|restart]` and `tailscaled [start\|stop\|restart]`. Each runs a `setsid nohup` restart loop with a pidfile in `/workspace/.devaloy/run/`. `t3 serve` binds `0.0.0.0:3773` with the login environment of `native-serve.sh`. |
 | `~/.local/bin/t3-pair` | `t3 pair` with every printed link rewritten to `https://<box-id>-3773.preview.box.upstash.com`. Written by the boot. |
 | `scripts/upstash-lookalike.sh` | Test only: `start\|sync\|shell\|root\|stop` for a local container shaped like an Upstash Box. |
+| `upwake <host>` | `config/bin/upwake`, in `~/.local/bin` on every box; copy it to the laptop with `scp`. Runs from `Match exec "upwake %h"` at the top of `~/.ssh/config`. For a host in the mapping file whose port 22 does not answer, it requests `https://<box-id>-3773.preview.box.upstash.com/` and waits for port 22. Exits `0` when the host is not in the file or answers, `1` on a timeout, `2` on a bad argument or setting. Messages go to stderr. See [Reach a paused box](install-on-an-upstash-box.md#reach-a-paused-box). |
 
 | Path | What it is |
 |---|---|
@@ -423,6 +424,14 @@ The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE
 | `/workspace/.devaloy/boot-status` | `ok <time>` or `failed <step> <time>`. |
 | `/workspace/.devaloy/run/` | `t3.pid`, `tailscaled.pid` and `boot.lock`. |
 | `/workspace/.devaloy/tailscale/` | The Tailscale node state. |
+| `~/.config/devaloy/upstash-boxes` | The `upwake` mapping file, on the laptop and on every box that runs `devaloy fleet`. One `<tailnet-name> <box-id>` line per box, added by hand from the line the installer prints. `#` starts a comment. A host matches by its full name or its first DNS label. A missing file means no box. |
+
+| `upwake` variable | Default | Effect |
+|---|---|---|
+| `UPWAKE_MAP` | `~/.config/devaloy/upstash-boxes` | The mapping file. `devaloy fleet` reads the same variable. |
+| `UPWAKE_TIMEOUT` | `90` | Seconds to wait for port 22 after the wake request. |
+| `UPWAKE_PORT` | `22` | The port that must answer. |
+| `UPWAKE_URL_BASE` | `https://<box-id>-3773.preview.box.upstash.com` | Test only: the wake URL base, used as given. |
 
 ## Managed files
 

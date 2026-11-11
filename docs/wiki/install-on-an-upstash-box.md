@@ -61,7 +61,7 @@ The installer calls `sudo -n` itself for the root steps. It prints a numbered he
 3. The env file: it merges your variables into `/workspace/.devaloy/env`.
 4. The boot: it runs `lib/steps/upstash-boot.sh` in the foreground and streams its log. A cold toolchain install takes several minutes.
 5. The SDK step: it sets the init command and opens the public URL.
-6. Done: it prints the preview URL, the first pairing link and the next steps.
+6. Done: it prints the preview URL, the first pairing link, the two Tailscale lines for the machines that connect (see [Reach a paused box](#reach-a-paused-box)) and the next steps.
 
 The command exits 0 only after the boot succeeds. On a new `aarch64` Upstash Box with a `GITHUB_TOKEN`, the cold install took 58 s.
 
@@ -79,7 +79,7 @@ The env file holds these keys. Each one means what [Reference](reference.md#envi
 
 | Group | Keys | On an Upstash Box |
 |---|---|---|
-| Tailnet | `WITH_TAILSCALE`, `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_ACCEPT_DNS` | Tailscale is optional and off by default. `TS_HOSTNAME` defaults to the box's Upstash name (`UPSTASH_BOX_NAME`) and is also the T3 environment label. See [Optional Tailscale](#optional-tailscale). |
+| Tailnet | `WITH_TAILSCALE`, `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_ACCEPT_DNS` | Tailscale is on by default; `WITH_TAILSCALE="false"` turns it off. With no `TS_AUTHKEY` and a node that never logged in, the installer asks for a key. `TS_HOSTNAME` defaults to the box's Upstash name (`UPSTASH_BOX_NAME`) and is also the T3 environment label. See [Tailscale](#tailscale). |
 | GitHub and git | `GITHUB_TOKEN`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `DEVALOY_REPOS` | The boot clones `DEVALOY_REPOS` into `/workspace/home`. |
 | Agents and services | `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` | Written to `~/.devaloy_secrets` on every boot. A cleared value is gone after the next boot. |
 | Push notifications | `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN` | See [Push notifications](push-notifications.md). |
@@ -205,28 +205,104 @@ A box made from a snapshot gets `/workspace` but not the init command or the pub
 
 Re-running the one-liner does both steps in one command. Pair the phone again, because the preview URL carries the new box ID.
 
-## Optional Tailscale
+## Tailscale
 
-Tailscale gives the box a tailnet name for SSH and for `devaloy fleet`. The T3 apps do not need it. Turn it on with these keys:
+Tailscale gives the box a tailnet name, so `ssh dev@<name>`, `devaloy fleet` and `wtforward` reach it as they reach every other devaloy box. The T3 apps do not need it. It is on by default on this runtime.
+
+### The key
+
+Make a Tailscale auth key that is reusable, pre-approved, untagged and not ephemeral:
+
+- Reusable, because a new box or a box made from a snapshot logs in with the same key.
+- Pre-approved, because with device approval on, an unapproved node stays off the tailnet until you approve it in the admin console. That wait held up the first real box.
+- Untagged, because the tailnet policy rule from [step 3 of Getting started](getting-started.md#3-add-an-ssh-rule-to-your-tailnet-policy-file) uses `autogroup:self`, which matches your own devices and not tagged ones.
+- Not ephemeral, because Tailscale removes an ephemeral node when it goes offline, and the box goes offline on every pause.
+
+See [step 4 of Getting started](getting-started.md#4-set-an-auth-key) for where to make it. Put it in the env file before the first run:
 
 ```sh
-WITH_TAILSCALE="true"
 TS_AUTHKEY="tskey-auth-..."
 ```
 
-Then run the boot, or re-run the one-liner. With `WITH_TAILSCALE=true` and no key in the file, the installer asks for one on the terminal. Use a reusable, untagged key; see [step 4 of Getting started](getting-started.md#4-set-an-auth-key).
+### No key in the file
+
+When Tailscale is on, the file has no `TS_AUTHKEY`, and the node never logged in, the installer asks on the terminal:
+
+```
+  Tailscale auth key (tskey-auth-..., empty to leave Tailscale off):
+```
+
+The input does not echo, and the installer writes the key to the env file. With an empty answer or no terminal, the box installs with Tailscale off for that start and the installer prints a warning. The env file keeps `WITH_TAILSCALE="true"`, so you only add the key:
+
+1. Add this line to `/workspace/.devaloy/env`:
+   ```sh
+   TS_AUTHKEY="tskey-auth-..."
+   ```
+2. Run the boot:
+   ```sh
+   bash /workspace/devaloy/lib/steps/upstash-boot.sh
+   ```
+
+Until then every boot leaves Tailscale off, and `boot.log` says why. `devaloy doctor` shows the `tailscaled` row as a warning that names the missing key.
+
+### Turn it off
+
+Set this in the env file, then run the boot:
+
+```sh
+WITH_TAILSCALE="false"
+```
+
+The boot stops `tailscaled`, and the preview URL stays the way in. A box installed before Tailscale became the default has `WITH_TAILSCALE="false"` in its env file, because the installer wrote the old default out. That box stays off on a re-run. To turn Tailscale on there, remove that line or set it to `"true"`, add the key, and run the boot.
+
+### How it runs on the box
 
 The box has no `/dev/net/tun`, so `tailscaled` runs with `--tun=userspace-networking`. Its state is in `/workspace/.devaloy/tailscale`, so the node keeps its name through a pause. A reset wipes it, and the node joins as a new device. Tailscale SSH works in this mode.
 
-If your tailnet has device approval on, a new node waits in the admin console under **Machines** until you approve it, and the boot log says so. Approve it there and it joins by itself, with no new key. A pre-approved key skips the wait. The box blocks UDP, so tailnet traffic goes through a DERP relay; on the first real box that added about 230 ms.
+If your tailnet has device approval on and the key is not pre-approved, a new node waits in the admin console under **Machines** until you approve it, and the boot log says so. Approve it there and it joins by itself, with no new key. The box blocks UDP, so tailnet traffic goes through a DERP relay; on the first real box that added about 230 ms.
 
-The boot also adds a user `dev` with the same uid as `boxuser` and the home `/workspace/home`. The tailnet policy rule from [step 3 of Getting started](getting-started.md#3-add-an-ssh-rule-to-your-tailnet-policy-file) allows the user `dev`, so this works with no policy change:
+The boot also adds a user `dev` with the same uid as `boxuser` and the home `/workspace/home`. The tailnet policy rule from step 3 of Getting started allows the user `dev`, so this works with no policy change:
 
 ```sh
 ssh dev@<TS_HOSTNAME>
 ```
 
-A paused box is off the tailnet, and Tailscale traffic does not wake it. `devaloy fleet` shows a paused box as down. Set `WITH_TAILSCALE="false"` and run the boot to stop `tailscaled` again.
+### Reach a paused box
+
+A paused box runs no `tailscaled`, so it is off the tailnet, and tailnet traffic does not wake it. A request to its preview URL does. `upwake` sends that request before a connection needs the tailnet, and then waits until port 22 on the box answers.
+
+`upwake` finds the box id in a mapping file, `~/.config/devaloy/upstash-boxes`, with one `<tailnet-name> <box-id>` line per box. A line that starts with `#` is a comment. At the end of the install, the installer prints the line for its box and the SSH config line:
+
+```
+  Tailscale: put these two lines on the laptop and on every box that runs
+  devaloy fleet. Add this line to ~/.config/devaloy/upstash-boxes, so upwake
+  knows this box's id:
+    <tailnet-name> <box-id>
+  Put this line at the top of ~/.ssh/config, so ssh wakes a paused box first:
+    Match exec "upwake %h"
+```
+
+The installer prints these lines only when Tailscale is on and has a key. Do these steps on the laptop, and on every box that runs `devaloy fleet`:
+
+1. Add the line the installer printed to `~/.config/devaloy/upstash-boxes`. Make the directory first if it is missing:
+   ```sh
+   mkdir -p ~/.config/devaloy
+   ```
+2. On the laptop, install `upwake`. A devaloy box already has it in `~/.local/bin`.
+   ```sh
+   scp devaloy-ovh:projects/devaloy/config/bin/upwake ~/.local/bin/
+   chmod +x ~/.local/bin/upwake
+   ```
+3. Put this line at the top of `~/.ssh/config`, before every `Host` block:
+   ```
+   Match exec "upwake %h"
+   ```
+
+`ssh`, `scp`, `git` over SSH and `wtforward` all read the line. For a host that is not in the mapping file, such as GitHub, `upwake` reads the file and exits with no network request. A host matches a line by its full name or by its first DNS label, so `<tailnet-name>` and `<tailnet-name>.<tailnet>.ts.net` both match.
+
+When the box is paused, `upwake` prints `upwake: waking <name> …` on stderr, requests the preview URL, and waits up to 90 s for port 22. Then it prints `upwake: <name> is up after <N>s`, and ssh connects. The wake takes tens of seconds; Phase 8 of the plan measures it. When the box does not answer in time, `upwake` prints the preview URL to open in a browser, and ssh fails with its own error. `UPWAKE_TIMEOUT` sets the wait in seconds.
+
+A pause drops every open SSH session and `wtforward`. Connect again, and start `wtforward` again; the next connection wakes the box. `wtforward` runs `ssh -O check` every 2 s (`WTFORWARD_INTERVAL`), so each call also runs `upwake`. While the box is up, that costs one quick port check each time.
 
 ## Disk
 
@@ -240,7 +316,7 @@ A paused box is off the tailnet, and Tailscale traffic does not wake it. `devalo
 
 The `devaloy` CLI works as on any other box:
 
-- `devaloy doctor` checks `boot-status`, the T3 server on port 3773, the init command path, `tailscaled` when `WITH_TAILSCALE` is on, and the free space on `/workspace`. It has no systemd or Docker rows.
+- `devaloy doctor` checks `boot-status`, the T3 server on port 3773, the init command path, `tailscaled`, and the free space on `/workspace`. The `tailscaled` row is ok when the loop runs, off with `WITH_TAILSCALE="false"`, and a warning when Tailscale is on but has no `TS_AUTHKEY` to log in with. It has no systemd or Docker rows.
 - `devaloy status` shows the disk of `/workspace`.
 - `devaloy update` pulls `/workspace/devaloy`, reinstalls the CLI with `install-upstash.sh --cli-only`, updates the toolchain, and restarts the T3 server loop so a new `t3` takes over. The restart cancels running turns.
 
@@ -273,9 +349,9 @@ When a boot fails, read `boot-status` for the step, then `boot.log` for the erro
 - Docker. `WITH_DOCKER` is fixed to `false`.
 - Paseo. `WITH_PASEO` is fixed to `false`.
 - systemd. The init command and the two loops in `upstash-serve.sh` do its work.
-- Kernel-mode Tailscale. Only userspace networking, and only when you turn it on.
+- Kernel-mode Tailscale. Only userspace networking.
 - The host firewall lockdown. There is no `--lockdown` flag.
 - Other Upstash runtimes. Only the Node runtime.
 - Backups. Push to a remote, as on every devaloy box.
 
-_Written from the code on 2026-11-11 and checked in a look-alike container on `x86_64` (`scripts/upstash-lookalike.sh`). Not yet verified on a real Upstash Box._
+_Written from the code on 2026-11-11. On real Upstash Boxes on 2026-11-11, Phase 1 of plan 0016 checked the box itself, and Phase 7 steps 1 to 3 checked the install, the phone pairing, and a pause and resume. The Tailscale default, `upwake` and the fleet wake were checked only in a look-alike container on `x86_64` (`scripts/upstash-lookalike.sh`), and wait for Phases 8 and 13 of the plan on a real box._
