@@ -94,7 +94,7 @@ When it is there, it is a **real daemon inside this container**, not the host's.
 
 Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from this box's config. `skmi` installs or refreshes them all; `skup` only updates what is already installed, so a newly published skill needs `skmi`.
 
-One skill is the exception: `devaloy-clean` lives in the devaloy repo at `config/claude/skills/devaloy-clean/`, because it calls this box's CLI. `devaloy update --config-only` copies it into `~/.claude/skills/`.
+Two skills are the exception: `devaloy-clean` and `devaloy-fleet` live in the devaloy repo under `config/claude/skills/`, because they call this box's CLI. `devaloy update --config-only` copies them into `~/.claude/skills/`. Use `devaloy-fleet` for any work on more than one devaloy box.
 
 `verifykit`, and the browser checks in `qakit` and `afkkit`, depend on how this box was built. They drive a headless Chromium through `playwright-cli`, which the box has only when built with `WITH_BROWSER=true`. Check before assuming either way:
 
