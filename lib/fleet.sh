@@ -30,10 +30,22 @@
 # installs a feature branch, uncommitted edits, or commits that exist nowhere
 # else. A box with no clone updates from the image copy in /opt/devaloy.
 #
+# A PAUSED UPSTASH BOX is an offline node whose name is in the upwake mapping
+# file (${UPWAKE_MAP:-~/.config/devaloy/upstash-boxes}, one `<tailnet-name>
+# <box-id>` line per box). A paused box runs no tailscaled, so tailnet traffic
+# cannot wake it; only `upwake <name>` can, by a request to the preview URL.
+# `list` never wakes: it reads the mapping file, shows the box as `paused` with
+# the hint `upwake <name>`, and sends nothing over the network. `status`,
+# `doctor` and `update` run upwake on each paused box first, then read the
+# tailnet again. A box that does not wake is reported and the others go on.
+# An offline node that is not in the mapping file reads as before.
+#
 # DEVALOY_FLEET_STATUS_JSON=<file> reads a saved `tailscale status --json`
 # instead of asking tailscaled, for a test with fixture boxes.
 # DEVALOY_FLEET_CLONE=<dir> moves the clone the gate checks on THIS box only;
 # the far box always checks its own ~/projects/devaloy.
+# DEVALOY_FLEET_WAKE_WAIT=<seconds> (default 30) is how long fleet waits for
+# tailscale to report a box online after upwake said it answers.
 
 FLEET_PREFIX='devaloy-'
 FLEET_TIMEOUT="${DEVALOY_FLEET_TIMEOUT:-1800}"
@@ -89,6 +101,9 @@ if ! git -C "$c" merge --ff-only --quiet origin/main; then
 fi
 echo "gate: main is at $(git -C "$c" rev-parse --short HEAD), same as origin/main"'
 
+# fleet_map: the upwake mapping file, by the same path rule as upwake itself.
+fleet_map() { printf '%s\n' "${UPWAKE_MAP:-$HOME/.config/devaloy/upstash-boxes}"; }
+
 fleet_status_json() {
   if [ -n "${DEVALOY_FLEET_STATUS_JSON:-}" ]; then
     cat "${DEVALOY_FLEET_STATUS_JSON}"
@@ -98,9 +113,23 @@ fleet_status_json() {
     die "fleet: 'tailscale status --json' failed. Is tailscaled up?"
 }
 
-# fleet_boxes: one TSV row per box, sorted by name: name, ip, online|offline,
-# self|-. The self node is always online: this code runs on it.
+# fleet_boxes: one TSV row per box, sorted by name: name, ip,
+# online|offline|paused, self|-. The self node is always online: this code
+# runs on it. An offline node named in the mapping file reads `paused`; the
+# awk pass only reads that local file, so a missing file changes nothing.
 fleet_boxes() {
+  # The map is read in BEGIN, not as a second input file: with an empty or
+  # missing map, awk's NR == FNR test would match every row of stdin instead.
+  fleet_boxes_raw | awk -F '\t' -v OFS='\t' -v map="$(fleet_map)" '
+    BEGIN {
+      while ((getline line < map) > 0)
+        if (line !~ /^[[:space:]]*(#|$)/) { split(line, f, /[[:space:]]+/); m[f[1] == "" ? f[2] : f[1]] = 1 }
+    }
+    $3 == "offline" && ($1 in m) { $3 = "paused" }
+    { print }'
+}
+
+fleet_boxes_raw() {
   fleet_status_json | jq -r --arg p "${FLEET_PREFIX}" '
     [ (.Self + {IsSelf: true, Online: true}),
       ((.Peer // {}) | .[] | . + {IsSelf: false}) ]
@@ -154,10 +183,66 @@ fleet_list() {
       else
         runtime='?' clone='unreachable'
       fi
+    elif [ "${state}" = "paused" ]; then
+      clone="upwake ${name}"
     fi
     printf '%-24s %-8s %-10s %s\n' "${label}" "${state}" "${runtime}" "${clone}"
   done < <(fleet_boxes)
   rm -rf "${tmp}"
+}
+
+# fleet_wake [box...]: run `upwake` on every paused box, or only on the named
+# ones, all at the same time, since each call mostly waits on its own box.
+# Each call's stderr is buffered and printed as one prefixed block. Then wait
+# until tailscale reports each woken box online, because upwake only checks
+# port 22 and the status JSON can lag behind it. A box that stays paused is
+# left for the caller to report; this never fails the run.
+fleet_wake() {
+  local name ip state self arg want tmp waking=() woke=() n
+  while IFS=$'\t' read -r name ip state self; do
+    [ "${state}" = "paused" ] || continue
+    if [ "$#" -gt 0 ]; then
+      want=''
+      for arg in "$@"; do [ "${arg}" = "${name}" ] && want=1; done
+      [ -n "${want}" ] || continue
+    fi
+    waking+=("${name}")
+  done < <(fleet_boxes)
+  [ "${#waking[@]}" -gt 0 ] || return 0
+
+  if ! command -v upwake >/dev/null 2>&1; then
+    printf 'fleet: upwake is not on PATH, so %s stays paused. Copy config/bin/upwake to ~/.local/bin.\n' \
+      "${waking[*]}" >&2
+    return 0
+  fi
+
+  tmp="$(mktemp -d)"
+  for name in "${waking[@]}"; do
+    printf 'fleet: waking %s\n' "${name}" >&2
+    { upwake "${name}" >"${tmp}/${name}.out" 2>&1 && echo 0 >"${tmp}/${name}.rc" ||
+      echo $? >"${tmp}/${name}.rc"; } &
+  done
+  wait
+  for name in "${waking[@]}"; do
+    fleet_prefix "${name}" <"${tmp}/${name}.out" >&2
+    [ "$(cat "${tmp}/${name}.rc")" = 0 ] && woke+=("${name}")
+  done
+  rm -rf "${tmp}"
+
+  # Only a box upwake reached gets the wait, so a box that did not wake costs
+  # no more time here than upwake's own timeout.
+  [ "${#woke[@]}" -gt 0 ] || return 0
+  for ((n = 0; n < ${DEVALOY_FLEET_WAKE_WAIT:-30}; n += 2)); do
+    want=''
+    while IFS=$'\t' read -r name ip state self; do
+      [ "${state}" = "paused" ] || continue
+      for arg in "${woke[@]}"; do [ "${arg}" = "${name}" ] && want=1; done
+    done < <(fleet_boxes)
+    [ -n "${want}" ] || return 0
+    sleep 2
+  done
+  # The caller runs under set -e, so the loop's last test must not leak out.
+  return 0
 }
 
 # fleet_each <verb>: run `devaloy <verb>` on every online box in parallel.
@@ -165,6 +250,7 @@ fleet_list() {
 # lines from two boxes never mix.
 fleet_each() {
   local verb="$1" tmp name ip state self rc failed=0
+  fleet_wake
   tmp="$(mktemp -d)"
   while IFS=$'\t' read -r name ip state self; do
     [ "${state}" = "online" ] || continue
@@ -177,6 +263,11 @@ fleet_each() {
 
   local summary=()
   while IFS=$'\t' read -r name ip state self; do
+    if [ "${state}" = "paused" ]; then
+      summary+=("${name}: failed (paused, did not wake; try: upwake ${name})")
+      failed=$((failed + 1))
+      continue
+    fi
     if [ "${state}" != "online" ]; then
       summary+=("${name}: skipped (offline)")
       continue
@@ -215,6 +306,8 @@ fleet_update() {
   local boxes=() remote=() local_box=''
   local row
 
+  # Wake first, so the named-box check below sees a woken box as online.
+  fleet_wake "$@"
   mapfile -t boxes < <(fleet_boxes)
   [ "${#boxes[@]}" -gt 0 ] ||
     die "fleet: no tailnet node has a name that starts with ${FLEET_PREFIX}"
@@ -228,6 +321,8 @@ fleet_update() {
       [ "${name}" = "${arg}" ] && found="${state}"
     done
     [ -n "${found}" ] || die "fleet update: ${arg} is not a ${FLEET_PREFIX}* box on the tailnet. See 'devaloy fleet list'."
+    [ "${found}" != "paused" ] ||
+      die "fleet update: ${arg} is paused and did not wake. Try: upwake ${arg}"
     [ "${found}" = "online" ] || die "fleet update: ${arg} is offline."
   done
 
@@ -237,6 +332,10 @@ fleet_update() {
       found=''
       for arg in "$@"; do [ "${arg}" = "${name}" ] && found=1; done
       [ -n "${found}" ] || continue
+    fi
+    if [ "${state}" = "paused" ]; then
+      echo "fleet update: ${name} skipped (paused, did not wake; try: upwake ${name})"
+      continue
     fi
     if [ "${state}" != "online" ]; then
       echo "fleet update: ${name} skipped (offline)"
