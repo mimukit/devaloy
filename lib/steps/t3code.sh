@@ -28,3 +28,30 @@ step_t3code_config() {
     log "WARNING: keeps its worktrees under ~/.t3 until the next boot."
   fi
 }
+
+# --- the environment label ---
+# T3 Code names this box in its apps and in `t3 environment list` on the
+# other boxes. It reads PRETTY_HOSTNAME from /etc/machine-info first and falls
+# back to the system hostname, which on a VM is the provider's name (for
+# example instabox-devaloy-insta). The tailnet name is the one the human uses,
+# so the label is set to TS_HOSTNAME. The file is written directly, not with
+# `hostnamectl --pretty`, because the container runs no systemd-hostnamed.
+# Other keys in the file are kept. The container loses /etc on a rebuild, so
+# this runs on every boot. The server reads the label when it starts, so this
+# runs before the server.
+step_t3code_label() {
+  local label="${TS_HOSTNAME:-devaloy}" file=/etc/machine-info tmp
+  if [ -f "${file}" ] && grep -qx "PRETTY_HOSTNAME=\"${label}\"" "${file}"; then
+    return 0
+  fi
+  tmp="$(mktemp)"
+  if { if [ -f "${file}" ]; then grep -v '^PRETTY_HOSTNAME=' "${file}" || true; fi
+       printf 'PRETTY_HOSTNAME="%s"\n' "${label}"; } > "${tmp}" \
+      && install -m 0644 "${tmp}" "${file}"; then
+    log "T3 Code: the environment label is now ${label}"
+  else
+    log "WARNING: could not write ${file}. T3 Code labels this box with its"
+    log "WARNING: hostname until the next boot."
+  fi
+  rm -f "${tmp}"
+}

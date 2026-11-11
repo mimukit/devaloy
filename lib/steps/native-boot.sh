@@ -118,6 +118,7 @@ native_boot() {
       T3CODE_IP="$(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1 || true)"
       if [ -n "${T3CODE_IP}" ]; then
         step_t3code_config
+        step_t3code_label
         log "T3 Code server on http://${T3CODE_IP}:${T3CODE_PORT} — pair the first device"
         log "with the link in 'journalctl -u devaloy-t3code'. For the next one, run on"
         log "your laptop:"

@@ -122,7 +122,7 @@ Off by default. See [Connect the T3 Code apps](connect-the-t3-code-apps.md).
 
 | Variable | Default | Effect |
 |---|---|---|
-| `WITH_T3CODE` | `false` | Installs the `t3` CLI through mise (`config/mise/optional/t3code.toml`), links `~/.t3/worktrees` to `~/worktrees`, and starts `t3 serve` on `<tailnet-ip>:3773`. A **runtime** variable: `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the server on the next boot, and the next `devaloy update` removes the CLI. |
+| `WITH_T3CODE` | `false` | Installs the `t3` CLI through mise (`config/mise/optional/t3code.toml`), links `~/.t3/worktrees` to `~/worktrees`, labels the environment with `TS_HOSTNAME` through `/etc/machine-info`, and starts `t3 serve` on `<tailnet-ip>:3773`. A **runtime** variable: `docker compose up -d` picks up a change with no `--build`. Setting it back to `false` stops the server on the next boot, and the next `devaloy update` removes the CLI. |
 
 The server runs with `T3CODE_TELEMETRY_ENABLED=false` and `T3CODE_SERVER_BROWSER_SANDBOX=0`. devaloy writes no T3 Code settings; `~/.t3/userdata/settings.json` belongs to the apps. There is no pin variable, for the same reason as Paseo: edit `config/mise/optional/t3code.toml` to hold a version.
 

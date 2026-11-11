@@ -330,8 +330,10 @@ if [ "${WITH_T3CODE:-false}" = "true" ]; then
   if as_dev "command -v t3 >/dev/null 2>&1"; then
     T3CODE_IP="$(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1 || true)"
     if [ -n "${T3CODE_IP}" ]; then
-      # Links ~/.t3/worktrees to ~/worktrees, the root Paseo uses too.
+      # Links ~/.t3/worktrees to ~/worktrees, the root Paseo uses too, and
+      # labels the environment with TS_HOSTNAME.
       step_t3code_config
+      step_t3code_label
 
       (
         # -250, the same slot as the Paseo daemon and for the same reason: above

@@ -217,6 +217,8 @@ Everything else is in `~/.t3/userdata/settings.json`, which the apps own. devalo
 
 At boot, devaloy links `~/.t3/worktrees` to `~/worktrees`, the same root Paseo uses. If `~/.t3/worktrees` is already a real directory, the boot leaves it alone and logs one line. Both tools write into the same folder, so two worktrees with the same name collide.
 
+At boot, devaloy also writes `PRETTY_HOSTNAME="<TS_HOSTNAME>"` to `/etc/machine-info`. T3 Code reads that value as the environment label, so the apps and `t3 environment list` on other boxes show the tailnet name, not the provider's hostname. Other keys in the file stay. The server reads the label when it starts, so a change shows after `sudo systemctl restart devaloy-t3code` on a VM, or after the next container start.
+
 All T3 Code state is in `~/.t3` on the `home` volume. A redeploy keeps it, and paired devices stay paired.
 
 ## Troubleshooting
