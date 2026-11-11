@@ -17,6 +17,7 @@ it when it stops answering.
 - [Install on a VM](install-on-a-vm.md): run devaloy straight on a fresh Ubuntu 24.04 or Debian 13 VM with one command, no Docker.
 - [Manage the box with `devaloy`](manage-the-box.md) — one command for the
   status screen, the reclaims, the toolchain update and `doctor`.
+- [Manage the fleet with `devaloy fleet`](manage-the-fleet.md): list, check and update every `devaloy-*` box on the tailnet from one box.
 - [Deploy with Dokploy](deploy-with-dokploy.md) — running the stack as a Dokploy
   Compose service instead of by hand.
 - [Size the container resource limits](vm-resource-limits.md) — the six

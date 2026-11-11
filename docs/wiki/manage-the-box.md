@@ -108,6 +108,7 @@ DEVALOY_LIB=./lib ./devaloy status
 
 ## See also
 
+- [Manage the fleet with `devaloy fleet`](manage-the-fleet.md) — the same verbs on every `devaloy-*` box at once.
 - [Size the container resource limits](vm-resource-limits.md) — the ceilings the RAM view reports against.
 - [Update the toolchain](update-the-toolchain.md) — what `devaloy update` re-resolves.
 - [Run a project stack on devaloy](run-a-project-stack.md) — the Docker daemon the prune view reclaims from.
