@@ -90,7 +90,7 @@ Done when: after `devaloy update --config-only`, `~/.claude/skills/devaloy-fleet
 
 Done when: every read-only command in the new page runs as written on `devaloy-ovh`.
 
-### Phase 6: live update check
+### Phase 6: live update check (built 2026-11-11)
 
 Attended: the owner approves the first live `devaloy fleet update devaloy-insta`.
 
