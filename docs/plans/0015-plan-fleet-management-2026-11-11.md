@@ -4,7 +4,7 @@ Grilled: 2026-11-11
 
 ## Context
 
-The owner runs devaloy on two boxes today, `devaloy-ovh` (container) and `devaloy-insta` (container). More boxes will follow. Each box has the `devaloy` CLI, but nothing runs a verb on all boxes, and no list of boxes exists. An agent such as Claude Code must find the boxes, check them, and update them from this repo.
+The owner runs devaloy on two boxes today, `devaloy-ovh` (container) and `devaloy-insta` (native, found at build time). More boxes will follow. Each box has the `devaloy` CLI, but nothing runs a verb on all boxes, and no list of boxes exists. An agent such as Claude Code must find the boxes, check them, and update them from this repo.
 
 The repo is public. It must hold no tailnet domain, no `100.x` address, no key, and no per-box note.
 
@@ -51,7 +51,7 @@ Reuse:
 
 Rejected: Ansible with a committed inventory. Two boxes do not need it, the `devaloy` CLI already does the per-box work, and an inventory exposes addresses. Rejected: a gitignored `hosts` file in the repo. `git add -A` or a fresh clone can lose or leak it, and Tailscale already holds the same data. Rejected: Tailscale tags, see the decision above.
 
-### Phase 1: discovery and `fleet list`
+### Phase 1: discovery and `fleet list` (built 2026-11-11)
 
 - Add `shellcheck` to `config/mise/config.toml` and install it with `devaloy update`.
 - Add `lib/fleet.sh` with `fleet_boxes`: read the status JSON (or the fixture), apply the filter, and print one TSV row per box: name, IP, online, self.
@@ -60,14 +60,14 @@ Rejected: Ansible with a committed inventory. Two boxes do not need it, the `dev
 
 Done when: on `devaloy-ovh`, `devaloy fleet list` prints `devaloy-ovh` (marked self) and `devaloy-insta` with runtime `container` and a clone column, and does not print `beszel-ovh`, `brainaloy-ovh` or `mukit-macbook-air`. A fixture with an offline `devaloy-old` node shows it as offline. `shellcheck lib/fleet.sh devaloy` exits 0.
 
-### Phase 2: `fleet status` and `fleet doctor`
+### Phase 2: `fleet status` and `fleet doctor` (built 2026-11-11)
 
 - Run the verb on every online box in parallel, buffered per box, printed in name order with the `<box>:` prefix.
 - Print a one-line summary per box at the end: ok or failed, with the exit code.
 
 Done when: `devaloy fleet status` prints the status block of both boxes, one whole block per box, and exits 0. With a fixture entry that points to an unused address, the command reports that box as failed within 15 seconds and exits non-zero.
 
-### Phase 3: `fleet update`
+### Phase 3: `fleet update` (built 2026-11-11)
 
 - Order the boxes: remote boxes by name, the local box last.
 - On each box, run the clone gate, then `devaloy update`, then `devaloy health`. Stop at the first non-zero exit and print the box and the step.
@@ -75,7 +75,7 @@ Done when: `devaloy fleet status` prints the status block of both boxes, one who
 
 Done when: with fixtures only, `devaloy fleet update devaloy-nope` is refused, and a fixture box with an unused address stops the run before the next box and exits non-zero. The gate function, run against a scratch clone in the session scratchpad, stops with the message the decision table names for each of three states: a dirty tree, a feature branch, and a commit ahead of `origin/main`. On a clean `main` that matches `origin/main`, it passes. No check runs `devaloy update`.
 
-### Phase 4: notes file and the `devaloy-fleet` skill
+### Phase 4: notes file and the `devaloy-fleet` skill (built 2026-11-11)
 
 - Add `config/devaloy/fleet.example.md` with fake boxes (`devaloy-example-a`, `devaloy-example-b`) and the fields the owner keeps.
 - Write `config/claude/skills/devaloy-fleet/SKILL.md`. Steps: run `devaloy fleet list`; read `~/.config/devaloy/fleet.md` when it exists; run `fleet status` and `fleet doctor` before a change; ask the human before `fleet update` or any delete; update one box, read its health, then go on; after the local box updates, ask the human to restart the agent session.
@@ -83,7 +83,7 @@ Done when: with fixtures only, `devaloy fleet update devaloy-nope` is refused, a
 
 Done when: after `devaloy update --config-only`, `~/.claude/skills/devaloy-fleet/SKILL.md` exists, and `git grep -nE 'ts\.net|100\.[0-9]+\.[0-9]+\.[0-9]+'` finds no new match.
 
-### Phase 5: documentation
+### Phase 5: documentation (built 2026-11-11)
 
 - Add `docs/wiki/manage-the-fleet.md`: the naming rule, the commands, the clone gate, the notes file, and how to run it from the Mac (`ssh devaloy-ovh devaloy fleet status`).
 - Link it from `docs/wiki/index.md` and `docs/wiki/manage-the-box.md`. Add the verb to `docs/wiki/reference.md`.
