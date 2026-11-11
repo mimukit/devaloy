@@ -231,10 +231,26 @@ inst_preflight() {
   # On a real box /workspace is root:root 0711 and the box user owns only
   # /workspace/home, so the two devaloy dirs are made by root for the user.
   [ -d /workspace ] || die "/workspace is missing."
+
+  # The boot needs a root that can chown, own files and write past modes:
+  # install -o, usermod, dpkg. After a reset in Phase 7, the box ran with
+  # every capability dropped but SETUID, SETGID and AUDIT_WRITE (CapEff
+  # 00000000200000c0), and sudo could not chown anything. Name that here,
+  # before anything is written, not as a half-made directory.
+  local cap
+  cap="$(sudo -n sed -n 's/^CapEff:[[:space:]]*//p' /proc/self/status 2>/dev/null || true)"
+  if [ -n "${cap}" ] && [ $(( 0x${cap} & 0x9 )) -ne 9 ]; then
+    die "root on this box cannot chown (CapEff ${cap}). Upstash dropped the root capabilities, which happened after a console reset. Create a new box; devaloy cannot install on this one."
+  fi
+
   local d
   for d in "${DEVALOY_DIR}" "${UPSTASH_DIR}"; do
-    [ -d "${d}" ] || sudo -n install -d -o "$(id -un)" -g "$(id -gn)" -m 755 "${d}" ||
+    if [ ! -d "${d}" ] && ! sudo -n install -d -o "$(id -un)" -g "$(id -gn)" -m 755 "${d}"; then
+      # install -d makes the directory before it fails the chown, and a
+      # root-owned leftover would make the next run skip this and fail later.
+      sudo -n rmdir "${d}" 2>/dev/null || true
       die "Could not create ${d}."
+    fi
     [ -w "${d}" ] || die "${d} is not writable by $(id -un)."
   done
   ok "/workspace/devaloy and /workspace/.devaloy writable"
@@ -414,6 +430,10 @@ broke and ${UPSTASH_DIR}/boot-status for its name. Fix it, then run
 # in /workspace. The calls are idempotent: the same init command and the same
 # port give the same result on a second run.
 SDK_URL=""
+# 1 when a key was given and the SDK step still failed; inst_done then
+# exits non-zero, because the box has no init command and stays down after
+# its first pause.
+SDK_FAILED=0
 SDK_SCRIPT='
 import { Box } from "@upstash/box";
 const box = await Box.get(process.env.UPSTASH_BOX_ID);
@@ -444,7 +464,7 @@ EOF
 
 inst_sdk() {
   head_ "5. Upstash init command and public URL"
-  local key="${UPSTASH_BOX_API_KEY:-}" tmp out rc=0
+  local key="${UPSTASH_BOX_API_KEY:-}" tmp out rc=0 home
   if [ -z "${key}" ] && ( exec </dev/tty ) 2>/dev/null; then
     printf '  Upstash API key (empty to skip): ' >/dev/tty
     IFS= read -r -s key </dev/tty || true
@@ -458,16 +478,26 @@ inst_sdk() {
   { command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; } ||
     die "node and npm are not on PATH; the SDK step needs them."
 
+  # The boot has just moved the passwd home to /workspace/home, and
+  # link-shims has pointed /usr/local/bin/npm at the mise shim. This shell
+  # still has the old HOME, where mise finds no config, so the shim fails
+  # with "No version is set for shim: npm". The new home makes it resolve.
+  # Found on the first real one-liner run, which --sdk-only in a new SSH
+  # session had hidden.
+  home="$(getent passwd "$(id -un)" | cut -d: -f6)"
   tmp="$(mktemp -d)"
-  if ! (cd "${tmp}" && printf '{"type":"module","private":true}\n' > package.json &&
-        npm install --silent --no-audit --no-fund --no-save "${UPSTASH_BOX_SDK}" </dev/null >/dev/null 2>&1); then
+  if ! out="$(cd "${tmp}" && printf '{"type":"module","private":true}\n' > package.json &&
+        HOME="${home}" npm install --silent --no-audit --no-fund --no-save "${UPSTASH_BOX_SDK}" </dev/null 2>&1)"; then
     rm -rf "${tmp}"
+    printf '%s\n' "${out}" | tail -5 | sed 's/^/    /'
     warn "npm install ${UPSTASH_BOX_SDK} failed"
+    SDK_FAILED=1
     console_steps
     return 0
   fi
+  out=""
   printf '%s' "${SDK_SCRIPT}" > "${tmp}/sdk.mjs"
-  out="$(cd "${tmp}" && UPSTASH_BOX_API_KEY="${key}" UPSTASH_DISABLE_TELEMETRY=1 \
+  out="$(cd "${tmp}" && HOME="${home}" UPSTASH_BOX_API_KEY="${key}" UPSTASH_DISABLE_TELEMETRY=1 \
     DEVALOY_BOOT_CMD="${BOOT_CMD}" DEVALOY_T3_PORT="${T3CODE_PORT}" \
     node sdk.mjs </dev/null 2>&1)" || rc=$?
   key=""
@@ -476,6 +506,7 @@ inst_sdk() {
     # The SDK's own error, which names the HTTP status. It never holds the key.
     printf '%s\n' "${out}" | tail -5 | sed 's/^/    /'
     warn "the SDK call failed"
+    SDK_FAILED=1
     console_steps
     return 0
   fi
@@ -510,16 +541,24 @@ inst_done() {
   else
     warn "no pairing link yet; run t3-pair on the box once the server is up"
   fi
+  echo
+  echo "  Next steps:"
+  echo "    - Codex: sign in once on the box with 'codex login --device-auth'."
+  if [ -z "${VAL[CLAUDE_CODE_OAUTH_TOKEN]:-}" ]; then
+    echo "    - Claude Code: set CLAUDE_CODE_OAUTH_TOKEN in ${ENV_FILE} (or pass it to"
+    echo "      this installer) and run the boot again."
+  fi
   cat <<EOF
-
-  Next steps:
-    - Codex: sign in once on the box with 'codex login --device-auth'.
-    - Claude Code: set CLAUDE_CODE_OAUTH_TOKEN in ${ENV_FILE} (or pass it to
-      this installer) and run the boot again.
     - T3 Code titles thread names with a provider; pick one in the app's
       settings once Claude or Codex is signed in.
     - A second device: run t3-pair on the box for a new link.
 EOF
+  if [ "${SDK_FAILED}" -eq 1 ]; then
+    echo
+    warn "devaloy runs, but the init command is not set, so the box stays down"
+    warn "after its first pause. Fix the error above, then run: install-upstash.sh --sdk-only"
+    exit 1
+  fi
   echo "devaloy is up on Upstash Box ${UPSTASH_BOX_ID}."
 }
 
@@ -549,7 +588,7 @@ main() {
     [ -n "${UPSTASH_BOX_ID:-}" ] || die "UPSTASH_BOX_ID is not set. Run this on the Upstash Box."
     [ -f "${BOOT}" ] || die "${BOOT} is missing. Run the full installer first."
     inst_sdk
-    exit 0
+    exit "${SDK_FAILED}"
   fi
 
   inst_preflight
