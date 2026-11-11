@@ -209,14 +209,22 @@ rows_ram() {
 
 ram_report_memory() { # ram_report_memory <when>
   local cur max swap swapmax
-  cur="$(read_cg memory.current)"
-  max="$(read_cg memory.max)"
-  swap="$(read_cg memory.swap.current)"
-  swapmax="$(read_cg memory.swap.max)"
+  cur="$(mem_used)"
+  max="$(mem_total)"
+  swap="$(swap_used)"
+  swapmax="$(swap_total)"
 
-  echo "devaloy ram: container memory $1"
+  if on_native; then
+    echo "devaloy ram: VM memory $1"
+  else
+    echo "devaloy ram: container memory $1"
+  fi
   if [ -z "${cur}" ]; then
-    echo "  (no cgroup v2 accounting readable — is this cgroup v1?)"
+    if on_native; then
+      echo "  (/proc/meminfo not readable)"
+    else
+      echo "  (no cgroup v2 accounting readable — is this cgroup v1?)"
+    fi
     return
   fi
   echo "  RAM  $(human "${cur}") of $(human "${max}")"

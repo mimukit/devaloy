@@ -23,10 +23,14 @@ status_disk_line() {
 
 status_ram_line() {
   local cur max pct
-  cur="$(read_cg memory.current)"
-  max="$(read_cg memory.max)"
+  cur="$(mem_used)"
+  max="$(mem_total)"
   if [ -z "${cur}" ]; then
-    printf 'no cgroup v2 accounting readable'
+    if on_native; then
+      printf '/proc/meminfo not readable'
+    else
+      printf 'no cgroup v2 accounting readable'
+    fi
     return
   fi
   pct="$(mem_percent)"
@@ -41,9 +45,11 @@ status_ram_line() {
 
 status_swap_line() {
   local swap swapmax
-  swap="$(read_cg memory.swap.current)"
-  swapmax="$(read_cg memory.swap.max)"
+  swap="$(swap_used)"
+  swapmax="$(swap_total)"
   [ -n "${swap}" ] || { printf 'not readable'; return; }
+  # A VM with no swap file reports a total of 0, which reads better as words.
+  [ "${swapmax}" = "0" ] && { printf 'no swap'; return; }
   printf '%s of %s' "$(human "${swap}")" "$(human "${swapmax}")"
 }
 
@@ -103,7 +109,7 @@ status_docker_line() {
 rows_status() {
   emit_head "$(box_name)" "read at $(now_stamp)"
   emit_row '💾' 'disk (home volume)' "$(status_disk_line)" disk
-  emit_row '🧠' 'ram (cgroup)' "$(status_ram_line)" ram
+  emit_row '🧠' 'ram' "$(status_ram_line)" ram
   emit_row '💤' 'swap' "$(status_swap_line)" ram
   emit_row '🪟' 'paseo daemon' "$(status_paseo_line)" ram
   emit_row '🧵' 't3 server' "$(status_t3_line)" ram

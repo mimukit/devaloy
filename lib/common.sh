@@ -128,13 +128,70 @@ human() { # human <bytes>
   printf '%s MiB' "$((b / 1024 / 1024))"
 }
 
+# --- the memory reading ---------------------------------------------------
+#
+# The cgroup files above are right only in a container, where /sys/fs/cgroup is
+# the container's own cgroup. On a native VM it is the root cgroup, and the
+# kernel creates no memory.* files there. The VM is the whole machine, so
+# /proc/meminfo is the right source: used is MemTotal - MemAvailable, the same
+# figure `free` prints. Each helper prints bytes, or nothing when the value is
+# not readable or (in a container) no limit is set.
+
+meminfo_kb() { # meminfo_kb <field>
+  sed -n "s/^$1: *\([0-9]*\) kB\$/\1/p" /proc/meminfo 2>/dev/null | head -1
+}
+
+mem_used() {
+  if on_native; then
+    local t a
+    t="$(meminfo_kb MemTotal)"
+    a="$(meminfo_kb MemAvailable)"
+    [ -n "${t}" ] && [ -n "${a}" ] || return 0
+    printf '%s' "$(((t - a) * 1024))"
+  else
+    read_cg memory.current
+  fi
+}
+
+mem_total() {
+  if on_native; then
+    local t
+    t="$(meminfo_kb MemTotal)"
+    [ -n "${t}" ] && printf '%s' "$((t * 1024))"
+  else
+    read_cg memory.max
+  fi
+}
+
+swap_used() {
+  if on_native; then
+    local t f
+    t="$(meminfo_kb SwapTotal)"
+    f="$(meminfo_kb SwapFree)"
+    [ -n "${t}" ] && [ -n "${f}" ] || return 0
+    printf '%s' "$(((t - f) * 1024))"
+  else
+    read_cg memory.swap.current
+  fi
+}
+
+swap_total() {
+  if on_native; then
+    local t
+    t="$(meminfo_kb SwapTotal)"
+    [ -n "${t}" ] && printf '%s' "$((t * 1024))"
+  else
+    read_cg memory.swap.max
+  fi
+}
+
 mem_percent() {
   # Prints the percentage of the ceiling in use, or nothing when no mem_limit
   # is set. Callers decide what to say about an empty answer.
   local cur max
-  cur="$(read_cg memory.current)"
-  max="$(read_cg memory.max)"
-  [ -n "${cur}" ] && [ -n "${max}" ] || return 0
+  cur="$(mem_used)"
+  max="$(mem_total)"
+  [ -n "${cur}" ] && [ -n "${max}" ] && [ "${max}" -gt 0 ] || return 0
   printf '%s' "$((cur * 100 / max))"
 }
 
