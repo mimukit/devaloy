@@ -1,5 +1,7 @@
 # Plan: devaloy on an Upstash Box
 
+Grilled: 2026-11-11
+
 ## Context
 
 An Upstash Box is a cheap, pausable container that Upstash hosts. It can be a T3 Code remote environment that the phone reaches with no VPS to run. On one box (smiling-molly-74011, 2026-11-11) a hand setup works: `t3` from npm in `/workspace/home/.local`, a `t3-start` script that the Upstash init command runs, a public preview URL for port 3773, and a `t3-pair` helper that prints the preview pairing link. Pause and resume through the SDK bring the server back.
@@ -151,11 +153,73 @@ Attended: the user creates a new free Upstash Box, enters the API key through `r
 
 Done when: steps 1, 2, 3 and 5 pass on a new box, and the cold install time and the resume-to-200 time are written into the Target line of Context. The first request after a resume may return a short 502; the wiki states the measured wait (grill Q12).
 
+## Part 2: Tailscale by default, with a wake step (added 2026-11-11)
+
+### Context
+
+Every other devaloy box is reached over Tailscale: `ssh dev@<name>`, `devaloy fleet`, and `wtforward` on the laptop, which picks an SSH host alias from `~/.ssh/config` and holds one ControlMaster connection to it. Part 1 made Tailscale optional on an Upstash Box because a paused box runs no `tailscaled` and tailnet traffic cannot wake it (Phase 1: ping and curl to the tailnet IP got nothing, and the SDK status stayed `paused`). Only a request to the preview URL or the SDK's `resume()` wakes it. The user wants Tailscale as the default anyway, so every tool works the same on every box, with a wake step that runs before a client needs the tailnet.
+
+Goal: `ssh dev@<name>`, `wtforward <alias>` and `devaloy fleet status` reach an Upstash Box that has paused, with no manual wake.
+
+Target: open, no baseline beyond Phase 1b (tailnet 200 at 45 s after a resume, which included a device-approval wait that is now fixed). Phase 8 measures the time from a wake request to a tailnet SSH login, and Phase 13 the time from `ssh` on a paused box to a shell prompt.
+
+### Design decisions (settled)
+
+| Decision | Resolution |
+|----------|-----------|
+| Tailscale default | On. `WITH_TAILSCALE` defaults to true on this runtime; `WITH_TAILSCALE="false"` turns it off. User pick, 2026-11-11. |
+| Wake mechanism | A request to the preview URL `https://<box-id>-3773.preview.box.upstash.com/`, which is public and needs no secret, then a wait until the tailnet node answers. User pick, 2026-11-11. |
+| Box id lookup | One mapping file, `~/.config/devaloy/upstash-boxes`, one `<tailnet-name> <box-id>` line per box, on every machine that connects (the laptop, devaloy-ovh). The user adds each line by hand; the installer prints the exact line at the end. Grill Q23, Q32. |
+| Wake script | `upwake`, a POSIX `sh` script in `config/bin/`, so `step_seed_config` puts it in `~/.local/bin` on every box; the laptop gets it with `scp`, as with `wtforward`. `upwake <host>` exits 0 at once when the host is not in the mapping file. Otherwise it checks `nc -z -w 2 <host> 22` and returns at once when the host answers; otherwise it prints `waking <name> …` to stderr, requests the preview URL, and waits up to 90 s for port 22, then exits non-zero with the preview URL. Grill Q27, Q28, Q29. |
+| SSH config | One line at the top of `~/.ssh/config`: `Match exec "upwake %h"`. `ssh`, `scp`, `git` over SSH and `wtforward` all read it. A host that is not in the mapping file (GitHub, for example) costs one `grep`. Grill Q33. |
+| Fleet | `devaloy fleet list` never wakes: a paused Upstash Box shows `paused` and the hint `upwake <name>`, from `tailscale status` and the mapping file. `status`, `doctor` and `update` run `upwake` on each offline box in the mapping file first. Grill Q24, Q38. |
+| No `TS_AUTHKEY` | The installer asks on the terminal, as for the API key. With no terminal, it installs with Tailscale off and prints a warning naming the two env-file lines to add. Grill Q25. |
+| Pause during use | Accepted. A pause drops open SSH sessions and `wtforward`, and `upwake` wakes the box on the next connection. No keeper loop and no SDK `keepAlive`. `wtforward` is not changed; the wiki says to start it again. User pick, grill Q26, Q34. |
+| Tailscale key | Reusable, pre-approved, untagged, not ephemeral. An ephemeral node is removed on each pause, and an unapproved node blocked Phase 1b. The wiki says so. Grill Q31. |
+| Tests | Phases 9 to 12 run in the look-alike, with an `UPWAKE_URL_BASE` override that points `upwake` at a local HTTP stub, since the look-alike has no preview proxy. The real pause and wake are tested in the attended Phases 8 and 13. Grill Q36. |
+| Outward actions | None beyond commits on `main`. The user creates the boxes and the keys. Grill Q39. |
+
+### Approach
+
+Reuse: `scripts/wtforward` is the model for a laptop-side POSIX `sh` script; `config/bin/` is seeded into `~/.local/bin` on every box by `step_seed_config`; `lib/fleet.sh` already lists boxes from `tailscale status --json` and probes them over `ssh dev@<ip>`; Part 1's `step_tailscale_ensure` (with the `NeedsMachineAuth` fix), `upstash-serve.sh tailscaled` and the same-uid `dev` user stay as they are.
+
+Rejected, one line each: the box id in a per-box SSH snippet (one snippet per box, and fleet still needs a file); the tailnet name as the box id (unreadable names and T3 labels); a keeper loop or SDK `keepAlive` (the user accepts the pause).
+
+### Phase 8: spike the wake path on a real box
+Attended: needs an Upstash Box with Tailscale on, the API key, and a pre-approved reusable `TS_AUTHKEY`. Grill Q30: the user's new box, after the fresh-agent run.
+Measure: the time from a preview URL request on a paused box to a tailnet SSH login, three times; whether an open tailnet SSH session stops the idle pause (for the wiki only, grill Q35).
+Done when: the plan holds a results table with the times and the answer.
+
+### Phase 9: Tailscale on by default in the installer and the boot
+- `WITH_TAILSCALE` defaults to true in `scripts/install-upstash.sh` and `lib/steps/upstash-boot.sh`.
+- The `TS_AUTHKEY` prompt and the no-terminal fallback from the No `TS_AUTHKEY` row.
+- The installer's last screen prints the mapping line `<tailnet-name> <box-id>` and the SSH config line.
+Done when: in the look-alike, the installer with no `WITH_TAILSCALE` in the env file and a key in the environment starts `tailscaled`; with `WITH_TAILSCALE="false"` it does not; with no key and no terminal it exits 0 with Tailscale off and the warning; the last screen shows the mapping line.
+
+### Phase 10: the wake script
+`config/bin/upwake`, per the Wake script row, with `UPWAKE_URL_BASE` and `UPWAKE_MAP` overrides for tests.
+Done when: shellcheck passes; against a local HTTP stub in the look-alike, `upwake` for an unlisted host exits 0 in under 0.1 s, for a listed host that answers exits 0 in under 2 s with no request to the stub, and for a listed host that does not answer requests the stub once and exits non-zero after the timeout (shortened by an override) with the preview URL in its message.
+
+### Phase 11: fleet wakes Upstash boxes
+`lib/fleet.sh` per the Fleet row.
+Done when: with a saved `tailscale status --json` (`DEVALOY_FLEET_STATUS_JSON`) that marks one mapped node offline, `fleet list` shows it as `paused` with the hint and makes no request, and `fleet status` calls `upwake` for it (checked with a stub `upwake` on `PATH`).
+
+### Phase 12: docs
+The wiki's Optional Tailscale section becomes Tailscale: the default, the key kind, the mapping file, `upwake` on the laptop, the SSH config line, `wtforward` after a pause, and fleet. `docs/wiki/reference.md` lists `upwake` and the mapping file.
+Done when: every command, path and key in the new text resolves to a line in the repo.
+
+### Phase 13: end to end from the laptop
+Attended: needs the laptop, a paused Upstash Box with Tailscale on, and the mapping file and SSH line set up as the wiki says.
+1. Pause the box. `ssh dev@<name>` from the laptop: record the time to a prompt.
+2. Pause the box. Start `wtforward <alias>`: it connects and forwards a port.
+3. Pause the box. `devaloy fleet list` on devaloy-ovh shows it `paused`; `devaloy fleet status` wakes it and reports it up.
+Done when: steps 1 to 3 pass, and the step 1 time is written into the Part 2 Target line.
+
 ## Open questions
 
 All grill decisions are settled. Phase 1 picks a branch for three of them (Home fallback, Disk, Fleet); the rule for each branch is in the design table. These facts stay open until a phase measures them:
 
-- Does tailnet traffic count as activity for the Upstash idle pause? Phase 1, question 3. It changes only the wiki text.
+- Does tailnet traffic count as activity for the Upstash idle pause? Phase 8 measures it. It changes only the wiki text.
 - The cold install time, the resume-to-200 time and the reset-to-200 time. Phase 7.
 
 ## Non-goals
@@ -163,6 +227,7 @@ All grill decisions are settled. Phase 1 picks a branch for three of them (Home 
 - Docker, Paseo, systemd units, the host firewall lockdown and Sysbox. The box cannot run them, or they add nothing here.
 - Creating, listing or deleting Upstash Boxes. The script sets up the box it runs on.
 - Kernel-mode Tailscale.
+- Keeping a box awake while it is in use (keeper loop or SDK `keepAlive`), and an automatic reconnect in `wtforward`. Part 2 accepts the pause.
 - Sharing one Codex `auth.json` between machines, or any Codex sign-in flow inside the script.
 - Python and other non-Node Upstash runtimes.
 - `t3 browser setup` with sudo. `T3CODE_SERVER_BROWSER_SANDBOX=0` covers the warning, as on a VM.
