@@ -28,6 +28,8 @@
 #                            --config-only seeds and stops, for testing a
 #                            config/ edit without a redeploy
 #   devaloy nvim-sync        re-copy the repo's LazyVim config
+#   devaloy fleet [cmd]      every devaloy-* box on the tailnet: list, status,
+#                            doctor, update [box...]
 #   devaloy -h               this
 #
 # WITH NO TERMINAL, and no verb, it prints `status` and exits 0. That is the
@@ -58,7 +60,7 @@ set -euo pipefail
 # Order matters. common.sh defines what every other module calls, and tui.sh
 # defines fzf_version_ok, which doctor.sh reports on.
 DEVALOY_LIB="${DEVALOY_LIB:-/usr/local/lib/devaloy}"
-DEVALOY_MODULES='common.sh tui.sh status.sh doctor.sh disk.sh ram.sh prune.sh clean.sh update.sh nvim.sh'
+DEVALOY_MODULES='common.sh tui.sh status.sh doctor.sh disk.sh ram.sh prune.sh clean.sh update.sh nvim.sh fleet.sh'
 
 for _module in ${DEVALOY_MODULES}; do
   if [ ! -r "${DEVALOY_LIB}/${_module}" ]; then
@@ -73,7 +75,7 @@ done
 unset _module
 
 usage() {
-  sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,39p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # --- verb dispatch --------------------------------------------------------
@@ -99,7 +101,7 @@ main() {
 
   if [ -z "${verb}" ]; then
     case "${1:-}" in
-      status | doctor | health | disk | ram | prune | clean | update | nvim-sync)
+      status | doctor | health | disk | ram | prune | clean | update | nvim-sync | fleet)
         verb="$1"
         shift
         ;;
@@ -126,7 +128,7 @@ main() {
   fi
 
   case "${verb}" in
-    update | nvim-sync) reexec_as_dev "$(readlink -f "$0")" "${verb}" "$@" ;;
+    update | nvim-sync | fleet) reexec_as_dev "$(readlink -f "$0")" "${verb}" "$@" ;;
   esac
 
   case "${verb}" in
@@ -139,6 +141,7 @@ main() {
     clean) do_clean "$@" ;;
     update) do_update "$@" ;;
     nvim-sync) do_nvim_sync "$@" ;;
+    fleet) do_fleet "$@" ;;
   esac
 }
 
