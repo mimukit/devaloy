@@ -13,12 +13,30 @@
 status_disk_line() {
   # `df -h` on the home volume, which is the number that matters: /home/dev is
   # the named volume, and everything outside it is thrown away on the next
-  # rebuild anyway.
-  local line pct
-  line="$(df -h "${HOME:-/home/dev}" 2>/dev/null | tail -1 |
+  # rebuild anyway. On an Upstash Box the disk that persists is /workspace,
+  # which holds the home, the clone and the state, so that is the one to read.
+  local line pct dir
+  dir="$(status_disk_dir)"
+  line="$(df -h "${dir}" 2>/dev/null | tail -1 |
     awk '{printf "%s used of %s (%s), %s free", $3, $2, $5, $4}')"
-  pct="$(df "${HOME:-/home/dev}" 2>/dev/null | tail -1 | awk '{print $5}')"
+  pct="$(df "${dir}" 2>/dev/null | tail -1 | awk '{print $5}')"
   paint_pct "${pct}" "${line}"
+}
+
+status_disk_dir() {
+  if on_upstash; then
+    printf '%s' "${UPSTASH_WORKSPACE}"
+  else
+    printf '%s' "${HOME:-/home/dev}"
+  fi
+}
+
+status_disk_label() {
+  if on_upstash; then
+    printf 'disk (%s)' "${UPSTASH_WORKSPACE}"
+  else
+    printf 'disk (home volume)'
+  fi
 }
 
 status_ram_line() {
@@ -108,7 +126,7 @@ status_docker_line() {
 # reclaim of its own; it moves with the RAM, so it opens the same view.
 rows_status() {
   emit_head "$(box_name)" "read at $(now_stamp)"
-  emit_row '💾' 'disk (home volume)' "$(status_disk_line)" disk
+  emit_row '💾' "$(status_disk_label)" "$(status_disk_line)" disk
   emit_row '🧠' 'ram' "$(status_ram_line)" ram
   emit_row '💤' 'swap' "$(status_swap_line)" ram
   emit_row '🪟' 'paseo daemon' "$(status_paseo_line)" ram
@@ -132,7 +150,11 @@ rows_status() {
 # about the absence of a terminal.
 do_status() {
   printf 'devaloy: %s, read at %s\n\n' "$(box_name)" "$(date '+%Y-%m-%d %H:%M:%S')"
-  printf '  disk    %s\n' "$(status_disk_line)"
+  if on_upstash; then
+    printf '  disk    %s on %s\n' "$(status_disk_line)" "${UPSTASH_WORKSPACE}"
+  else
+    printf '  disk    %s\n' "$(status_disk_line)"
+  fi
   printf '  ram     %s\n' "$(status_ram_line)"
   printf '  swap    %s\n' "$(status_swap_line)"
   printf '  paseo   %s\n' "$(status_paseo_line)"

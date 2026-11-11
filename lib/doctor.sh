@@ -22,10 +22,17 @@
 # entrypoint and no image. The daemons are systemd units there, so the docker,
 # Paseo and T3 Code rows read the unit state instead, and two more rows check
 # the units every native box has: tailscaled and the devaloy-boot oneshot.
+#
+# On an Upstash Box (RUNTIME=upstash) there is neither systemd nor Docker. The
+# Upstash init command runs the boot, and the boot starts the serve loops, so
+# the rows read what those leave on /workspace: the boot-status file, the
+# loops' pidfiles and the listener on :3773.
 
 DOCTOR_FAILURES=0
 
 # Every row is one of ok / broken / off, and only `broken` moves the exit code.
+# An Upstash Box adds warn, for a reading that is fine now and will not stay
+# fine (free space on /workspace); it does not move the exit code either.
 doctor_rows=()
 
 doctor_row() { # doctor_row <state> <label> <detail>
@@ -166,6 +173,112 @@ doctor_collect_native_units() {
   fi
 }
 
+# --- the Upstash Box ------------------------------------------------------
+#
+# The boot writes ${UPSTASH_DIR}/boot-status from its EXIT trap, as
+# `ok <time>` or `failed <step> <time>`, and holds a lock on run/boot.lock
+# while it runs. The serve loops write their own PID to run/<name>.pid. A
+# pause or a reset leaves a pidfile that names a dead PID or someone else's,
+# so a PID counts only when its command line is the loop's, the same test
+# upstash-serve.sh makes before it starts a second loop.
+upstash_loop_pid() { # upstash_loop_pid <t3|tailscaled>
+  local pid cmd
+  pid="$(cat "${UPSTASH_DIR}/run/$1.pid" 2>/dev/null || true)"
+  case "${pid}" in '' | *[!0-9]*) return 0 ;; esac
+  cmd="$(tr '\0' ' ' <"/proc/${pid}/cmdline" 2>/dev/null || true)"
+  case "${cmd}" in
+    *"upstash-serve.sh $1 loop"*) printf '%s' "${pid}" ;;
+  esac
+}
+
+upstash_listening() { # upstash_listening <port>
+  [ -n "$(ss -ltnH "sport = :$1" 2>/dev/null)" ]
+}
+
+# True while a boot holds the lock. A boot after a reset reinstalls the apt
+# overlay and can take minutes, and its boot-status is the last boot's.
+upstash_boot_running() {
+  local lock="${UPSTASH_DIR}/run/boot.lock"
+  [ -r "${lock}" ] || return 1
+  ! flock -n "${lock}" true 2>/dev/null
+}
+
+# WITH_TAILSCALE is not in runtime-flags: the boot reads it from the env file
+# and it decides only what the boot does. The environment wins, as in
+# runtime_flag. The file values are written in double quotes.
+upstash_flag() { # upstash_flag <key>
+  local v
+  v="$(printenv "$1" 2>/dev/null || true)"
+  [ -n "${v}" ] || v="$(sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" \
+    "${UPSTASH_DIR}/env" 2>/dev/null | tail -1 | tr -d "\"'")"
+  printf '%s' "${v:-false}"
+}
+
+doctor_collect_upstash() {
+  local status state step pid avail
+  status="$(head -1 "${UPSTASH_DIR}/boot-status" 2>/dev/null || true)"
+  if upstash_boot_running; then
+    doctor_row off 'devaloy boot' "still running, log in ${UPSTASH_DIR}/logs/boot.log"
+  else
+    state="${status%% *}"
+    case "${state}" in
+      ok) doctor_row ok 'devaloy boot' "ran and succeeded (${status#ok })" ;;
+      failed)
+        step="$(printf '%s' "${status}" | awk '{print $2}')"
+        doctor_row broken 'devaloy boot' "failed at step ${step}, read ${UPSTASH_DIR}/logs/boot.log"
+        ;;
+      *) doctor_row broken 'devaloy boot' "has not run: no ${UPSTASH_DIR}/boot-status" ;;
+    esac
+  fi
+
+  # The init command lives in the Upstash console or the SDK, and the box
+  # cannot read it back without the API key. What the box can check is that
+  # the path it names is there, since a reset keeps only /workspace.
+  if [ -r "${UPSTASH_REPO}/lib/steps/upstash-boot.sh" ]; then
+    doctor_row ok 'init command' "${UPSTASH_REPO}/lib/steps/upstash-boot.sh is present"
+  else
+    doctor_row broken 'init command' "${UPSTASH_REPO}/lib/steps/upstash-boot.sh is missing, so the next start runs no boot"
+  fi
+
+  # Both halves: the loop is what restarts the server, the listener is what
+  # the preview URL reaches. A listener with no loop answers now and stays
+  # down after its next crash.
+  pid="$(upstash_loop_pid t3)"
+  if upstash_listening "${UPSTASH_T3_PORT}"; then
+    if [ -n "${pid}" ]; then
+      doctor_row ok 't3 server' "listening on :${UPSTASH_T3_PORT}, serve loop pid ${pid}"
+    else
+      doctor_row broken 't3 server' "listening on :${UPSTASH_T3_PORT}, but no serve loop restarts it (upstash-serve.sh t3 restart)"
+    fi
+  elif [ -n "${pid}" ]; then
+    doctor_row broken 't3 server' "serve loop pid ${pid} runs, but nothing listens on :${UPSTASH_T3_PORT}, read ${UPSTASH_DIR}/logs/t3.log"
+  else
+    doctor_row broken 't3 server' "no serve loop and nothing on :${UPSTASH_T3_PORT}, so run bash ${UPSTASH_SERVE} t3 start"
+  fi
+
+  if [ "$(upstash_flag WITH_TAILSCALE)" = "true" ]; then
+    pid="$(upstash_loop_pid tailscaled)"
+    if [ -n "${pid}" ]; then
+      doctor_row ok 'tailscaled' "userspace networking, loop pid ${pid}"
+    else
+      doctor_row broken 'tailscaled' "WITH_TAILSCALE=true but no loop runs, read ${UPSTASH_DIR}/logs/tailscaled.log"
+    fi
+  else
+    doctor_row off 'tailscaled' 'WITH_TAILSCALE is off, so the preview URL is the way in'
+  fi
+
+  # 1G, the floor the plan's Disk rule names. Under it a mise upgrade or a
+  # clone can fill the disk, and /workspace is the one that holds the home.
+  avail="$(df -Pk "${UPSTASH_WORKSPACE}" 2>/dev/null | awk 'NR == 2 {print $4}')"
+  if [ -z "${avail}" ]; then
+    doctor_row broken 'workspace disk' "${UPSTASH_WORKSPACE} is not readable"
+  elif [ "${avail}" -lt $((1024 * 1024)) ]; then
+    doctor_row warn 'workspace disk' "$((avail / 1024)) MiB free on ${UPSTASH_WORKSPACE}, under 1G, so run devaloy clean"
+  else
+    doctor_row ok 'workspace disk' "$((avail / 1024 / 1024)) GiB free on ${UPSTASH_WORKSPACE}"
+  fi
+}
+
 doctor_t3_push() {
   # Phone push for T3 Code goes through the T3 Connect relay only. Pairing over
   # the tailnet does not register the box with it, and the link needs a human
@@ -206,6 +319,8 @@ doctor_collect() {
 
   if on_native; then
     doctor_collect_native_units
+  elif on_upstash; then
+    doctor_collect_upstash
   else
     doctor_gated WITH_DOCKER 'docker daemon' docker info
   fi
@@ -215,8 +330,9 @@ doctor_collect() {
   # daemon outranks the key. An old container with no runtime flags file reads
   # the key as false, and reporting a daemon that is plainly up as "off" would
   # be a lie the missing file happens to tell. On a VM the unit row above has
-  # already judged the daemon, so only the CLI row below is added there.
-  if on_native; then
+  # already judged the daemon, so only the CLI row below is added there. An
+  # Upstash Box has WITH_PASEO fixed off, so it gets no Paseo row at all.
+  if on_native || on_upstash; then
     :
   elif [ -n "$(paseo_pids)" ]; then
     doctor_row ok 'paseo daemon' 'up'
@@ -241,8 +357,8 @@ doctor_collect() {
   # The T3 Code server, by the same rules as the Paseo rows above: a running
   # server outranks the key, and the CLI gets its own row because a pruned
   # install leaves a running server untouched. On a VM the unit row has
-  # already judged the server.
-  if on_native; then
+  # already judged the server, and on an Upstash Box the serve loop row has.
+  if on_native || on_upstash; then
     :
   elif [ -n "$(t3_pids)" ]; then
     doctor_row ok 't3 server' 'up'
@@ -267,8 +383,13 @@ doctor_collect() {
     doctor_row off 'github auth' 'GITHUB_TOKEN is unset; gh may need its own login'
   fi
 
-  if tailscale status >/dev/null 2>&1; then
+  # On an Upstash Box Tailscale is optional, and the preview URL is the way in.
+  if on_upstash && [ "$(upstash_flag WITH_TAILSCALE)" != "true" ]; then
+    :
+  elif tailscale status >/dev/null 2>&1; then
     doctor_row ok 'tailscale' "$(tailscale status 2>/dev/null | head -1 | awk '{print $2}')"
+  elif on_upstash; then
+    doctor_row broken 'tailscale' 'WITH_TAILSCALE=true but the node is not on the tailnet'
   else
     doctor_row broken 'tailscale' 'not reachable — this is the only way into the box'
   fi
@@ -302,6 +423,7 @@ doctor_icon() {
   case "$1" in
     ok) printf '%s✓%s' "${GREEN}" "${RESET}" ;;
     broken) printf '%s✗%s' "${RED}" "${RESET}" ;;
+    warn) printf '%s!%s' "${YELLOW}" "${RESET}" ;;
     *) printf '%s·%s' "${DIM}" "${RESET}" ;;
   esac
 }
@@ -412,9 +534,30 @@ do_health_native() {
   [ "${failures}" -eq 0 ]
 }
 
+# On an Upstash Box the way in is the preview URL to the T3 Code server, not
+# the tailnet, so the core question becomes: did the last boot finish, and does
+# the server listen on :3773? Tailscale is optional there and doctor reports it.
+do_health_upstash() {
+  local failures=0 status
+  status="$(head -1 "${UPSTASH_DIR}/boot-status" 2>/dev/null || true)"
+  if [ "${status%% *}" != "ok" ]; then
+    printf 'devaloy health: the last boot did not succeed (%s)\n' "${status:-no boot-status}" >&2
+    failures=$((failures + 1))
+  fi
+  if ! upstash_listening "${UPSTASH_T3_PORT}"; then
+    printf 'devaloy health: nothing listens on :%s\n' "${UPSTASH_T3_PORT}" >&2
+    failures=$((failures + 1))
+  fi
+  [ "${failures}" -eq 0 ]
+}
+
 do_health() {
   if on_native; then
     do_health_native
+    return
+  fi
+  if on_upstash; then
+    do_health_upstash
     return
   fi
   local failures=0

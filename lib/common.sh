@@ -310,6 +310,9 @@ restart_t3() {
   if on_native; then
     echo "devaloy ${caller}: check 'journalctl -u devaloy-t3code'; systemd" >&2
     echo "devaloy ${caller}: restarts the unit every 10s and logs each failure." >&2
+  elif on_upstash; then
+    echo "devaloy ${caller}: check ${UPSTASH_DIR}/logs/t3.log; the serve loop" >&2
+    echo "devaloy ${caller}: retries every 10s and logs each failure." >&2
   else
     echo "devaloy ${caller}: check 'docker logs' for this container; the supervisor" >&2
     echo "devaloy ${caller}: retries every 10s and logs each failure." >&2
@@ -345,8 +348,9 @@ proc_started() { # proc_started <pid>
 # variables that `docker compose up -d` can flip without a rebuild, so reading
 # them from a file baked into the image would report the wrong answer.
 #
-# RUNTIME is in the file too (container or native), read by devaloy_runtime
-# below. The native installer writes the same file with RUNTIME=native.
+# RUNTIME is in the file too (container, native or upstash), read by
+# devaloy_runtime below. The native installer writes the same file with
+# RUNTIME=native, the Upstash installer with RUNTIME=upstash.
 BUILD_FLAGS_FILE="${BUILD_FLAGS_FILE:-/opt/devaloy/build-flags}"
 
 build_flag() { # build_flag <name>
@@ -360,32 +364,38 @@ build_flag() { # build_flag <name>
 
 # --- the runtime ----------------------------------------------------------
 #
-# container or native: which kind of box this CLI is running on. The two need
-# different checks and different advice. A container's processes are children
-# of entrypoint.sh and its logs are `docker logs`; a native VM runs the same
-# work as systemd units, and its logs are `journalctl -u <unit>`.
+# container, native or upstash: which kind of box this CLI is running on. They
+# need different checks and different advice. A container's processes are
+# children of entrypoint.sh and its logs are `docker logs`; a native VM runs the
+# same work as systemd units, and its logs are `journalctl -u <unit>`; an
+# Upstash Box has neither, and its boot runs from the Upstash init command with
+# its log under /workspace/.devaloy/logs/.
 #
 # The environment wins, so `RUNTIME=native devaloy doctor` previews the native
 # checks on any box. Then the RUNTIME key in build-flags: the Dockerfile writes
-# container, the native installer writes native. An image built before the key
-# existed has no RUNTIME line, and every such image is a container, so absent
-# reads as container rather than as unknown. Anything other than `native` reads
-# as container too, so a typo keeps the behaviour every box had before.
+# container, the native installer writes native, the Upstash installer writes
+# upstash. An image built before the key existed has no RUNTIME line, and every
+# such image is a container, so absent reads as container rather than as
+# unknown. Anything other than `native` or `upstash` reads as container too, so
+# a typo keeps the behaviour every box had before.
 #
 # lib/steps/common.sh resolves the same key the same way for the boot steps; it
 # cannot source this file, which makes a temp directory on source.
 devaloy_runtime() {
   local v="${RUNTIME:-}"
   [ -n "${v}" ] || v="$(build_flag RUNTIME)"
-  if [ "${v}" = "native" ]; then
-    printf 'native'
-  else
-    printf 'container'
-  fi
+  case "${v}" in
+    native|upstash) printf '%s' "${v}" ;;
+    *) printf 'container' ;;
+  esac
 }
 
 on_native() {
   [ "$(devaloy_runtime)" = "native" ]
+}
+
+on_upstash() {
+  [ "$(devaloy_runtime)" = "upstash" ]
 }
 
 # --- the runtime flags ----------------------------------------------------
@@ -409,6 +419,19 @@ runtime_flag() { # runtime_flag <name>
   printf '%s' "${v:-false}"
 }
 
+# --- the Upstash Box --------------------------------------------------------
+#
+# Only /workspace survives a reset there, so every path the CLI reads on that
+# runtime is under it. The boot (lib/steps/upstash-boot.sh) and the serve
+# loops (lib/steps/upstash-serve.sh) write these paths; doctor, status and
+# update read them. The serve script is run from the clone, as the boot runs
+# it, so `devaloy update` restarts the loop with the copy it just pulled.
+UPSTASH_WORKSPACE=/workspace
+UPSTASH_DIR="${UPSTASH_WORKSPACE}/.devaloy"
+UPSTASH_REPO="${UPSTASH_WORKSPACE}/devaloy"
+UPSTASH_SERVE="${UPSTASH_REPO}/lib/steps/upstash-serve.sh"
+UPSTASH_T3_PORT=3773
+
 toolset_revision() {
   local marker="${HOME}/.local/share/mise/.devaloy-bootstrapped"
   [ -r "${marker}" ] && head -1 "${marker}" 2>/dev/null || printf 'not bootstrapped'
@@ -426,8 +449,11 @@ now_stamp() {
 # first, take the variable when it is somehow in scope, and fall back to the
 # default the compose file uses.
 box_name() {
-  local name
-  name="$(hostname 2>/dev/null || true)"
+  local name=""
+  # On an Upstash Box the hostname is the container id. The box name is what
+  # the console and the preview host show, so it wins when the shell has it.
+  on_upstash && name="${UPSTASH_BOX_NAME:-}"
+  [ -n "${name}" ] || name="$(hostname 2>/dev/null || true)"
   [ -n "${name}" ] || name="${DEVALOY_NAME:-}"
   printf '%s' "${name:-devaloy}"
 }
@@ -438,13 +464,19 @@ reexec_as_dev() { # reexec_as_dev <devaloy> <verb> [args...]
   # run the same command instead. `su -l` gives dev's login environment, the
   # same as entrypoint.sh's as_dev, so the mise shims are on PATH. DEVALOY_LIB
   # goes along so a run from a checkout stays a run from that checkout.
+  #
+  # On an Upstash Box the user is boxuser. A `dev` user exists there only with
+  # WITH_TAILSCALE=true, as a second name for the same uid, so boxuser is the
+  # one name every such box has.
   [ "$(id -un)" = "root" ] || return 0
-  id dev >/dev/null 2>&1 || die "$2: run this as the dev user, but this box has no dev user."
+  local user=dev
+  on_upstash && user=boxuser
+  id "${user}" >/dev/null 2>&1 || die "$2: run this as the ${user} user, but this box has no ${user} user."
   local self="$1" cmd
   shift
-  echo "devaloy: $1: running as the dev user, not root." >&2
+  echo "devaloy: $1: running as the ${user} user, not root." >&2
   cmd="$(printf '%q ' env DEVALOY_LIB="${DEVALOY_LIB}" "${self}" "$@")"
-  exec su -l dev -c "${cmd}"
+  exec su -l "${user}" -c "${cmd}"
 }
 
 refuse_root() { # refuse_root <verb>

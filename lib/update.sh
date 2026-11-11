@@ -17,7 +17,9 @@
 # box answering with the old module and no way to fix it short of a rebuild.
 #
 # On a native VM (RUNTIME=native) it first pulls /opt/devaloy and reinstalls
-# the CLI from it, which is that box's rebuild. See native_pull.
+# the CLI from it, which is that box's rebuild. See native_pull. On an Upstash
+# Box (RUNTIME=upstash) it pulls /workspace/devaloy the same way, and restarts
+# the T3 Code serve loop at the end. See upstash_pull and restart_upstash_t3.
 #
 # Usage:
 #   devaloy update                 seed the config, then re-run the bootstrap
@@ -189,14 +191,37 @@ native_pull() {
     warn "update: the cli reinstall from ${repo} failed."
 }
 
+# upstash_pull — the Upstash twin of native_pull.
+#
+# The clone is /workspace/devaloy, owned by boxuser (who runs this), so git
+# needs no sudo. The installer's --cli-only mode copies the CLI and lib/ to
+# /usr/local, with its own `sudo -n`. That copy is on the overlay a reset
+# throws away, and the next boot makes it again from the clone, so the clone
+# is the thing this has to move.
+upstash_pull() {
+  local repo="${UPSTASH_REPO}"
+  if ! git -C "${repo}" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    echo "devaloy: ${repo} is on a detached ref ($(git -C "${repo}" describe --tags --always 2>/dev/null || echo unknown)),"
+    echo "devaloy: most likely a tag, so there is nothing to pull. Re-run the Upstash"
+    echo "devaloy: installer with DEVALOY_REF=<branch or tag> to move it."
+  elif ! git -C "${repo}" pull --ff-only; then
+    warn "update: 'git pull --ff-only' in ${repo} failed; installing the cli from what is there."
+  fi
+  bash "${repo}/scripts/install-upstash.sh" --cli-only ||
+    warn "update: the cli reinstall from ${repo} failed."
+}
+
 do_update() {
   update_args "$@"
   refuse_root update
 
-  # Native only, and not with --no-config, which keeps its promise of the
-  # toolchain alone.
+  # Native and Upstash only, and not with --no-config, which keeps its promise
+  # of the toolchain alone.
   if on_native && [ "${UPDATE_DO_CONFIG}" -eq 1 ]; then
     native_pull
+  fi
+  if on_upstash && [ "${UPDATE_DO_CONFIG}" -eq 1 ]; then
+    upstash_pull
   fi
 
   if [ "${UPDATE_DO_CONFIG}" -eq 1 ]; then
@@ -263,7 +288,54 @@ do_update() {
 
   # Last, because it can end this very session: a terminal or an agent turn
   # inside T3 Code is a child of the server, and the restart takes it down.
-  restart_stale_t3
+  if on_upstash; then
+    restart_upstash_t3
+  else
+    restart_stale_t3
+  fi
+}
+
+# restart_upstash_t3 — restart the T3 Code serve loop on an Upstash Box.
+#
+# Always, not only when t3 is stale as restart_stale_t3 does: the loop runs
+# the copy of upstash-serve.sh that was on disk when it started, and the pull
+# above can change that script as well as t3. A restart is the only way the
+# box runs what it pulled.
+#
+# The restart runs detached, under setsid. On an Upstash Box `devaloy update`
+# is most often typed in a T3 Code terminal, which is a child of the server.
+# The stop closes that terminal, and the hangup would kill a restart that ran
+# in the foreground between its stop and its start, which leaves no server.
+# Detached, the restart finishes whatever happens to this session. Then this
+# waits for a listener on the port, so a run that survives reports the result.
+restart_upstash_t3() {
+  local log="${UPSTASH_DIR}/logs/t3-restart.log" waited=0
+  [ -r "${UPSTASH_SERVE}" ] || {
+    warn "update: ${UPSTASH_SERVE} is missing, so the T3 Code server was not restarted."
+    return 0
+  }
+  echo
+  echo "devaloy update: restarting the T3 Code serve loop — every running turn is cancelled"
+  mkdir -p "${UPSTASH_DIR}/logs"
+  setsid nohup bash "${UPSTASH_SERVE}" t3 restart >>"${log}" 2>&1 </dev/null &
+  # The stop waits up to 10s for the old server to let go of the port, so a
+  # listener seen at once is most likely the old one. Wait for the loop's
+  # pidfile to change first, then for the port.
+  local old new
+  old="$(cat "${UPSTASH_DIR}/run/t3.pid" 2>/dev/null || true)"
+  while [ "${waited}" -lt 60 ]; do
+    sleep 2
+    waited=$((waited + 2))
+    new="$(cat "${UPSTASH_DIR}/run/t3.pid" 2>/dev/null || true)"
+    if [ -n "${new}" ] && [ "${new}" != "${old}" ] &&
+      [ -n "$(ss -ltnH "sport = :${UPSTASH_T3_PORT}" 2>/dev/null)" ]; then
+      echo "devaloy update: T3 Code server back up after ${waited}s (serve loop pid ${new})"
+      return 0
+    fi
+  done
+  warn "update: the T3 Code server has not come back after ${waited}s."
+  warn "update: read ${log} and ${UPSTASH_DIR}/logs/t3.log."
+  return 0
 }
 
 # restart_stale_t3 — restart the T3 Code server when it runs an older t3 than

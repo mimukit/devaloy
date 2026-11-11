@@ -43,8 +43,9 @@ FLEET_SSH_OPTS=(-n -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyCheckin
 # its own login shell over SSH. Keep them POSIX sh: dev's shell is zsh.
 # shellcheck disable=SC2016
 FLEET_PROBE='r=$(sed -n "s/^RUNTIME=//p" /opt/devaloy/build-flags 2>/dev/null | head -1)
-[ "$r" = native ] || r=container
+case "$r" in native|upstash) ;; *) r=container ;; esac
 c="${DEVALOY_FLEET_CLONE:-$HOME/projects/devaloy}"
+[ "$r" != upstash ] || [ -n "${DEVALOY_FLEET_CLONE:-}" ] || c=/workspace/devaloy
 if git -C "$c" rev-parse --git-dir >/dev/null 2>&1; then
   b=$(git -C "$c" symbolic-ref --short -q HEAD || echo detached)
   h=$(git -C "$c" rev-parse --short HEAD)
