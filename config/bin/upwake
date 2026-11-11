@@ -1,0 +1,136 @@
+#!/bin/sh
+# Runs before every ssh connection, on the laptop and on any devaloy box.
+# Wakes a paused Upstash Box so the connection to it can go through.
+#
+# An Upstash Box pauses when it is idle. A paused box runs no tailscaled, and
+# tailnet traffic does not wake it. A request to its public preview URL does.
+# For a host in the mapping file whose port 22 does not answer, upwake requests
+# https://<box-id>-3773.preview.box.upstash.com/ and waits until port 22
+# answers. Any other host costs one awk read of the mapping file, with no
+# network, so ssh to GitHub and other hosts stays fast.
+#
+#   upwake <host>
+#
+# Mapping file, ${UPWAKE_MAP:-~/.config/devaloy/upstash-boxes}, one box per line:
+#
+#   # <tailnet-name> <box-id>
+#   devaloy-upbox  0a1b2c3d-...
+#
+# The installer prints the line for its box. A host matches a line when the
+# host, or the first DNS label of the host, equals the first column, so
+# devaloy-upbox and devaloy-upbox.tail1234.ts.net both match the line above.
+# An IP address matches only a line whose first column is that exact address;
+# upwake never maps an IP back to a name. A missing file means no box.
+#
+# Install it on the laptop with
+#   scp devaloy-ovh:projects/devaloy/config/bin/upwake ~/.local/bin/
+# (a devaloy box gets it in ~/.local/bin from config/bin), then add this line
+# at the top of ~/.ssh/config:
+#
+#   Match exec "upwake %h"
+#
+# ssh, scp, git over SSH and wtforward all read it. %h is the name typed on the
+# command line, or the HostName of a Host block that comes before the line.
+#
+# Exit status: ssh uses it only to decide whether the empty Match block applies,
+# so a non-zero status never stops the connection. upwake exits 0 when the host
+# is not a mapped box or port 22 answers, and 1 when the box does not answer
+# within UPWAKE_TIMEOUT seconds. On a timeout ssh still tries to connect and
+# fails on its own; the upwake message on stderr comes first and names the
+# preview URL to open by hand. ssh sends the stdout of a Match exec command to
+# /dev/null and keeps its stderr, so every message goes to stderr.
+#
+# Needs curl, and nc (OpenBSD, macOS or GNU netcat, which all take -z -w) for
+# the port check. Without nc, the check uses curl: a connect that completes
+# counts as an answer.
+#
+# Test overrides: UPWAKE_URL_BASE (the wake URL base, used as given),
+# UPWAKE_TIMEOUT (seconds, default 90), UPWAKE_PORT (default 22), UPWAKE_MAP.
+set -u
+
+[ "$#" -eq 1 ] && [ -n "$1" ] || {
+  echo "usage: upwake <host>" >&2
+  exit 2
+}
+map="${UPWAKE_MAP:-$HOME/.config/devaloy/upstash-boxes}"
+[ -r "$map" ] || exit 0
+
+host=$1
+case "$host" in
+  # An IPv4 or IPv6 address has no name label to compare.
+  *:* | *[!0-9.]*) label=${host%%.*} ;;
+  *) label=$host ;;
+esac
+
+# Prints "<name> <box-id>" for the first matching line. DNS names ignore case.
+found=$(awk -v host="$host" -v label="$label" '
+  BEGIN { host = tolower(host); label = tolower(label) }
+  { sub(/#.*/, "") }
+  NF >= 2 {
+    name = tolower($1)
+    if (name == host || name == label) { print $1, $2; exit }
+  }' "$map")
+[ -n "$found" ] || exit 0
+name=${found%% *}
+id=${found#* }
+
+port="${UPWAKE_PORT:-22}"
+timeout="${UPWAKE_TIMEOUT:-90}"
+case "$port$timeout" in
+  *[!0-9]*)
+    echo "upwake: UPWAKE_PORT and UPWAKE_TIMEOUT must be whole numbers" >&2
+    exit 2
+    ;;
+esac
+case "$id" in
+  *[!A-Za-z0-9-]*)
+    echo "upwake: the box id '$id' for $name in $map is not a valid id" >&2
+    exit 2
+    ;;
+esac
+url="${UPWAKE_URL_BASE:-https://$id-3773.preview.box.upstash.com}/"
+
+# True when the port accepts a TCP connection within about 2 seconds.
+if command -v nc >/dev/null 2>&1; then
+  answers() { nc -z -w 2 "$host" "$port" >/dev/null 2>&1; }
+else
+  # time_connect stays 0 until the TCP connect completes, so a refused or
+  # timed-out connect reads as 0 and any server, HTTP or not, reads as more.
+  # http:// rather than telnet://: sshd sends its banner at once, which ends an
+  # HTTP request at once, while telnet:// would hold the connection open.
+  case "$host" in *:*) urlhost="[$host]" ;; *) urlhost=$host ;; esac
+  answers() {
+    t=$(curl -s -o /dev/null -w '%{time_connect}' --connect-timeout 2 --max-time 3 \
+      "http://$urlhost:$port/" </dev/null 2>/dev/null)
+    case "$t" in
+      '' | 0 | 0.0 | 0.00 | 0.000 | 0.000000) return 1 ;;
+    esac
+  }
+fi
+
+answers && exit 0
+
+echo "upwake: waking $name …" >&2
+start=$(date +%s)
+
+# One wake request in the background, so the port checks start at once. Any
+# HTTP status counts, 502 and 503 included: the request itself wakes the box.
+# Only a request that got no response at all is sent again.
+(
+  for _ in 1 2 3; do
+    curl -s -o /dev/null --connect-timeout 5 --max-time 30 "$url" && exit 0
+    sleep 2
+  done
+) </dev/null >/dev/null 2>&1 &
+
+while :; do
+  sleep 2
+  if answers; then
+    echo "upwake: $name is up after $(($(date +%s) - start))s" >&2
+    exit 0
+  fi
+  if [ $(($(date +%s) - start)) -ge "$timeout" ]; then
+    echo "upwake: $name did not answer on port $port after ${timeout}s; open $url in a browser to wake it, then connect again" >&2
+    exit 1
+  fi
+done
