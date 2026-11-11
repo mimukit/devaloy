@@ -149,7 +149,10 @@ for _k in "${FILE_ORDER[@]}"; do
 done
 unset _k
 export RUNTIME=upstash WITH_T3CODE=true WITH_DOCKER=false WITH_PASEO=false
-export WITH_TAILSCALE="${WITH_TAILSCALE:-false}" WITH_BROWSER="${WITH_BROWSER:-false}"
+# Tailscale is on by default on this runtime (plan 0016 Part 2): ssh, fleet
+# and wtforward reach every devaloy box the same way. WITH_TAILSCALE="false"
+# in the env file turns it off.
+export WITH_TAILSCALE="${WITH_TAILSCALE:-true}" WITH_BROWSER="${WITH_BROWSER:-false}"
 
 # The box ID and name are in the container's environment, which is PID 1's.
 # The init command may not hand them on, so read them from there when sudo
@@ -165,6 +168,26 @@ export TS_HOSTNAME="${TS_HOSTNAME:-${UPSTASH_BOX_NAME:-devaloy}}"
 # tailscaled's state sits on /workspace, so the node keeps its identity
 # through a pause and a snapshot restore. upstash-serve.sh starts it with the same directory.
 export TS_STATE_DIR="${UPSTASH_DIR}/tailscale"
+
+# Tailscale on, but nothing to log in with: no TS_AUTHKEY and no node that
+# logged in before. On other runtimes `tailscale up` then prints a login URL
+# into the log, but here the boot mostly runs detached from the init command,
+# where nobody reads the log. So the boot leaves Tailscale off for this start
+# and says why, and the env file keeps WITH_TAILSCALE as it is: the first
+# start that finds a key turns it on. The installer applies the same test
+# before it asks for a key, and so learns nothing from the boot.
+#
+# A node that logged in has a profile in its state file. tailscaled writes
+# the file (with only a machine key) as soon as it starts, so a non-empty
+# file alone would count a node whose `up` failed as logged in.
+ts_node_known() {
+  grep -qs '"_current-profile"' "${TS_STATE_DIR}/tailscaled.state"
+}
+TAILSCALE_NO_KEY=0
+if [ "${WITH_TAILSCALE}" = true ] && [ -z "${TS_AUTHKEY:-}" ] && ! ts_node_known; then
+  TAILSCALE_NO_KEY=1
+  WITH_TAILSCALE=false
+fi
 
 # The home. `move` (the default) sets the box user's passwd home to
 # /workspace/home, so every dotfile lands on the persistent disk with no
@@ -229,8 +252,8 @@ overlay_opt_link() {
   sys_ok "/opt/devaloy -> ${DEVALOY_DIR}"
 }
 
-# The same package steps as the image and the native installer. Tailscale is
-# optional here, so its repo and package come only with WITH_TAILSCALE=true.
+# The same package steps as the image and the native installer. Tailscale can
+# be off here, so its repo and package come only with WITH_TAILSCALE=true.
 overlay_apt() {
   if [ "${WITH_TAILSCALE}" = true ]; then
     sys_tailscale_repo
@@ -402,6 +425,11 @@ upstash_boot() {
   # native installer stops a unit whose key went off.
   if [ "${WITH_TAILSCALE}" != true ]; then
     "${SERVE[@]}" tailscaled stop 9>&- >/dev/null
+    if [ "${TAILSCALE_NO_KEY}" = 1 ]; then
+      log "WARNING: Tailscale is on, but there is no TS_AUTHKEY and the node never"
+      log "WARNING: logged in, so it stays off on this start. Set TS_AUTHKEY in"
+      log "WARNING: ${UPSTASH_ENV_FILE}, then run '${UPSTASH_BOOT_CMD}'."
+    fi
   else
     step tailscale
     # 9>&- here and below: the loops outlive the boot, and must not hold

@@ -206,12 +206,27 @@ upstash_boot_running() {
 # WITH_TAILSCALE is not in runtime-flags: the boot reads it from the env file
 # and it decides only what the boot does. The environment wins, as in
 # runtime_flag. The file values are written in double quotes.
-upstash_flag() { # upstash_flag <key>
+upstash_flag() { # upstash_flag <key> [default]
   local v
   v="$(printenv "$1" 2>/dev/null || true)"
   [ -n "${v}" ] || v="$(sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" \
     "${UPSTASH_DIR}/env" 2>/dev/null | tail -1 | tr -d "\"'")"
-  printf '%s' "${v:-false}"
+  printf '%s' "${v:-${2-false}}"
+}
+
+# Tailscale on this runtime: on, off, or nokey. It defaults to on (Part 2 of
+# plan 0016). nokey is the boot's own rule (ts_node_known in upstash-boot.sh):
+# on, with no TS_AUTHKEY and a node that never logged in, so the boot left it
+# off for this start. The state file is root's, hence sudo -n.
+upstash_tailscale() {
+  if [ "$(upstash_flag WITH_TAILSCALE true)" != "true" ]; then
+    printf 'off'
+  elif [ -z "$(upstash_flag TS_AUTHKEY '')" ] &&
+       ! sudo -n grep -qs '"_current-profile"' "${UPSTASH_DIR}/tailscale/tailscaled.state"; then
+    printf 'nokey'
+  else
+    printf 'on'
+  fi
 }
 
 doctor_collect_upstash() {
@@ -256,16 +271,22 @@ doctor_collect_upstash() {
     doctor_row broken 't3 server' "no serve loop and nothing on :${UPSTASH_T3_PORT}, so run bash ${UPSTASH_SERVE} t3 start"
   fi
 
-  if [ "$(upstash_flag WITH_TAILSCALE)" = "true" ]; then
-    pid="$(upstash_loop_pid tailscaled)"
-    if [ -n "${pid}" ]; then
-      doctor_row ok 'tailscaled' "userspace networking, loop pid ${pid}"
-    else
-      doctor_row broken 'tailscaled' "WITH_TAILSCALE=true but no loop runs, read ${UPSTASH_DIR}/logs/tailscaled.log"
-    fi
-  else
-    doctor_row off 'tailscaled' 'WITH_TAILSCALE is off, so the preview URL is the way in'
-  fi
+  case "$(upstash_tailscale)" in
+    on)
+      pid="$(upstash_loop_pid tailscaled)"
+      if [ -n "${pid}" ]; then
+        doctor_row ok 'tailscaled' "userspace networking, loop pid ${pid}"
+      else
+        doctor_row broken 'tailscaled' "Tailscale is on but no loop runs, read ${UPSTASH_DIR}/logs/tailscaled.log"
+      fi
+      ;;
+    nokey)
+      doctor_row warn 'tailscaled' "off: no TS_AUTHKEY; add TS_AUTHKEY=\"tskey-auth-...\" to ${UPSTASH_DIR}/env and run bash ${UPSTASH_REPO}/lib/steps/upstash-boot.sh"
+      ;;
+    *)
+      doctor_row off 'tailscaled' 'WITH_TAILSCALE is false, so the preview URL is the way in'
+      ;;
+  esac
 
   # 1G, the floor the plan's Disk rule names. Under it a mise upgrade or a
   # clone can fill the disk, and /workspace is the one that holds the home.
@@ -383,13 +404,14 @@ doctor_collect() {
     doctor_row off 'github auth' 'GITHUB_TOKEN is unset; gh may need its own login'
   fi
 
-  # On an Upstash Box Tailscale is optional, and the preview URL is the way in.
-  if on_upstash && [ "$(upstash_flag WITH_TAILSCALE)" != "true" ]; then
+  # On an Upstash Box with Tailscale off or waiting for a key, the preview URL
+  # is the way in, and the tailscaled row above already says why.
+  if on_upstash && [ "$(upstash_tailscale)" != "on" ]; then
     :
   elif tailscale status >/dev/null 2>&1; then
     doctor_row ok 'tailscale' "$(tailscale status 2>/dev/null | head -1 | awk '{print $2}')"
   elif on_upstash; then
-    doctor_row broken 'tailscale' 'WITH_TAILSCALE=true but the node is not on the tailnet'
+    doctor_row broken 'tailscale' 'Tailscale is on but the node is not on the tailnet'
   else
     doctor_row broken 'tailscale' 'not reachable — this is the only way into the box'
   fi

@@ -25,7 +25,8 @@
 #      toolchain is ready and the T3 Code server is started
 #   5. the SDK step: set the box's init command to the detached boot, and
 #      open the public URL for port 3773 (skipped with --no-sdk)
-#   6. print the preview URL, the first pairing link and the next steps
+#   6. print the preview URL, the first pairing link, the two Tailscale lines
+#      for the machines that connect, and the next steps
 #
 # A second run with the same inputs changes no file under /workspace apart
 # from logs, boot-status and the toolchain's own state. A re-run is also how
@@ -75,8 +76,11 @@ an empty or unset one keeps it):
   UPSTASH_BOX_API_KEY   Upstash API key for the SDK step (asked for on the
                         terminal when missing; never written to disk)
   DEVALOY_REF           branch or tag to install, default main
-  WITH_TAILSCALE        true: userspace tailscaled and Tailscale SSH
-  TS_AUTHKEY            Tailscale auth key, with WITH_TAILSCALE=true
+  WITH_TAILSCALE        true (default): userspace tailscaled and Tailscale
+                        SSH; false turns it off
+  TS_AUTHKEY            Tailscale auth key (asked for on the terminal when
+                        missing and the node never logged in; with no
+                        terminal, Tailscale stays off until a key is set)
   TS_HOSTNAME           tailnet name and T3 label, default the box name
   WITH_BROWSER          true: the headless Chromium libraries
   DEVALOY_SLIM          true: leave the large optional tools out
@@ -136,7 +140,8 @@ declare -A VAL=()
 env_default() {
   case "$1" in
     DEVALOY_REF) printf 'main' ;;
-    WITH_TAILSCALE|WITH_BROWSER) printf 'false' ;;
+    WITH_TAILSCALE) printf 'true' ;;
+    WITH_BROWSER) printf 'false' ;;
     DEVALOY_SLIM) printf '%s' "${DEVALOY_SLIM_DEFAULT}" ;;
     UPSTASH_HOME_MODE) printf 'move' ;;
     *) printf '' ;;
@@ -375,22 +380,35 @@ inst_clone() {
   done
 }
 
+# 1 when Tailscale is on but this run has no key to log in with, so the boot
+# leaves it off. inst_done then prints no Tailscale lines.
+TS_NO_KEY=0
+
 # The one interactive moment of the merge: a Tailscale key, asked for only
-# when Tailscale is on, there is no key, and the node has no saved state.
-# The state is root's (0700), so the test goes through sudo.
-# Without a terminal the boot goes on and prints the login URL instead, the
-# same non-fatal path as on every runtime.
+# when Tailscale is on, there is no key, and the node never logged in (a
+# logged-in node has a profile in its state file; the boot makes the same
+# test). The state is root's (0700), so the test goes through sudo.
+#
+# With no key, from no terminal or an empty answer, the boot leaves
+# Tailscale off on this start, by its own test. Nothing here writes
+# WITH_TAILSCALE="false": the file keeps the default, so the first boot that
+# finds a key in the file turns Tailscale on.
 inst_env() {
   head_ "3. ${ENV_FILE}"
   if [ "${VAL[WITH_TAILSCALE]}" = true ] && [ -z "${VAL[TS_AUTHKEY]}" ] &&
-     ! sudo -n test -s "${UPSTASH_DIR}/tailscale/tailscaled.state"; then
+     ! sudo -n grep -qs '"_current-profile"' "${UPSTASH_DIR}/tailscale/tailscaled.state"; then
     if ( exec </dev/tty ) 2>/dev/null; then
-      printf '  Tailscale auth key (tskey-auth-..., empty to skip): ' >/dev/tty
+      printf '  Tailscale auth key (tskey-auth-..., empty to leave Tailscale off): ' >/dev/tty
       IFS= read -r -s 'VAL[TS_AUTHKEY]' </dev/tty || true
       printf '\n' >/dev/tty
     fi
-    [ -n "${VAL[TS_AUTHKEY]}" ] ||
-      warn "WITH_TAILSCALE=true with no TS_AUTHKEY: the boot log will hold a login URL"
+    if [ -z "${VAL[TS_AUTHKEY]}" ]; then
+      TS_NO_KEY=1
+      warn "no TS_AUTHKEY, so this box installs with Tailscale off. To turn it on,"
+      warn "add this line to ${ENV_FILE} (WITH_TAILSCALE=\"true\" is the default):"
+      echo '      TS_AUTHKEY="tskey-auth-..."'
+      warn "then run: bash ${BOOT}"
+    fi
   fi
 
   install -d -m 700 "${UPSTASH_DIR}"
@@ -530,6 +548,39 @@ first_pair_link() {
     "${home}/.local/bin/t3-pair" 2>/dev/null </dev/null || true
 }
 
+# The box's tailnet name: the first label of the node's DNS name when it is
+# logged in, because Tailscale lowercases the name and adds -1 when the
+# tailnet already holds it. Else the name the boot asks for: TS_HOSTNAME, or
+# the box's Upstash name, as in upstash-boot.sh.
+tailnet_name() {
+  local dns=""
+  if command -v jq >/dev/null 2>&1; then
+    dns="$(sudo -n tailscale --socket=/var/run/tailscale/tailscaled.sock status --json 2>/dev/null |
+      jq -r '.Self.DNSName // empty' 2>/dev/null || true)"
+  fi
+  if [ -n "${dns}" ]; then
+    printf '%s' "${dns%%.*}"
+  else
+    printf '%s' "${VAL[TS_HOSTNAME]:-${UPSTASH_BOX_NAME:-devaloy}}"
+  fi
+}
+
+# The two lines a machine that connects needs, so ssh, wtforward and devaloy
+# fleet wake this box when it has paused (plan 0016 Part 2). Printed only
+# when Tailscale is on, and added by hand: the installer cannot reach the
+# laptop.
+tailscale_lines() {
+  [ "${VAL[WITH_TAILSCALE]}" = true ] || return 0
+  [ "${TS_NO_KEY}" -eq 0 ] || return 0
+  echo
+  echo "  Tailscale: put these two lines on the laptop and on every box that runs"
+  echo "  devaloy fleet. Add this line to ~/.config/devaloy/upstash-boxes, so upwake"
+  echo "  knows this box's id:"
+  echo "    $(tailnet_name) ${UPSTASH_BOX_ID}"
+  echo "  Put this line at the top of ~/.ssh/config, so ssh wakes a paused box first:"
+  echo '    Match exec "upwake %h"'
+}
+
 inst_done() {
   local url="${SDK_URL:-https://${UPSTASH_BOX_ID}-${T3CODE_PORT}.preview.box.upstash.com}" link
   head_ "6. Done"
@@ -541,6 +592,7 @@ inst_done() {
   else
     warn "no pairing link yet; run t3-pair on the box once the server is up"
   fi
+  tailscale_lines
   echo
   echo "  Next steps:"
   echo "    - Codex: sign in once on the box with 'codex login --device-auth'."
