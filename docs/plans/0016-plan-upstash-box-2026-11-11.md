@@ -190,21 +190,21 @@ Attended: needs an Upstash Box with Tailscale on, the API key, and a pre-approve
 Measure: the time from a preview URL request on a paused box to a tailnet SSH login, three times; whether an open tailnet SSH session stops the idle pause (for the wiki only, grill Q35).
 Done when: the plan holds a results table with the times and the answer.
 
-### Phase 9: Tailscale on by default in the installer and the boot
+### Phase 9: Tailscale on by default in the installer and the boot (built 2026-11-11)
 - `WITH_TAILSCALE` defaults to true in `scripts/install-upstash.sh` and `lib/steps/upstash-boot.sh`.
 - The `TS_AUTHKEY` prompt and the no-terminal fallback from the No `TS_AUTHKEY` row.
 - The installer's last screen prints the mapping line `<tailnet-name> <box-id>` and the SSH config line.
 Done when: in the look-alike, the installer with no `WITH_TAILSCALE` in the env file and a key in the environment starts `tailscaled`; with `WITH_TAILSCALE="false"` it does not; with no key and no terminal it exits 0 with Tailscale off and the warning; the last screen shows the mapping line.
 
-### Phase 10: the wake script
+### Phase 10: the wake script (built 2026-11-11)
 `config/bin/upwake`, per the Wake script row, with `UPWAKE_URL_BASE` and `UPWAKE_MAP` overrides for tests.
 Done when: shellcheck passes; against a local HTTP stub in the look-alike, `upwake` for an unlisted host exits 0 in under 0.1 s, for a listed host that answers exits 0 in under 2 s with no request to the stub, and for a listed host that does not answer requests the stub once and exits non-zero after the timeout (shortened by an override) with the preview URL in its message.
 
-### Phase 11: fleet wakes Upstash boxes
+### Phase 11: fleet wakes Upstash boxes (built 2026-11-11)
 `lib/fleet.sh` per the Fleet row.
 Done when: with a saved `tailscale status --json` (`DEVALOY_FLEET_STATUS_JSON`) that marks one mapped node offline, `fleet list` shows it as `paused` with the hint and makes no request, and `fleet status` calls `upwake` for it (checked with a stub `upwake` on `PATH`).
 
-### Phase 12: docs
+### Phase 12: docs (built 2026-11-11)
 The wiki's Optional Tailscale section becomes Tailscale: the default, the key kind, the mapping file, `upwake` on the laptop, the SSH config line, `wtforward` after a pause, and fleet. `docs/wiki/reference.md` lists `upwake` and the mapping file.
 Done when: every command, path and key in the new text resolves to a line in the repo.
 
