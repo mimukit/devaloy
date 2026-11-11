@@ -80,6 +80,12 @@ pkg_list() { # pkg_list FILE — the package names, comments and blanks stripped
   sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$1"
 }
 
+pkg_skip() { # pkg_skip [NAME...] — stdin less the lines equal to a NAME
+  local n args=()
+  for n in "$@"; do args+=(-e "${n}"); done
+  if [ "${#args[@]}" -eq 0 ]; then cat; else grep -vxF "${args[@]}" || true; fi
+}
+
 apt_ensure() { # apt_ensure PKG...
   local p missing=()
   for p in "$@"; do

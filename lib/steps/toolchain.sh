@@ -20,6 +20,10 @@ step_browser_libs_check() {
       log "WARNING: WITH_BROWSER=true but the Chromium libraries are not installed."
       log "WARNING: re-run the native installer with WITH_BROWSER=true to add the"
       log "WARNING: packages in ${CONFIG_SRC}/apt/browser.txt."
+    elif on_upstash; then
+      log "WARNING: WITH_BROWSER=true but the Chromium libraries are not installed."
+      log "WARNING: set WITH_BROWSER=true in /workspace/.devaloy/env, run"
+      log "WARNING: '${UPSTASH_BOOT_CMD}' and read ${UPSTASH_BOOT_LOG}."
     else
       log "WARNING: WITH_BROWSER=true but the Chromium libraries are not in this image."
       log "WARNING: WITH_BROWSER is also a BUILD argument — 'docker compose up -d' cannot"
@@ -47,13 +51,21 @@ step_browser_libs_check() {
 # not. Recording it here makes a manual `devaloy health` judge the same box the
 # healthcheck does.
 #
+# DEVALOY_SLIM is here for the same reason as WITH_PASEO: bootstrap-toolchain.sh
+# drops the large optional tools when it is true, and a `devaloy update` from a
+# shell that does not see the key must not put them back. Only an Upstash Box
+# sets it. The line is written only when the key is set, so the file on a
+# container or a VM keeps the bytes it had, and an absent line reads as false.
+#
 # Built as a staging copy and swapped in by commit_staged (common.sh), so a
 # boot with the same keys leaves the file and its mtime alone.
 step_runtime_flags() {
-  printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\nWITH_T3CODE=%s\nWITH_DOCKER=%s\n' \
-    "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" "${WITH_T3CODE:-false}" \
-    "${WITH_DOCKER:-false}" \
-    > "/opt/devaloy/runtime-flags${STAGED}"
+  {
+    printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\nWITH_T3CODE=%s\nWITH_DOCKER=%s\n' \
+      "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" "${WITH_T3CODE:-false}" \
+      "${WITH_DOCKER:-false}"
+    [ -z "${DEVALOY_SLIM:-}" ] || printf 'DEVALOY_SLIM=%s\n' "${DEVALOY_SLIM}"
+  } > "/opt/devaloy/runtime-flags${STAGED}"
   chmod 644 "/opt/devaloy/runtime-flags${STAGED}"
   commit_staged "/opt/devaloy/runtime-flags${STAGED}" /opt/devaloy/runtime-flags
 }
@@ -90,6 +102,7 @@ step_toolchain() {
       WITH_PASEO='${WITH_PASEO:-false}' \
       WITH_BROWSER='${WITH_BROWSER:-false}' \
       WITH_T3CODE='${WITH_T3CODE:-false}' \
+      DEVALOY_SLIM='${DEVALOY_SLIM:-false}' \
       /usr/local/bin/bootstrap-toolchain.sh"; then
     # shellcheck disable=SC2034  # as above.
     TOOLCHAIN_OK=1

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run system install steps by name. The Dockerfile calls this, one RUN per
-# step; scripts/install-native.sh sources lib/system/steps.sh and calls the
-# functions itself.
+# step; scripts/install-native.sh and the Upstash installer source
+# lib/system/steps.sh and call the functions themselves.
 #
 #   lib/system/install.sh STEP...
 #
@@ -26,7 +26,7 @@
 #   DEV_UID         a fixed UID for dev-user
 #   WITH_DOCKER     true or false, default false
 #   WITH_BROWSER    true or false, default false
-#   RUNTIME         container or native, for build-flags
+#   RUNTIME         container, native or upstash, for build-flags
 #   FLAGS_DIR       where build-flags goes, default /opt/devaloy
 set -euo pipefail
 
@@ -60,7 +60,7 @@ for step in "$@"; do
       ;;
     cli)              sys_install_cli "${REPO}" ;;
     build-flags)
-      [ -n "${RUNTIME:-}" ] || sys_die "build-flags needs RUNTIME=container or RUNTIME=native."
+      [ -n "${RUNTIME:-}" ] || sys_die "build-flags needs RUNTIME=container, RUNTIME=native or RUNTIME=upstash."
       sys_build_flags "${FLAGS_DIR}" "${RUNTIME}" "${WITH_DOCKER}" "${WITH_BROWSER}"
       ;;
     *) sys_die "install.sh: unknown step '${step}'. Run it with no arguments for the list." ;;

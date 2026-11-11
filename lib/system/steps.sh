@@ -89,10 +89,17 @@ sys_zsh_completions() {
 }
 
 # config/apt/packages.txt: one package per line, a comment on each one that
-# needs a reason. The list needs the Tailscale repo in place first.
-sys_base_packages() { # sys_base_packages REPO_DIR
-  local pkgs
-  mapfile -t pkgs < <(pkg_list "$1/config/apt/packages.txt")
+# needs a reason. The list needs the Tailscale repo in place first, unless the
+# caller leaves tailscale out.
+#
+# Every name after REPO_DIR is left out of the list. An Upstash Box passes
+# tailscale when WITH_TAILSCALE is off: Tailscale is optional there, and the
+# box has no Tailscale repo until the key turns it on. The image and the
+# native installer pass nothing, so they install the whole list.
+sys_base_packages() { # sys_base_packages REPO_DIR [SKIP...]
+  local pkgs repo="$1"
+  shift
+  mapfile -t pkgs < <(pkg_list "${repo}/config/apt/packages.txt" | pkg_skip "$@")
   [ "${#pkgs[@]}" -gt 0 ] || sys_die "config/apt/packages.txt is empty or missing."
   apt_ensure "${pkgs[@]}"
   # Ubuntu and Debian ship bat as `batcat` (a name clash with bacula-console)
@@ -107,9 +114,20 @@ sys_base_packages() { # sys_base_packages REPO_DIR
 # WITH_BROWSER. The system half of playwright-cli: the shared libraries a
 # headless Chromium needs, plus ffmpeg. The browser itself is a per-release
 # download into ~/.cache/ms-playwright, which bootstrap-toolchain.sh fetches.
+#
+# The list carries the t64 names (libasound2t64 and three more), which is what
+# noble and trixie call those libraries since the 64-bit time_t move. Debian 12
+# bookworm, the base of an Upstash Box, predates the move and ships them under
+# the old names, so on bookworm the suffix is dropped. Every other name in the
+# list is the same on all three releases.
 sys_browser_packages() { # sys_browser_packages REPO_DIR
   local pkgs
-  mapfile -t pkgs < <(pkg_list "$1/config/apt/browser.txt")
+  sys_distro
+  if [ "${OS_CODENAME}" = bookworm ]; then
+    mapfile -t pkgs < <(pkg_list "$1/config/apt/browser.txt" | sed 's/t64$//')
+  else
+    mapfile -t pkgs < <(pkg_list "$1/config/apt/browser.txt")
+  fi
   [ "${#pkgs[@]}" -gt 0 ] || sys_die "config/apt/browser.txt is empty or missing."
   apt_ensure "${pkgs[@]}"
   sys_ok "browser libraries present (the bootstrap fetches playwright-cli and Chromium)"
@@ -219,9 +237,15 @@ sys_install_cli() {
 # with, for `devaloy doctor`. "Docker is not reachable" is the same
 # observation whether the box never had Docker or the daemon died, and those
 # need opposite answers; this file says which was asked for. RUNTIME
-# (container or native) decides what doctor and health check. WITH_PASEO and
-# WITH_T3CODE are runtime flags and live in runtime-flags instead.
+# (container, native or upstash) decides what doctor and health check. WITH_PASEO
+# and WITH_T3CODE are runtime flags and live in runtime-flags instead. Any other
+# RUNTIME is refused here: the readers turn an unknown value into container,
+# so a typo written now would pass as the wrong runtime with no error.
 sys_build_flags() {
+  case "$2" in
+    container|native|upstash) ;;
+    *) sys_die "build-flags: RUNTIME=$2 is not container, native or upstash." ;;
+  esac
   put_content "$1/build-flags" 644 < <(
     printf 'WITH_DOCKER=%s\nWITH_BROWSER=%s\nRUNTIME=%s\n' "$3" "$4" "$2")
   sys_ok "build-flags: WITH_DOCKER=$3 WITH_BROWSER=$4 RUNTIME=$2"

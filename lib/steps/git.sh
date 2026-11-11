@@ -146,11 +146,23 @@ step_git_identity() {
     git_cfg user.name  "${GIT_NAME}"
     git_cfg user.email "${GIT_EMAIL}"
     log "git identity set to ${GIT_NAME} <${GIT_EMAIL}>"
+  elif on_upstash && EXISTING_NAME="$(as_dev "git config --global --get user.name" 2>/dev/null)" &&
+       [ -n "${EXISTING_NAME}" ]; then
+    # A new Upstash Box starts with 'Upstash Box <box@upstash.com>' in its
+    # ~/.gitconfig. Upstash does not write it again on a later start (checked
+    # across a pause and resume), so whatever is there now is what commits get.
+    log "WARNING: no git identity in /workspace/.devaloy/env, so commits from this box"
+    log "WARNING: carry the one already in ~/.gitconfig: ${EXISTING_NAME}. Set"
+    log "WARNING: GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL there, or supply a GITHUB_TOKEN,"
+    log "WARNING: then run '${UPSTASH_BOOT_CMD}'."
   else
     log "WARNING: no git identity — commits from this box will fail with"
     log "WARNING: 'Author identity unknown'. Set GIT_AUTHOR_NAME and"
     if on_native; then
       log "WARNING: GIT_AUTHOR_EMAIL in /etc/devaloy/env, or supply a GITHUB_TOKEN."
+    elif on_upstash; then
+      log "WARNING: GIT_AUTHOR_EMAIL in /workspace/.devaloy/env, or supply a GITHUB_TOKEN,"
+      log "WARNING: then run '${UPSTASH_BOOT_CMD}'."
     else
       log "WARNING: GIT_AUTHOR_EMAIL in .env, or supply a GITHUB_TOKEN."
     fi

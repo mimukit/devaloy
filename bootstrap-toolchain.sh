@@ -39,6 +39,10 @@ runtime_flag() { # runtime_flag <name>
 WITH_PASEO="${WITH_PASEO:-$(runtime_flag WITH_PASEO)}"
 WITH_BROWSER="${WITH_BROWSER:-$(runtime_flag WITH_BROWSER)}"
 WITH_T3CODE="${WITH_T3CODE:-$(runtime_flag WITH_T3CODE)}"
+# The slim toolset, for a box whose disk cannot hold the full one (an Upstash
+# Box has 10G on /workspace for the toolset and the repos together). Read the
+# same way as the keys above, so `devaloy update` from a shell keeps it.
+DEVALOY_SLIM="${DEVALOY_SLIM:-$(runtime_flag DEVALOY_SLIM)}"
 
 FORCE=0
 case "${1:-}" in
@@ -144,6 +148,18 @@ pin_tool() {
   echo "pinned ${tool} to ${version} from the environment"
 }
 pin_tool node "${MISE_NODE_VERSION:-}"
+
+# DEVALOY_SLIM=true drops the large tools a phone-first box can do without:
+# the editor and its parser CLI, the two Cloudflare CLIs and the Infisical CLI.
+# They are deleted from the staged copy, before the hash below, so turning the
+# key on or off moves the marker and the next run installs the right set. The
+# lines are matched by their exact key, so a comment that names a tool stays.
+# The tools already on the volume stay until `devaloy prune --apply`.
+if [ "${DEVALOY_SLIM}" = "true" ]; then
+  sed -i -E '/^(neovim|"tree-sitter"|"npm:wrangler"|"npm:cf"|infisical) = /d' \
+    "${STAGE}/config.toml"
+  echo "slim toolset: neovim, tree-sitter, wrangler, cf and infisical left out"
+fi
 
 # A clone pulled before a fragment was added does not have it, while the image
 # that turned the key on does. Fall back to the image snapshot for that one
@@ -308,8 +324,13 @@ rm -rf "${HOME}/.coderabbit"
 # Non-fatal, unlike the skills install. A box
 # with no editor config still has vim from the apt list, and it is not worth
 # costing the volume its revision marker.
+#
+# Skipped on a slim box: neovim is not in its toolset, so there is nothing to
+# seed a config for and no `nvim` to run the first sync.
 NVIM_CONFIG_SRC="/opt/devaloy/config/nvim"
-if [ ! -d "${HOME}/.config/nvim" ]; then
+if [ "${DEVALOY_SLIM}" = "true" ]; then
+  echo "slim toolset: no neovim, so no LazyVim seed"
+elif [ ! -d "${HOME}/.config/nvim" ]; then
   nvim_seeded=""
   if [ -d "${NVIM_CONFIG_SRC}" ]; then
     echo "seeding ~/.config/nvim from ${NVIM_CONFIG_SRC}"
@@ -342,6 +363,7 @@ if [ ! -d "${HOME}/.config/nvim" ]; then
     fi
   fi
 else
+  # shellcheck disable=SC2088  # the tilde is text for the reader, not a path.
   echo "~/.config/nvim exists, leaving it alone"
 fi
 

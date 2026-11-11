@@ -293,6 +293,12 @@ step_seed_config() {
 # ~/.claude.json also holds MCP servers and per-project history, so this merges
 # into whatever is there rather than writing the file fresh. A file that
 # already carries the flag is left alone, so a re-run does not rewrite it.
+#
+# When ~/.claude.json is a symlink (the Home fallback of an Upstash Box links it
+# into /workspace/home), the merged copy is written through the link, as
+# write_through in common.sh does, because a rename would put a plain file on
+# the overlay in its place. It runs inline here because the merge runs as the
+# dev user, in a shell that does not have the helpers.
 step_claude_onboarding() {
   if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]; then
     CLAUDE_JSON="${DEV_HOME}/.claude.json"
@@ -300,8 +306,12 @@ step_claude_onboarding() {
       if jq -e '.hasCompletedOnboarding == true' '${CLAUDE_JSON}' >/dev/null 2>&1; then
         :
       elif [ -s '${CLAUDE_JSON}' ] && jq -e . '${CLAUDE_JSON}' >/dev/null 2>&1; then
-        jq '.hasCompletedOnboarding = true' '${CLAUDE_JSON}' > '${CLAUDE_JSON}.tmp' &&
+        jq '.hasCompletedOnboarding = true' '${CLAUDE_JSON}' > '${CLAUDE_JSON}.tmp' || exit 1
+        if [ -L '${CLAUDE_JSON}' ]; then
+          cat '${CLAUDE_JSON}.tmp' > '${CLAUDE_JSON}' && rm -f '${CLAUDE_JSON}.tmp'
+        else
           mv '${CLAUDE_JSON}.tmp' '${CLAUDE_JSON}'
+        fi
       else
         printf '%s\n' '{\"hasCompletedOnboarding\": true}' > '${CLAUDE_JSON}'
       fi

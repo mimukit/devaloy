@@ -44,11 +44,18 @@ step_tailscale_up() {
     # The way back in differs by runtime. A container has no shell of its own
     # without the tailnet, so the hint goes through the Docker host. A VM keeps
     # its public sshd and the provider console, and tailscaled is a systemd
-    # unit there, so the same `up` runs from any root shell on the VM.
+    # unit there, so the same `up` runs from any root shell on the VM. An
+    # Upstash Box keeps its own SSH and console too, but has no unit: the boot
+    # started tailscaled, so running the boot again is the other way back.
     if on_native; then
       log "WARNING: recover from a shell on this VM (public SSH or the provider"
       log "WARNING: console) with:"
       log "WARNING:   sudo tailscale up --ssh --hostname=${TS_HOSTNAME:-devaloy}"
+    elif on_upstash; then
+      log "WARNING: recover from a shell on this box (Upstash SSH or the console) with:"
+      log "WARNING:   sudo tailscale --socket=${TS_SOCKET} up --ssh --hostname=${TS_HOSTNAME:-devaloy}"
+      log "WARNING: or run the boot again with '${UPSTASH_BOOT_CMD}'"
+      log "WARNING: and read ${UPSTASH_BOOT_LOG}."
     else
       log "WARNING: recover from the Docker host with:"
       log "WARNING:   docker compose exec devaloy tailscale up --ssh"
@@ -108,6 +115,16 @@ step_tailscale_ensure() {
   done
   if ts_is_up_as "${TS_HOSTNAME:-devaloy}"; then
     log "Tailscale SSH is up as ${TS_HOSTNAME:-devaloy} ($(tailscale --socket="${TS_SOCKET}" ip -4 2>/dev/null | head -1))"
+    return 0
+  fi
+  # A tailnet with device approval on holds a new node in NeedsMachineAuth
+  # until an admin approves it, and tailscaled then joins by itself. Another
+  # `up` cannot help: it only waited out its 90 s timeout and the 20 s name
+  # wait on every boot, which on an Upstash Box held back the T3 server, so
+  # the preview URL gave 503 for over two minutes after a resume.
+  if [ "$(ts_status_field .BackendState)" = "NeedsMachineAuth" ]; then
+    log "WARNING: this node waits for approval in the tailnet admin console"
+    log "WARNING: (Machines). Approve it there; it joins by itself, no new key needed."
     return 0
   fi
   step_tailscale_up

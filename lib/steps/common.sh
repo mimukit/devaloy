@@ -16,8 +16,12 @@
 # which shellcheck cannot see when it checks this file on its own.
 # shellcheck disable=SC2034
 
-DEV_USER="dev"
-DEV_HOME="/home/${DEV_USER}"
+# The user the steps write for, and its home. Both default to the dev user the
+# container and the native VM create. An Upstash Box has no dev user: its boot
+# sets DEV_USER=boxuser and DEV_HOME=/workspace/home, the only disk that
+# survives a reset, before it sources this file.
+DEV_USER="${DEV_USER:-dev}"
+DEV_HOME="${DEV_HOME:-/home/${DEV_USER}}"
 TS_STATE_DIR="${TS_STATE_DIR:-/var/lib/tailscale}"
 TS_SOCKET="/var/run/tailscale/tailscaled.sock"
 CONFIG_SRC="/opt/devaloy/config"
@@ -36,37 +40,50 @@ STAGED=".devaloy-new"
 
 # --- the runtime -------------------------------------------------------------
 #
-# The same steps run in two places: the container entrypoint, and on a native
-# VM (scripts/install-native.sh and devaloy-boot.service). Most of them write
-# the same files either way. What differs is the advice a step prints when it
-# fails: "recover from the Docker host with docker compose exec" is the only
-# way back into a container, and a command that does not exist on a VM. So a
-# step that prints a recovery hint asks on_native() first and names the
-# command for the box it is actually on.
+# The same steps run in three places: the container entrypoint, a native VM
+# (scripts/install-native.sh and devaloy-boot.service), and an Upstash Box
+# (lib/steps/upstash-boot.sh, run by the Upstash init command). Most of them
+# write the same files on each. What differs is the advice a step prints when
+# it fails: "recover from the Docker host with docker compose exec" is the only
+# way back into a container, a command that does not exist on a VM, and an
+# Upstash Box has neither systemd nor a Docker host to run it from. So a step
+# that prints a recovery hint asks on_native() and on_upstash() first and
+# names the command for the box it is actually on.
 #
 # The environment wins, then the RUNTIME key in build-flags, then container.
-# The Dockerfile writes RUNTIME=container and the native installer writes
-# RUNTIME=native; an image built before the key existed has neither, and it is
-# a container, so the fallback is the honest answer rather than a guess. The
-# CLI resolves the same key the same way in lib/common.sh (devaloy_runtime).
-# That file is not sourced here, because it makes a temp directory and sets an
-# EXIT trap the moment it is sourced.
+# The Dockerfile writes RUNTIME=container, the native installer RUNTIME=native
+# and the Upstash installer RUNTIME=upstash; an image built before the key
+# existed has none, and it is a container, so the fallback is the honest
+# answer rather than a guess. The CLI resolves the same key the same way in
+# lib/common.sh (devaloy_runtime). That file is not sourced here, because it
+# makes a temp directory and sets an EXIT trap the moment it is sourced.
 #
-# Anything that is not exactly `native` reads as container, so a typo in the
-# key keeps the output this script has always printed.
+# Anything that is not exactly `native` or `upstash` reads as container, so a
+# typo in the key keeps the output this script has always printed.
 BUILD_FLAGS_FILE="${BUILD_FLAGS_FILE:-/opt/devaloy/build-flags}"
 if [ -z "${RUNTIME:-}" ]; then
   RUNTIME="$(sed -n 's/^RUNTIME=//p' "${BUILD_FLAGS_FILE}" 2>/dev/null | head -1 || true)"
 fi
-[ "${RUNTIME}" = "native" ] || RUNTIME=container
+case "${RUNTIME}" in
+  native|upstash) ;;
+  *) RUNTIME=container ;;
+esac
 
 on_native() { [ "${RUNTIME}" = "native" ]; }
+on_upstash() { [ "${RUNTIME}" = "upstash" ]; }
+
+# The recovery hint for an Upstash Box: there is no unit to restart and no
+# Docker host, so the way back is to run the boot again by hand and read its
+# log. The same command is the box's Upstash init command.
+UPSTASH_BOOT_CMD="bash /workspace/devaloy/lib/steps/upstash-boot.sh"
+UPSTASH_BOOT_LOG="/workspace/.devaloy/logs/boot.log"
 
 # The log prefix. The container keeps [entrypoint], which is the name of the
 # script that prints it and the string `docker logs | grep` has always keyed on.
 # On a VM no script by that name runs; journalctl already tags each line with
-# the unit, so the prefix only has to say which program is talking.
-if on_native; then
+# the unit, so the prefix only has to say which program is talking. An Upstash
+# Box runs no entrypoint either, so it takes the same prefix as a VM.
+if on_native || on_upstash; then
   LOG_TAG=devaloy
 else
   LOG_TAG=entrypoint
@@ -101,15 +118,55 @@ as_dev() { su -l -s /bin/sh "${DEV_USER}" -c "$1"; }
 #
 # The content of DEST is exactly what the old in-place write produced; only
 # the mtime of an unchanged file differs.
+#
+# When DEST is a symlink, the new bytes go into the file it points at, through
+# write_through below, and the link stays. A rename would put a plain file in
+# place of the link. A revocation removes the file the link points at and
+# keeps the link: removing only the link would leave the old secrets on
+# /workspace, and the next boot would link them back.
 commit_staged() {
   local new="$1" dest="$2"
-  if [ ! -e "${new}" ]; then
+  if [ ! -e "${new}" ] && [ -L "${dest}" ]; then
+    rm -f -- "$(readlink -f -- "${dest}")"
+  elif [ ! -e "${new}" ]; then
     rm -f "${dest}"
   elif [ -f "${dest}" ] && cmp -s "${new}" "${dest}"; then
     rm -f "${new}"
+  elif [ -L "${dest}" ]; then
+    write_through "${new}" "${dest}"
   else
     mv -f "${new}" "${dest}"
   fi
+}
+
+# write_through NEW DEST — put NEW's bytes into the file the symlink DEST
+# points at, then remove NEW. DEST stays a link.
+#
+# This is for the Home fallback of an Upstash Box: when the passwd home cannot
+# move to /workspace/home, the boot links a fixed list of dotfiles from
+# /home/boxuser into /workspace/home, the only disk a reset keeps. A step that
+# renamed its new file over such a link would replace the link with a plain
+# file on the overlay, and the next reset would lose it. On the container and
+# on a VM nothing in the home is a link, so commit_staged never calls this
+# there.
+#
+# The target ends with NEW's bytes, mode and owner, which is what a rename of
+# NEW over a plain DEST gives, so a 0600 secrets file stays 0600 behind a link.
+# A dangling link gets its target created. The write is not atomic: a reader
+# can see a short file for the moment the copy takes. The files this serves
+# are read at login or at the next boot, not while a step writes them.
+write_through() {
+  local new="$1" dest="$2" target
+  target="$(readlink -f -- "${dest}")" || target=""
+  if [ -z "${target}" ] || [ ! -d "$(dirname -- "${target}")" ]; then
+    rm -f -- "${new}"
+    log "WARNING: ${dest} is a link to a missing directory; left as it is."
+    return 0
+  fi
+  cat -- "${new}" > "${target}"
+  chmod --reference="${new}" -- "${target}"
+  chown --reference="${new}" -- "${target}" 2>/dev/null || true
+  rm -f -- "${new}"
 }
 
 # Appends one export to ~/.devaloy_secrets. See step_secrets for the lifecycle.
