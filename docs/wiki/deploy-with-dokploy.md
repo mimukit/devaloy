@@ -284,17 +284,66 @@ confirmation dialog. The README's backup contract still applies regardless:
 git-push discipline is the only real backup, and nothing valuable should live
 only on devaloy.
 
-## 8. Do not run the host firewall script
+## 8. The host firewall
 
-`scripts/host-firewall-lockdown.sh` sets `ufw default deny incoming` and allows
-traffic only on `tailscale0`. On a plain VPS that is sensible defense-in-depth.
-**On a Dokploy host it will cut off Dokploy itself** — the panel on port 3000
-and Traefik on 80/443 all become unreachable from the public internet, taking
-every other site on that server with them.
+### On a shared Dokploy host, do not run the lockdown script
 
-Only run it if the Dokploy host exists solely for devaloy *and* you want to
-reach the panel over the tailnet only. Otherwise skip it: devaloy publishes
-no ports and needs no host firewall rule to stay private.
+`scripts/host-firewall-lockdown.sh` sets `ufw default deny incoming` and allows traffic only on `tailscale0`. On a host that serves other sites, it cuts off Dokploy itself: the panel on port 3000 and Traefik on 80/443 become unreachable from the public internet, and every other site on that server goes with them. devaloy publishes no ports and needs no host firewall rule to stay private, so skip it there.
+
+### On a remote server that runs only devaloy, lock it down
+
+When devaloy has a remote server to itself (added under **Remote Servers**, with the panel on another host), close the public IP completely. Two layers are needed, because Docker publishes container ports around `ufw`: Traefik's 80/443 and any database **External Port** stay reachable after the lockdown script runs.
+
+1. Install Tailscale on the host itself, under a name other than the devaloy node's: `sudo tailscale up --ssh --hostname=<server>-host`. The lockdown script refuses to run without `tailscale0` on the host.
+2. Make sure the panel host also runs Tailscale. In **Remote Servers**, change the server's IP to the host's `100.x` address and click **Validate**. Once public port 22 closes, this is the only way the panel can reach the server.
+3. From a Tailscale SSH session on the host, run the lockdown script. It refuses to run from a session on the public IP:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/mimukit/devaloy/main/scripts/host-firewall-lockdown.sh -o /tmp/lockdown.sh
+   sudo SSH_CONNECTION="$SSH_CONNECTION" bash /tmp/lockdown.sh
+   ```
+
+   This closes `sshd` and the Docker Swarm ports (2377, 7946, 4789) that Dokploy's **Setup Server** opens. It also covers IPv6.
+
+4. Close the Docker-published ports at the provider's network firewall. The OVH steps follow.
+
+Dokploy's **Server Security → Exposed Ports** tab lists listening sockets, not reachability. It keeps showing every port after the lockdown; the header changing to `Firewall (UFW) Active, Default incoming: deny` is the signal that worked.
+
+### OVH Edge Network Firewall
+
+In the OVH Control Panel: **Bare Metal Cloud → Network → IP addresses**, open the server's IPv4 address, then the **Edge Firewall** tab. Add these rules, then turn on **Firewall enabled**:
+
+| Priority | Action | Protocol | Source port | Dest. port | TCP option | Why |
+|---|---|---|---|---|---|---|
+| 0 | Permit | TCP | any | any | Established | Replies to outgoing TCP: `apt`, `git`, image pulls, Tailscale DERP |
+| 1 | Permit | UDP | 53 | any | | DNS replies |
+| 2 | Permit | UDP | 123 | any | | NTP replies |
+| 3 | Permit | UDP | any | 41641 | | Direct Tailscale connections to the host |
+| 4 | Permit | UDP | any | 32768-60999 | | Replies to other outgoing UDP, such as the devaloy container's own Tailscale |
+| 5 | Permit | ICMP | any | any | | Ping and path MTU discovery |
+| 19 | Deny | IPv4 | any | any | | Everything else |
+
+Things that are easy to get wrong:
+
+- The firewall is stateless. Without rules 0 to 4, the deny rule drops the replies to the server's own outgoing traffic, and DNS, `apt` and Tailscale break.
+- OVH adds no implicit deny. With only Permit rules, the panel warns that nothing is blocked. Rule 19 is required.
+- Rules 3 and 4 match the **destination** port. Put the range in the source port column by mistake and any UDP packet sent from a high port gets in, to any port.
+- The rules cover the IPv4 address only. `ufw` covers IPv6.
+- Tailnet traffic is not affected. It reaches the host through the Tailscale tunnel, not as packets to the public IP, so a database published on an **External Port** stays usable at `<server>-host:<port>` from the tailnet.
+
+If anything breaks, turn the **Firewall enabled** switch off. The OVH panel does not need SSH, so this setting cannot lock you out.
+
+### Test from outside OVH
+
+The Edge Network Firewall does not appear to filter traffic that comes from inside the OVH network. A port test from another OVH server, including a devaloy box hosted there, reports the ports as open. Test from somewhere else, such as a laptop with Tailscale off:
+
+```sh
+nc -zv -w 5 <public-ip> 22
+nc -zv -w 5 <public-ip> 80
+nc -zv -w 5 <public-ip> 443
+```
+
+Every port must time out. Because other OVH servers may still reach a published port, give every published database a password.
 
 ## Troubleshooting
 

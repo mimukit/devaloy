@@ -6,8 +6,7 @@ a cloud VPS and skippable on a trusted machine at home.
 
 **This does not protect devaloy.** devaloy has no `ports:` key at all and
 publishes nothing, so there is no listening socket on it to firewall. What this
-protects is everything else on the host — its sshd, its panel, any service that
-came with the distro.
+protects is the services that listen on the host itself: its sshd, the Docker Swarm ports, any service that came with the distro. It does not protect ports that Docker publishes for a container. See [What it does not close](#what-it-does-not-close).
 
 Like `scripts/host-resource-guard.sh`, it runs on the **host**, not inside the
 container. `scripts/` is excluded from the Docker build context, so the file is
@@ -19,14 +18,11 @@ of which devaloy has.
 Read this section. The script's guards catch the two common ways to lock
 yourself out, but they cannot catch the third.
 
-**It will close ports 80 and 443.** If the host also serves websites, this takes
-them offline. The Dokploy page spells out that case:
-[Do not run the host firewall script](deploy-with-dokploy.md#8-do-not-run-the-host-firewall-script)
-— on a Dokploy host it cuts off the panel on port 3000 and Traefik on 80/443,
-taking every other site on that server with them.
+**It closes public SSH.** After it runs, port 22 answers only on the tailnet. Anything that reaches the host over SSH on its public IP stops working, and that includes a Dokploy panel on another server that manages this host as a remote server. Point the panel at the host's tailnet address first. [Deploy with Dokploy](deploy-with-dokploy.md#8-the-host-firewall) has the steps.
 
-Only run it when the host exists for devaloy alone, or when you genuinely want
-every service on it reachable over the tailnet only.
+**It does not close ports that Docker publishes.** On a Dokploy host, Traefik on 80/443 and the panel on 3000 stay reachable from the internet, so the script takes no site offline. It also does not make them private. To close those ports, use the cloud provider's network firewall.
+
+Only run it when the host exists for devaloy alone, or when you want every host service reachable over the tailnet only.
 
 ## Running it
 
@@ -116,6 +112,17 @@ Expect `Default: deny (incoming), allow (outgoing)` and a single rule allowing
 anything in on `tailscale0`. Confirm from a second device that you can still
 reach the host over the tailnet **before** closing the session you ran it from.
 
+## What it does not close
+
+Docker writes its own `iptables` rules for every port a container publishes, and those rules run before the `ufw` rules. A published port therefore stays open to the internet after the lockdown. On a test host the lockdown closed 22 and the Swarm port 2377, while Traefik's 80/443 and a Redis published on 6371 still answered from outside.
+
+This applies to any container on the host: Traefik, the Dokploy panel, a database with an **External Port**, or a project stack on a native install with `WITH_DOCKER=true`. Two ways to close them:
+
+- Do not publish the port, or publish it on the tailnet address only (`100.x.y.z:6371:6379`). Swarm services cannot bind to one address, so this does not work for a Dokploy database.
+- Block the public IP at the cloud provider's network firewall, which filters traffic before it reaches the host. [Deploy with Dokploy](deploy-with-dokploy.md#ovh-edge-network-firewall) has a rule set for OVH.
+
+`sudo ufw status verbose` cannot show this gap. Test from a machine outside the tailnet with `nc -zv -w 5 <public-ip> <port>`.
+
 ## Undoing it
 
 ```sh
@@ -139,8 +146,8 @@ to stock defaults.
 
 - [The host resource guard](host-resource-guard.md) — the other host-side
   script, and the other half of keeping a small VPS alive.
-- [Deploy with Dokploy](deploy-with-dokploy.md#8-do-not-run-the-host-firewall-script)
-  — why not to run this one there.
+- [Deploy with Dokploy](deploy-with-dokploy.md#8-the-host-firewall)
+  — when to run this one there, and the provider firewall that closes the Docker ports.
 - [Architecture](architecture.md) — why devaloy needs no firewall rule of its own.
 
 _Verified against `main`@`b6bc42b` on 2026-08-25. The `SSH_CONNECTION` refusal is verified from the code on 2026-10-28._
