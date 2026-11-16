@@ -65,6 +65,9 @@ step_runtime_flags() {
       "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" "${WITH_T3CODE:-false}" \
       "${WITH_DOCKER:-false}"
     [ -z "${DEVALOY_SLIM:-}" ] || printf 'DEVALOY_SLIM=%s\n' "${DEVALOY_SLIM}"
+    [ -z "${DEVALOY_DB_UPSTREAM:-}" ] ||
+      printf 'DEVALOY_DB_UPSTREAM=%s\nDEVALOY_DB_PORT=%s\n' \
+        "${DEVALOY_DB_UPSTREAM}" "${DEVALOY_DB_PORT:-5435}"
   } > "/opt/devaloy/runtime-flags${STAGED}"
   chmod 644 "/opt/devaloy/runtime-flags${STAGED}"
   commit_staged "/opt/devaloy/runtime-flags${STAGED}" /opt/devaloy/runtime-flags

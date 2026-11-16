@@ -334,6 +334,29 @@ modules_present() {
   [ "${missing}" -eq 0 ]
 }
 
+doctor_db_forward() {
+  # The development database forward (DEVALOY_DB_UPSTREAM). Two probes, because
+  # socat accepts a client on the loopback even while the upstream is down: the
+  # listener alone would report a dead database as up.
+  local upstream port host uport
+  upstream="$(runtime_flag DEVALOY_DB_UPSTREAM)"
+  if [ "${upstream}" = "false" ]; then
+    doctor_row off 'db forward' 'DEVALOY_DB_UPSTREAM is not set'
+    return 0
+  fi
+  port="$(runtime_flag DEVALOY_DB_PORT)"
+  [ "${port}" != "false" ] || port=5435
+  host="${upstream%:*}"
+  uport="${upstream##*:}"
+  if ! timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/${port}" 2>/dev/null; then
+    doctor_row broken 'db forward' "nothing listens on 127.0.0.1:${port}; see /var/log/devaloy-db-forward.log"
+  elif ! timeout 3 bash -c "exec 3<>/dev/tcp/${host}/${uport}" 2>/dev/null; then
+    doctor_row broken 'db forward' "127.0.0.1:${port} is up, but ${upstream} does not answer"
+  else
+    doctor_row ok 'db forward' "127.0.0.1:${port} -> ${upstream}"
+  fi
+}
+
 doctor_collect() {
   DOCTOR_FAILURES=0
   doctor_rows=()
@@ -346,6 +369,10 @@ doctor_collect() {
     doctor_gated WITH_DOCKER 'docker daemon' docker info
   fi
   doctor_gated WITH_BROWSER 'browser capture' browser_up
+  # A native VM and an Upstash Box run no forward; see lib/steps/db-forward.sh.
+  if ! on_native && ! on_upstash; then
+    doctor_db_forward
+  fi
 
   # Paseo, from the runtime flags rather than the build flags, and the running
   # daemon outranks the key. An old container with no runtime flags file reads

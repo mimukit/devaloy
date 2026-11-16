@@ -51,3 +51,6 @@ openssh-client
 # binary. The distro package is what upstream asks for.
 bubblewrap
 tailscale
+# The development database forward, 127.0.0.1:5435 to the box's Postgres
+# (DEVALOY_DB_UPSTREAM, lib/steps/db-forward.sh).
+socat

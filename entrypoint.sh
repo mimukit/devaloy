@@ -31,6 +31,8 @@ DEVALOY_LIB="${DEVALOY_LIB:-/usr/local/lib/devaloy}"
 . "${DEVALOY_LIB}/steps/paseo.sh"
 # shellcheck source=lib/steps/t3code.sh
 . "${DEVALOY_LIB}/steps/t3code.sh"
+# shellcheck source=lib/steps/db-forward.sh
+. "${DEVALOY_LIB}/steps/db-forward.sh"
 
 # --- the dev shell, secrets and dotfiles (before tailscaled) ---
 step_shell_env
@@ -163,6 +165,42 @@ if [ "${WITH_DOCKER:-false}" = "true" ]; then
       log "WARNING: DEVALOY_PRIVILEGED=true (a host you own alone), then redeploy."
       log "WARNING: the daemon's own reason is at the end of ${DOCKERD_LOG}."
     fi
+  fi
+fi
+
+# --- development database forward (only when DEVALOY_DB_UPSTREAM is set) ---
+# 127.0.0.1:${DEVALOY_DB_PORT:-5435} inside this container leads to the box's
+# own Postgres, so every project's DATABASE_URL is the same on every box. See
+# lib/steps/db-forward.sh for why a forward and not a host name.
+#
+# It starts before the toolchain, so a project that boots early finds the
+# database, and after tailscaled, because an upstream on the tailnet needs it.
+# socat connects to the upstream once per client, not here, so an upstream
+# that is still down only fails the clients that try it.
+#
+# It binds 127.0.0.1 only. The tailnet and the docker bridge never see it.
+DB_FORWARD_LOG="/var/log/devaloy-db-forward.log"
+
+if [ -n "${DEVALOY_DB_UPSTREAM:-}" ]; then
+  step_db_forward_config
+  if [ "${DB_FORWARD_READY}" = "1" ]; then
+    log "Forwarding 127.0.0.1:${DB_FORWARD_PORT} to ${DEVALOY_DB_UPSTREAM}"
+    (
+      # Same reasoning as the Paseo loop: above a runaway build, below
+      # tailscaled.
+      echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
+      # socat exits when it cannot bind, for example while a project's own
+      # compose stack publishes the same port. The loop retries, and the log
+      # says why.
+      while true; do
+        # Both values passed db_forward_valid, so neither carries a quote or a
+        # space.
+        as_dev "exec socat TCP-LISTEN:${DB_FORWARD_PORT},bind=127.0.0.1,reuseaddr,fork TCP:${DEVALOY_DB_UPSTREAM}" \
+          >> "${DB_FORWARD_LOG}" 2>&1 || true
+        log "WARNING: the database forward stopped; restarting in 10s (see ${DB_FORWARD_LOG})."
+        sleep 10
+      done
+    ) &
   fi
 fi
 

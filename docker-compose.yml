@@ -316,6 +316,12 @@ services:
       # image was built without the libraries. Same one-key-two-readers shape
       # as WITH_DOCKER: only a rebuild moves the build arg.
       - WITH_BROWSER=${WITH_BROWSER:-false}
+      # Where 127.0.0.1:5435 inside the box leads: the box's own development
+      # Postgres, as host:port. Empty means no forward. Read by entrypoint.sh;
+      # see lib/steps/db-forward.sh. `docker compose up -d` picks up a change,
+      # except the first time on an image built before socat was in it.
+      - DEVALOY_DB_UPSTREAM=${DEVALOY_DB_UPSTREAM:-}
+      - DEVALOY_DB_PORT=${DEVALOY_DB_PORT:-5435}
     volumes:
       - home:/home/dev
       # Node identity lives here. Lose it and the box rejoins as a new machine.
