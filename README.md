@@ -911,7 +911,7 @@ skills remove <skill>                # until the next skmi reinstalls it
 ```
 
 Some installed skills depend on the build and are documented as such in
-`CLAUDE.md`/`AGENTS.md` rather than filtered out: `verifykit` needs the
+the `devaloy-box` skill and `AGENTS.md` rather than filtered out: `verifykit` needs the
 headless browser that `WITH_BROWSER=true` builds in. An exclusion list would
 defeat the point of `--skill '*'`.
 

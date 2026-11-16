@@ -30,94 +30,24 @@ Prose for a human reader (docs, READMEs, PR and issue bodies, commit bodies) mus
 
 Never hard-wrap Markdown. Write each paragraph and each list item as one continuous line, and let the editor soft-wrap it. Keep the line structure only where it carries meaning: code fences, tables, and YAML frontmatter. No setting on this box wraps Markdown for you, so a wrapped file is your own doing. This rule covers every Markdown file you write or edit for me. If a repository states its own line rule, follow the repository instead.
 
-## Images and mockups
+## The box
 
-Claude Code cannot generate images. Codex can, so send every image task to Codex: a UI mockup, a screen variant, an icon, an illustration, or any other generated picture.
+You run on **devaloy**, a headless `ubuntu:24.04` container reached only over Tailscale SSH. It has no public IP and no desktop browser. A command that opens a browser, prints a QR code, or waits on a localhost callback hangs instead of failing.
 
-- Do not write an HTML mockup page and screenshot it to make or iterate on a design. Write HTML only when the request asks for code.
-- Start a Codex sub-agent for each image task, on the newest Sol model. Today that is `gpt-6.1-sol`. To confirm the newest, read the `*-sol` slugs in `~/.codex/models_cache.json`.
-- In T3 Code, use `delegate_task` with the Codex provider and the Sol model. Elsewhere, run `codex exec -m gpt-6.1-sol "<prompt>"` in the project directory.
-- Give the sub-agent the screen, the content, the size, and the path for the PNG. Codex also keeps a copy under `~/.codex/generated_images/`.
-- Show me the image, take my feedback, and send the next round to Codex. Repeat until I approve the mockup.
-- If `command -v codex` prints nothing, or Codex is not signed in, say so. Do not fall back to an HTML screenshot.
-
-## Where you are
-
-You are running on **devaloy**, a headless remote dev box. It is an `ubuntu:24.04` container reached only over Tailscale SSH — no public IP, no published ports, no desktop browser. Nobody is watching a GUI here, so anything that wants to open a browser window, print a QR code, or wait on a localhost callback will hang rather than fail.
-
-## What persists and what does not
-
-`/home/dev` is a Docker named volume. Cloned repos, shell history, and tool credentials survive a redeploy. **Everything outside `/home/dev` is thrown away on the next `docker compose up --build`** — including anything you `sudo apt install`. If a tool is worth having, it belongs in the devaloy repo's `Dockerfile`, not in an ad hoc install on the box.
-
-There is no backup job and no snapshot. **Pushing to a remote is the only backup.** Treat unpushed work on this box as work that can be lost.
+Only `/home/dev` survives a redeploy. There is no backup, so unpushed work can be lost. For Docker, the toolchain, `npm i -g`, skills, the browser driver, GitHub auth, or the permission mode, load the `devaloy-box` skill first. For any generated image or UI mockup, load the `codex-images` skill.
 
 ## Committing
 
-Never commit on your own. Leave changes uncommitted for the owner to review, unless the prompt explicitly asks you to commit.
-
-The exception is `afkkit`, whose whole purpose is to run an issue to a pull request unattended — committing and pushing is the job, not a violation of it.
+Never commit on your own. Leave changes uncommitted for the owner to review, unless the prompt explicitly asks you to commit. The exception is `afkkit`, whose job is to commit and push.
 
 ## Deleting
 
-**Nothing checks your deletes here.** There was a `rm-guard` hook on every Bash call; it was removed on purpose. This is a throwaway container built to run agents unattended, and a permission prompt on every `rm` defeated that. Your own judgement is now the only guard, so:
+Nothing checks your deletes, and permission mode is `bypassPermissions`. Your judgement is the only guard.
 
-- **Just do it:** temp files, build output, and git-*tracked* files inside a repo — git can recover those.
-- **Look before you delete:** untracked files, `rm -rf` of a directory, globs, and `..` traversal. Read the target first (`ls`, `git status`), then delete. Nobody will stop you if the glob is wrong.
-- **Never:** `/`, `/home`, `/home/dev`, `~/.claude`, `~/.codex`, `~/.devaloy_secrets`, and system roots. Deleting the home volume's contents destroys every repo and credential on the box.
+- Delete without a check: temp files, build output, and git-tracked files inside a repo.
+- Look first (`ls`, `git status`): untracked files, `rm -rf` of a directory, globs, and `..` traversal.
+- Never delete: `/`, `/home`, `/home/dev`, `~/.claude`, `~/.codex`, `~/.devaloy_secrets`, or system roots.
 
-Remember what this box does *not* have: no backup job, no snapshot, and a home volume that a `docker compose down -v` erases entirely. Git-tracked is only recoverable if it has been **pushed**.
+## Docker and background processes
 
-## Background processes
-
-Stop anything you started before ending a turn — dev servers, test watchers, `pnpm dev`, a `--inspect` node. There is no desktop here to notice a stray process and no Stop hook cleaning up after you, and a background job outlives your SSH session: it keeps holding its port until someone logs in and kills it.
-
-## Docker
-
-This box may or may not have a Docker daemon — it depends on how the image was built. Check before you assume either way:
-
-```sh
-docker info >/dev/null 2>&1 && echo "daemon up"
-```
-
-If that prints nothing, the box was built without `WITH_DOCKER=true`. Say so rather than trying to install Docker or start a daemon; both need an image rebuild you cannot do from inside the container.
-
-When it is there, it is a **real daemon inside this container**, not the host's. Project stacks run here, so a bind mount resolves against this filesystem and a published port lands on the tailnet. That is the whole reason it exists, and it also means the usual host-socket habits are wrong here. Four rules:
-
-- **Use it for a project's own development stack.** `docker compose up -d` in a repo you cloned. That is the case this was built for.
-- **Never pass `--privileged`**, and never grant `--cap-add SYS_ADMIN` or `--pid=host` to a nested container. The devaloy container earns its own authority from the outside; a container you start inside it has no reason to ask for more.
-- **Never bind mount a path from outside `/home/dev`.** Mounting `/`, `/etc`, `/var/run/docker.sock` or the parent's own paths defeats the boundary this arrangement is built on.
-- **Never edit `/var/lib/docker` by hand.** It is a named volume the daemon owns. Use `docker` commands, and `devaloy prune --apply` when the disk is full.
-
-`docker` needs no `sudo`. The daemon's own log is `/var/log/dockerd.log`, which is where to look when a stack will not start.
-
-## Skills
-
-Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from this box's config. `skmi` installs or refreshes them all; `skup` only updates what is already installed, so a newly published skill needs `skmi`.
-
-Two skills are the exception: `devaloy-clean` and `devaloy-fleet` live in the devaloy repo under `config/claude/skills/`, because they call this box's CLI. `devaloy update --config-only` copies them into `~/.claude/skills/`. Use `devaloy-fleet` for any work on more than one devaloy box.
-
-`verifykit`, and the browser checks in `qakit` and `afkkit`, depend on how this box was built. They drive a headless Chromium through `playwright-cli`, which the box has only when built with `WITH_BROWSER=true`. Check before assuming either way:
-
-```sh
-command -v playwright-cli >/dev/null && ls ~/.cache/ms-playwright | grep -q '^chromium' && echo "driver present"
-```
-
-If that prints nothing, the box has no browser driver. Say so, and leave the page checks to the human.
-
-## The toolchain
-
-Node, pnpm, gh and turbo come from `mise` and resolve through shims in `~/.local/share/mise/shims`. To add or upgrade one, edit `bootstrap-toolchain.sh` in the devaloy repo and run `devaloy update` — do not install a second copy with `apt` or a raw `curl | sh`.
-
-After any `npm i -g`, run `devaloy update` so the new binary is visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh).
-
-## GitHub
-
-If `GITHUB_TOKEN` is set in the environment, `gh` and `git push` over HTTPS are already authenticated. Do not run `gh auth login` — it will refuse while that variable is set, which is expected, not a fault to work around.
-
-## Permission mode
-
-This box runs in `bypassPermissions` mode, the mode the `--dangerously-skip-permissions` flag also selects. It skips every permission prompt. `permissions.defaultMode` in `~/.claude/settings.json` sets it, so every session on the box starts that way, not one repo only.
-
-The reason is `afkkit`. An unattended overnight run must not stop for a prompt. An allowlist always leaves a gap that pauses the run at 03:00; bypass mode leaves none. The container is disposable and has no other tenants, so the prompt buys nothing here.
-
-The `deny` list in the same file still applies. Bypass mode removes the prompt, not the deny rules, and it does not relax the rules under "Deleting".
+Never pass `--privileged`, `--cap-add SYS_ADMIN` or `--pid=host`. Never bind mount a path outside `/home/dev`. Stop every process you started before you end a turn: dev servers, watchers, `--inspect` nodes.
