@@ -29,7 +29,8 @@
       "Read(~/.devaloy_secrets)",
       "Read(~/.codex/auth.json)",
       "Read(~/.claude/.credentials.json)",
-      "Bash(gh issue delete*)"
+      "Bash(gh issue delete*)",
+      "Artifact"
     ]
   },
   "attribution": {
