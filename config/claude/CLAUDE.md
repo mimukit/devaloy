@@ -30,6 +30,35 @@ Prose for a human reader (docs, READMEs, PR and issue bodies, commit bodies) mus
 
 Never hard-wrap Markdown. Write each paragraph and each list item as one continuous line, and let the editor soft-wrap it. Keep the line structure only where it carries meaning: code fences, tables, and YAML frontmatter. No setting on this box wraps Markdown for you, so a wrapped file is your own doing. This rule covers every Markdown file you write or edit for me. If a repository states its own line rule, follow the repository instead.
 
+## Mockups and images
+
+### Mockup images
+
+Never commit a mockup image to a code repository. This rule also covers `docs/plans/assets/` and an orphan branch.
+
+Each repository has one secret GitHub gist for its mockup images. The description of the gist is exactly `mockups: <owner>/<repo>`. Never store the gist id in a file or in memory.
+
+1. Get `<owner>/<repo>`: `gh repo view --json nameWithOwner -q .nameWithOwner`.
+2. Find the gist by its description: `gh api --paginate /gists --jq '.[] | select(.description=="mockups: <owner>/<repo>") | .id'`.
+3. If there is no match, create the gist: `gh gist create README.md -d "mockups: <owner>/<repo>"`.
+4. If there is more than one match, stop and ask me.
+5. Clone the gist: `git clone --depth 1 https://gist.github.com/<id>.git`.
+6. Copy the files into the clone, commit, and `git push`.
+
+The `gh` token needs the `gist` scope. If a gist call says that the scope is missing, tell me. Do not run `gh auth refresh`.
+
+Add images with git only. The API and `gh gist create` refuse binary files.
+
+Follow these rules for each image:
+
+- A gist has no folders. Name each file `<plan serial>-r<round>-<screen>-<theme>-<width>.png`.
+- Never use a name again for a changed image. A new round gets a new prefix.
+- Embed an image by its raw URL: `https://gist.githubusercontent.com/<user>/<id>/raw/<file>`. This URL serves `image/png` with no sign-in, also for a secret gist.
+- Post each round to the tracking issue as one comment that embeds every image of the round. Show me the same images in chat.
+- In the plan, the "Mockup approved" row records the date, the round, the gist URL with the file prefix, and the URL of the issue comment. It never records repository paths.
+
+A secret gist is unlisted, not private. Anyone with the URL can see it. A deleted file stays available in the git history of the gist. Only a delete of the whole gist removes the images, and that delete breaks every embed.
+
 ## The box
 
 You run on **devaloy**, a headless `ubuntu:24.04` container reached only over Tailscale SSH. It has no public IP and no desktop browser. A command that opens a browser, prints a QR code, or waits on a localhost callback hangs instead of failing.
