@@ -110,3 +110,17 @@ infisical = "latest"
 # docs/wiki/set-up-the-cloudflare-token.md.
 "npm:wrangler" = "latest"
 "npm:cf" = "latest"
+
+# --- cloud storage -----------------------------------------------------------
+# rclone, for copies between cloud drives (OneDrive, Google Drive) that run for
+# days in tmux. One static binary from the GitHub release, through the aqua
+# backend. It sits here, in the home volume, because an ad hoc install in
+# /usr/local/bin is lost on every restart, and a long copy then stops until
+# someone reinstalls it. link-shims mirrors the shim back to
+# /usr/local/bin/rclone, so scripts that call that path keep working.
+#
+# Pinned, not `latest`: a running copy and its logs are tied to one version,
+# and a new release can change flags or backend behaviour mid-transfer. Bump it
+# deliberately. The remotes live in ~/.config/rclone/rclone.conf, which is in
+# the home volume too.
+rclone = "1.76.0"
