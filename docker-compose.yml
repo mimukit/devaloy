@@ -291,11 +291,18 @@ services:
       #
       # The entrypoint runs `t3 serve` on the tailnet address only, port 3773,
       # and prints a pairing link to the container log. `ssh devaloy t3 pair`
-      # prints a fresh link for the next device. devaloy writes no T3 Code
-      # settings; the apps own ~/.t3/userdata/settings.json. Turning the key
-      # back off stops the server on the next boot, and the next
-      # `devaloy update` removes the CLI. See the README.
+      # prints a fresh link for the next device. The apps own
+      # ~/.t3/userdata/settings.json; devaloy writes one entry in it, and only
+      # with the key below. Turning the key back off stops the server on the
+      # next boot, and the next `devaloy update` removes the CLI. See the README.
       - WITH_T3CODE=${WITH_T3CODE:-false}
+      # The Claude usage proxy, for a box that signs in with
+      # CLAUDE_CODE_OAUTH_TOKEN. T3 Code shows no Claude limits for a
+      # setup-token; with this on, a loopback proxy on 127.0.0.1:8317 serves
+      # `usage --json` to T3 and the boot writes its entry in settings.json.
+      # It sends no request to Anthropic, so the numbers can be old. Needs
+      # WITH_T3CODE=true and a token. A runtime variable: `up -d` picks it up.
+      - WITH_T3CODE_PROXY_CLAUDE_USAGE=${WITH_T3CODE_PROXY_CLAUDE_USAGE:-false}
       # Optional pin overrides; empty falls through to bootstrap-toolchain.sh.
       # Only add one whose tool name is a real mise registry entry. mise treats
       # any MISE_<TOOL>_VERSION in the container environment as a declaration of

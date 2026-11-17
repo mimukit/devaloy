@@ -33,6 +33,8 @@ DEVALOY_LIB="${DEVALOY_LIB:-/usr/local/lib/devaloy}"
 . "${DEVALOY_LIB}/steps/t3code.sh"
 # shellcheck source=lib/steps/db-forward.sh
 . "${DEVALOY_LIB}/steps/db-forward.sh"
+# shellcheck source=lib/steps/t3-claude-usage.sh
+. "${DEVALOY_LIB}/steps/t3-claude-usage.sh"
 
 # --- the dev shell, secrets and dotfiles (before tailscaled) ---
 step_shell_env
@@ -352,8 +354,12 @@ fi
 #     the docker bridge. Both apps accept plain HTTP to a tailnet address, and
 #     WireGuard already encrypts the traffic, so there is no Tailscale Serve
 #     and no HTTPS.
-#   * NO SETTINGS ARE WRITTEN. ~/.t3/userdata/settings.json belongs to the
-#     apps. The two environment variables below are the whole configuration.
+#   * ONE SETTINGS ENTRY, ONLY WITH ITS FLAG. ~/.t3/userdata/settings.json
+#     belongs to the apps. The two environment variables below are the whole
+#     server configuration. The one exception is the Claude usage proxy:
+#     with WITH_T3CODE_PROXY_CLAUDE_USAGE=true, step_t3_claude_usage_config
+#     writes .usageLimitSources["devaloy-claude-usage"] and nothing else, and
+#     with the flag off it removes that entry. See lib/steps/t3-claude-usage.sh.
 #
 # Pairing is one-time links, not a password. `t3 serve` prints one with a QR
 # code on every start, so the first device pairs from `docker compose logs`.
@@ -373,6 +379,28 @@ if [ "${WITH_T3CODE:-false}" = "true" ]; then
       step_t3code_config
       step_t3code_label
       step_t3code_projects
+      # Always called: with the flag off it removes the entry an earlier boot
+      # wrote. Sets T3_CLAUDE_USAGE_READY.
+      step_t3_claude_usage_config
+
+      # The Claude usage proxy starts before the T3 server, so the first
+      # Limits read finds it listening. It binds 127.0.0.1 only and sends
+      # nothing out. as_dev gets /usr/local/bin (node, via link-shims) and
+      # /usr/bin (jq), not ~/.local/bin, where step_seed_config puts the proxy
+      # and `usage`, so the loop adds that directory to PATH.
+      if [ "${T3_CLAUDE_USAGE_READY}" = "1" ]; then
+        log "Claude usage proxy on 127.0.0.1:${T3_CLAUDE_USAGE_PORT} for T3 Code"
+        (
+          # Same slot as the T3 loop below.
+          echo -250 > /proc/self/oom_score_adj 2>/dev/null || true
+          while true; do
+            as_dev "export PATH=\"\$HOME/.local/bin:/usr/local/bin:\$PATH\"; \
+              exec t3-claude-usage-proxy" >> "${T3_CLAUDE_USAGE_LOG}" 2>&1 || true
+            log "WARNING: the Claude usage proxy stopped; restarting in 10s (see ${T3_CLAUDE_USAGE_LOG})."
+            sleep 10
+          done
+        ) &
+      fi
 
       (
         # -250, the same slot as the Paseo daemon and for the same reason: above
