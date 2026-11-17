@@ -149,7 +149,7 @@ Done when: each row state above shows on this box when its condition is set up b
 
 Done when: every file above names `WITH_T3CODE_PROXY_CLAUDE_USAGE` or `usage --fetch` where the row says, and no doc mentions `USAGE_PROBE_MAX_AGE` (`git grep USAGE_PROBE_MAX_AGE` is empty).
 
-### Phase 7: migrate this box
+### Phase 7: migrate this box (built 2026-11-17)
 Attended: it restarts the T3 server, which cancels running turns, and it deletes hand-made files.
 
 - Stop the hand loop and `t3-usage-hub`.
