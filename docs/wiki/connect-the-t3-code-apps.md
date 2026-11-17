@@ -15,7 +15,7 @@ Both give you a GUI client for agents on this box, and they can run side by side
 | Upgrades | `devaloy update` | `devaloy update` |
 | Port and bind | 6767 on the tailnet address | 3773 on the tailnet address |
 | Connecting | direct connection typed into the app | one-time pairing link per device |
-| Settings | `config/paseo/config.json`, merged each boot | the apps own them; devaloy writes none |
+| Settings | `config/paseo/config.json`, merged each boot | the apps own them; devaloy writes one entry only with `WITH_T3CODE_PROXY_CLAUDE_USAGE` |
 
 ## 1. Turn it on
 
@@ -213,7 +213,7 @@ The supervisor sets two environment variables and nothing else:
 | `T3CODE_TELEMETRY_ENABLED` | `false` | No analytics leave the box. |
 | `T3CODE_SERVER_BROWSER_SANDBOX` | `0` | Chrome's own sandbox needs user namespaces that the container does not give it. The container is the isolation layer. |
 
-Everything else is in `~/.t3/userdata/settings.json`, which the apps own. devaloy never writes it.
+Everything else is in `~/.t3/userdata/settings.json`, which the apps own. devaloy writes one key there, and only when `WITH_T3CODE_PROXY_CLAUDE_USAGE=true`: the `devaloy-claude-usage` entry under `usageLimitSources`, which shows Claude limits on a box that signs in with `CLAUDE_CODE_OAUTH_TOKEN`. The boot backs the file up to `settings.json.devaloy-bak` before it changes that key, and it leaves every other key alone. See `t3-claude-usage-proxy` in the [reference](reference.md).
 
 At boot, devaloy links `~/.t3/worktrees` to `~/worktrees`, the same root Paseo uses. If `~/.t3/worktrees` is already a real directory, the boot leaves it alone and logs one line. Both tools write into the same folder, so two worktrees with the same name collide.
 

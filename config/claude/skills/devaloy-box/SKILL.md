@@ -1,7 +1,7 @@
 ---
 name: devaloy-box
 description: >-
-  How this devaloy box works: the Docker daemon, the mise toolchain, global npm installs, skills install, the headless browser driver, GitHub auth, and the permission mode. Use before you run docker, install or upgrade a tool, run npm i -g, install a skill, run a browser check, or touch gh auth.
+  How this devaloy box works: the Docker daemon, the mise toolchain, global npm installs, skills install, the headless browser driver, Claude usage limits, GitHub auth, and the permission mode. Use before you run docker, install or upgrade a tool, run npm i -g, install a skill, run a browser check, read Claude usage limits, or touch gh auth.
 ---
 
 # devaloy-box
@@ -52,6 +52,14 @@ command -v playwright-cli >/dev/null && ls ~/.cache/ms-playwright | grep -q '^ch
 ```
 
 If that prints nothing, the box has no browser driver. Say so, and leave the page checks to the human.
+
+## Claude usage limits
+
+Read the Claude 5-hour and 7-day limits with `usage --json`. It reads local caches only and sends no request to Anthropic. The `fetchedAtMs` and `source` fields tell you how old the reading is.
+
+Never run `usage --fetch`, `usage --curl` or `usage --force` unless the human asks for it in this session. `--fetch` is an automated Claude Code turn that spends tokens, and `--curl` sends a request that claims to be Claude Code. Both put the account at risk.
+
+With `WITH_T3CODE_PROXY_CLAUDE_USAGE=true`, the Claude usage proxy serves the same numbers to T3 Code. Its log is `/var/log/devaloy-claude-usage-proxy.log`, and `devaloy doctor` shows it as the `claude usage` row.
 
 ## GitHub
 

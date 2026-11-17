@@ -79,6 +79,10 @@ _Avoid: dotfiles install, config deploy_
 A `devaloy` verb that frees one resource: `disk` for the home volume, `ram` for memory, `prune` for the nested daemon. It reports what it finds and acts only on that list on `--apply`.
 _Avoid: cleanup, GC_
 
+### Claude usage proxy
+The loopback server `t3-claude-usage-proxy` on `127.0.0.1:8317` that feeds Claude limits to T3 Code on a box that signs in with `CLAUDE_CODE_OAUTH_TOKEN`. It answers T3's two cliproxy management calls from `usage --json` and sends no request to Anthropic. `WITH_T3CODE_PROXY_CLAUDE_USAGE` turns it on, and the boot writes its `devaloy-claude-usage` entry in T3's settings.
+_Avoid: usage hub, cliproxy, t3-usage-hub_
+
 ## Project stacks
 
 ### Nested daemon

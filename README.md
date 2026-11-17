@@ -433,9 +433,9 @@ optional keys, because they look alike and are not:
 | `WITH_DOCKER` | what goes into the image | **Yes** |
 | `WITH_PASEO` | what `bootstrap-toolchain.sh` installs into the home volume, and whether the entrypoint starts a daemon | No |
 | `WITH_T3CODE` | the same as `WITH_PASEO`, for the T3 Code server | No |
+| `WITH_T3CODE_PROXY_CLAUDE_USAGE` | whether the entrypoint starts the Claude usage proxy for T3 Code and writes its settings entry | No |
 
-A plain `up -d` picks up `WITH_PASEO` and `WITH_T3CODE` and silently ignores a
-change to `WITH_DOCKER`, which is the single easiest thing to get wrong here.
+A plain `up -d` picks up `WITH_PASEO`, `WITH_T3CODE` and `WITH_T3CODE_PROXY_CLAUDE_USAGE` and silently ignores a change to `WITH_DOCKER`, which is the single easiest thing to get wrong here.
 
 The first boot after you flip it re-runs the toolchain bootstrap, because the
 revision marker records the key alongside the revision. That is quick: the boot
@@ -567,7 +567,7 @@ If your tailnet policy has its own `acls` or `grants` instead of the default all
 
 ### What to know before you turn it on
 
-- **devaloy writes no T3 Code settings.** Unlike Paseo there is no repo config file. The apps own `~/.t3/userdata/settings.json`, so change settings there.
+- **devaloy writes one T3 Code setting, and only on request.** Unlike Paseo there is no repo config file. The apps own `~/.t3/userdata/settings.json`, so change settings there. The one exception is the Claude usage entry below.
 - **A worktree a skill prepares can get its own thread.** Set the Claude provider's launch arguments to `--append-system-prompt-file /home/dev/.claude/t3-workspaces.md`. The file comes from `config/claude/t3-workspaces.md`. See [Open a thread on each new worktree](docs/wiki/connect-the-t3-code-apps.md#open-a-thread-on-each-new-worktree).
 - **Worktrees share `~/worktrees/` with Paseo.** The boot links `~/.t3/worktrees` to `~/worktrees`. If `~/.t3/worktrees` is already a real directory, the boot leaves it alone and logs a line. Both tools write into the same folder, so two worktrees with the same name would collide.
 - **Telemetry is off.** The server runs with `T3CODE_TELEMETRY_ENABLED=false`.
@@ -576,6 +576,10 @@ If your tailnet policy has its own `acls` or `grants` instead of the default all
 - **Upgrading is `devaloy update`.** The server tracks `latest` through mise. When an app says the server is on a different version, run `devaloy update`. Do not run `t3 update` on the box. There is no pin variable, for the same reason as Paseo; edit `config/mise/optional/t3code.toml` to hold a version.
 - **`devaloy update` reads the key from `/opt/devaloy/runtime-flags`,** as it does for `WITH_PASEO`, so an update from your shell keeps the CLI installed.
 - **Turning it off** with `WITH_T3CODE=false` stops the server on the next boot, and the next `devaloy update` removes the CLI. `~/.t3` stays on the home volume, so paired devices still work when you turn it back on.
+
+### Claude limits on a token box
+
+T3 Code shows no Claude group under **Usage → Limits** on a box that signs in with `CLAUDE_CODE_OAUTH_TOKEN` ([pingdotgg/t3code#24114](https://github.com/pingdotgg/t3code/issues/24114)). Set `WITH_T3CODE_PROXY_CLAUDE_USAGE=true` beside `WITH_T3CODE=true` and run `docker compose up -d`. The boot then starts `t3-claude-usage-proxy` on `127.0.0.1:8317` and writes one `devaloy-claude-usage` entry, labelled "Claude (token)", in `~/.t3/userdata/settings.json`. The proxy answers T3 from `usage --json`, which reads the last Claude turn in T3, the last status line render or `~/.claude.json`, and sends no request to Anthropic. So the numbers can be old, and use from another machine shows up only after the next Claude turn on this box; T3 shows the reading time. For a live reading, run `usage --fetch` (one real `claude -p` turn that spends tokens) or `usage --curl` by hand. Both carry account risk, because [Anthropic's terms](https://code.claude.com/docs/en/legal-and-compliance) reserve the OAuth token for ordinary use of Claude Code. On a `/login` box T3 reads the limits itself, so the boot removes the entry and logs a warning. Setting the key back to `false` removes the entry on the next boot. `devaloy doctor` and `devaloy status` show a `claude usage` row, and the proxy logs to `/var/log/devaloy-claude-usage-proxy.log`. This goes away once T3 Code fixes the issue.
 
 Full guide: [Connect the T3 Code apps](docs/wiki/connect-the-t3-code-apps.md).
 

@@ -47,6 +47,8 @@ pages:
       - scripts/**
       - config/zsh/zshrc
       - config/systemd/**
+      - config/bin/usage
+      - config/bin/t3-claude-usage-proxy
 
   - path: vm-resource-limits.md
     mode: how-to
@@ -149,6 +151,8 @@ pages:
       - lib/doctor.sh
       - lib/status.sh
       - lib/ram.sh
+      - lib/steps/t3-claude-usage.sh
+      - config/bin/t3-claude-usage-proxy
 
   - path: push-notifications.md
     mode: how-to
