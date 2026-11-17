@@ -432,6 +432,83 @@ UPSTASH_REPO="${UPSTASH_WORKSPACE}/devaloy"
 UPSTASH_SERVE="${UPSTASH_REPO}/lib/steps/upstash-serve.sh"
 UPSTASH_T3_PORT=3773
 
+# --- the Claude usage proxy -------------------------------------------------
+#
+# WITH_T3CODE_PROXY_CLAUDE_USAGE: a loopback hub that feeds T3 Code's Limits
+# modal from `usage --json` on a token box. status and doctor both read it.
+#
+# The constants (port, key, log, the tested T3 version) live once, in
+# lib/steps/t3-claude-usage.sh. That file only defines on source, so it is
+# read in a subshell, with DEV_HOME set to this user's home. The environment
+# wins, so a one-off `T3_CLAUDE_USAGE_TESTED=0.0.0 devaloy doctor` means what
+# it says. The default covers an install whose steps/ has no such file.
+claude_usage_const() { # claude_usage_const <name> <default>
+  local v
+  v="$(printenv "$1" 2>/dev/null || true)"
+  [ -n "${v}" ] || v="$(
+    DEV_HOME="${HOME}"
+    # shellcheck source=/dev/null
+    . "${DEVALOY_LIB}/steps/t3-claude-usage.sh" >/dev/null 2>&1 || exit 0
+    printf '%s' "${!1:-}"
+  )"
+  printf '%s' "${v:-$2}"
+}
+
+# The port the hub listens on. T3_CLAUDE_USAGE_PROXY_PORT is the hub's own
+# override, so a test hub on a spare port and this check agree.
+claude_usage_port() {
+  local v
+  v="$(printenv T3_CLAUDE_USAGE_PROXY_PORT 2>/dev/null || true)"
+  printf '%s' "${v:-$(claude_usage_const T3_CLAUDE_USAGE_PORT 8317)}"
+}
+
+claude_usage_log() {
+  claude_usage_const T3_CLAUDE_USAGE_LOG /var/log/devaloy-claude-usage-proxy.log
+}
+
+# Why the proxy is off, or nothing when it should run. The token test is the
+# boot step's: CLAUDE_CODE_OAUTH_TOKEN, here read from the environment or from
+# ~/.devaloy_secrets (which a login shell does not export), as `usage` does.
+# The value never leaves the subshell.
+claude_usage_off_reason() {
+  if on_native || on_upstash; then
+    printf 'the proxy runs in the container runtime only'
+  elif [ "$(runtime_flag WITH_T3CODE_PROXY_CLAUDE_USAGE)" != "true" ]; then
+    printf 'WITH_T3CODE_PROXY_CLAUDE_USAGE is off'
+  elif [ "$(runtime_flag WITH_T3CODE)" != "true" ]; then
+    printf 'WITH_T3CODE is off'
+  elif [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && ! (
+    # shellcheck source=/dev/null
+    . "${HOME}/.devaloy_secrets" >/dev/null 2>&1
+    [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]
+  ); then
+    printf 'no CLAUDE_CODE_OAUTH_TOKEN, so T3 reads Claude limits natively'
+  fi
+}
+
+claude_usage_listening() {
+  timeout 3 bash -c "exec 3<>/dev/tcp/127.0.0.1/$(claude_usage_port)" 2>/dev/null
+}
+
+# The reading the hub serves, as `<source>, read <age> ago`. It runs the
+# command the hub runs (T3_CLAUDE_USAGE_PROXY_CMD, default `usage`) with
+# --json and no fetch flag, so it sends no request.
+claude_usage_reading() {
+  local json ms src age
+  json="$(timeout 20 "${T3_CLAUDE_USAGE_PROXY_CMD:-usage}" --json 2>/dev/null || true)"
+  ms="$(printf '%s' "${json}" | jq -r '.fetchedAtMs // 0 | floor' 2>/dev/null || true)"
+  src="$(printf '%s' "${json}" | jq -r '.source // "unknown source"' 2>/dev/null || true)"
+  case "${ms}" in '' | 0 | *[!0-9]*) printf 'no reading yet'; return 0 ;; esac
+  age=$(( $(date +%s) - ms / 1000 ))
+  [ "${age}" -ge 0 ] || age=0
+  if [ "${age}" -lt 60 ]; then age="${age}s"
+  elif [ "${age}" -lt 3600 ]; then age="$((age / 60))m"
+  elif [ "${age}" -lt 86400 ]; then age="$((age / 3600))h"
+  else age="$((age / 86400))d"
+  fi
+  printf '%s, read %s ago' "${src}" "${age}"
+}
+
 toolset_revision() {
   local marker="${HOME}/.local/share/mise/.devaloy-bootstrapped"
   [ -r "${marker}" ] && head -1 "${marker}" 2>/dev/null || printf 'not bootstrapped'

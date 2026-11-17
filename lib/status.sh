@@ -105,6 +105,21 @@ status_t3_line() {
     "$(proc_rss_mib "${pids}")" "$(printf '%s\n' "${pids}" | wc -l | tr -d ' ')"
 }
 
+# The Claude usage proxy. A cheap reading: the off reason, one connect to the
+# loopback port, and `usage --json`, which reads caches and sends no request.
+# doctor makes the calls T3 makes and judges the answers.
+status_claude_usage_line() {
+  local reason
+  reason="$(claude_usage_off_reason)"
+  if [ -n "${reason}" ]; then
+    printf 'off (%s)' "${reason}"
+  elif ! claude_usage_listening; then
+    bad "DOWN — nothing listens on 127.0.0.1:$(claude_usage_port); see $(claude_usage_log)"
+  else
+    printf 'up, %s' "$(claude_usage_reading)"
+  fi
+}
+
 status_docker_line() {
   case "$(build_flag WITH_DOCKER)" in
     true)
@@ -131,6 +146,7 @@ rows_status() {
   emit_row '💤' 'swap' "$(status_swap_line)" ram
   emit_row '🪟' 'paseo daemon' "$(status_paseo_line)" ram
   emit_row '🧵' 't3 server' "$(status_t3_line)" ram
+  emit_row '📊' 'claude usage' "$(status_claude_usage_line)" doctor
   emit_row '🐳' 'docker' "$(status_docker_line)" prune
   emit_row '🔧' 'toolset' "$(toolset_revision)" tools
   emit_rule actions
@@ -159,6 +175,7 @@ do_status() {
   printf '  swap    %s\n' "$(status_swap_line)"
   printf '  paseo   %s\n' "$(status_paseo_line)"
   printf '  t3      %s\n' "$(status_t3_line)"
+  printf '  claude  %s\n' "$(status_claude_usage_line)"
   printf '  docker  %s\n' "$(status_docker_line)"
   printf '  toolset %s\n' "$(toolset_revision)"
 }

@@ -357,6 +357,94 @@ doctor_db_forward() {
   fi
 }
 
+doctor_claude_usage() {
+  # The Claude usage proxy (WITH_T3CODE_PROXY_CLAUDE_USAGE). A listener is not
+  # enough: T3 blanks its Claude group on any answer it cannot read, and says
+  # nothing. So this makes the two calls T3 makes, with the key T3 holds, and
+  # judges the shapes. Then the T3 side: the settings entry that points T3 at
+  # the hub. The warnings ask for a look: a T3 version the contract was not
+  # checked against, and a T3 that called a path the hub does not know.
+  local reason port base file key log entry out code body tested v warns=()
+  reason="$(claude_usage_off_reason)"
+  if [ -n "${reason}" ]; then
+    doctor_row off 'claude usage' "${reason}"
+    return 0
+  fi
+  port="$(claude_usage_port)"
+  base="http://127.0.0.1:${port}/v0/management"
+  log="$(claude_usage_log)"
+  if ! claude_usage_listening; then
+    doctor_row broken 'claude usage' "nothing listens on 127.0.0.1:${port}; see ${log}"
+    return 0
+  fi
+
+  # shellcheck disable=SC2016  # $id is a jq variable.
+  entry="$(jq -r --arg id "$(claude_usage_const T3_CLAUDE_USAGE_ID devaloy-claude-usage)" --arg url "http://127.0.0.1:${port}" '
+    .usageLimitSources[$id]? as $e
+    | if $e == null then "is missing"
+      elif $e.kind != "cliproxy" then "has kind \($e.kind), not cliproxy"
+      elif $e.enabled != true then "is disabled"
+      elif $e.url != $url then "has url \($e.url), not \($url)"
+      else "ok" end' \
+    "${T3CODE_HOME:-${HOME}/.t3}/userdata/settings.json" 2>/dev/null || true)"
+  if [ "${entry}" != "ok" ]; then
+    doctor_row broken 'claude usage' "T3 entry devaloy-claude-usage ${entry:-is unreadable}; restart the container to rewrite it"
+    return 0
+  fi
+
+  # The key goes to curl on stdin (-H @-), so it never shows in a process list.
+  file="$(claude_usage_const T3_CLAUDE_USAGE_KEY "${HOME}/.config/t3-claude-usage-proxy/key")"
+  key="$(cat -- "${file}" 2>/dev/null || true)"
+  if [ -z "${key}" ]; then
+    doctor_row broken 'claude usage' "no key in ${file}; restart the container to create it"
+    return 0
+  fi
+  out="$(printf 'Authorization: Bearer %s\n' "${key}" |
+    curl -sS --max-time 5 -H @- -w '\n%{http_code}' "${base}/auth-files" 2>/dev/null || true)"
+  code="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  if [ "${code}" != "200" ] ||
+     ! printf '%s' "${body}" | jq -e '.files | any(.provider == "claude")' >/dev/null 2>&1; then
+    doctor_row broken 'claude usage' "GET auth-files failed (HTTP ${code:-none}, or no claude file); see ${log}"
+    return 0
+  fi
+  out="$(printf 'Authorization: Bearer %s\n' "${key}" |
+    curl -sS --max-time 5 -H @- -H 'Content-Type: application/json' -w '\n%{http_code}' \
+      --data '{"auth_index":"0","method":"GET","url":"https://api.anthropic.com/api/oauth/usage","header":{}}' \
+      "${base}/api-call" 2>/dev/null || true)"
+  code="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  code="$(printf '%s' "${body}" | jq -r --arg http "${code}" '
+    if $http != "200" then "HTTP \($http)"
+    elif .status_code != 200 then "status_code \(.status_code)"
+    elif ((.body | fromjson? // {}) | [.five_hour.utilization?, .seven_day.utilization?]
+          | any(type == "number")) then "ok"
+    else "a body with no utilization" end' 2>/dev/null || true)"
+  if [ "${code}" != "ok" ]; then
+    doctor_row broken 'claude usage' "POST api-call answered ${code:-no JSON}; see ${log}"
+    return 0
+  fi
+
+  tested="$(claude_usage_const T3_CLAUDE_USAGE_TESTED 0.1.10)"
+  v="$(timeout 5 t3 --version 2>/dev/null | head -1 || true)"
+  v="${v#t3 }"
+  v="${v#v}"
+  if [ -n "${v}" ] && [ "${v}" != "${tested}" ]; then
+    warns+=("T3 ${v} is untested with the usage proxy (tested ${tested}); check the Limits modal")
+  fi
+  # A 404 since the hub last started: T3 asked for a path the hub does not
+  # answer. doctor's own calls above never 404.
+  if [ -r "${log}" ] && [ "$(awk '/ listening on /{n=0} / 404 /{n++} END{print n+0}' "${log}")" -gt 0 ]; then
+    warns+=("T3 called unknown proxy paths; the cliproxy contract may have changed")
+  fi
+  if [ "${#warns[@]}" -gt 0 ]; then
+    v="$(printf '%s; ' "${warns[@]}")"
+    doctor_row warn 'claude usage' "${v%; }"
+    return 0
+  fi
+  doctor_row ok 'claude usage' "$(claude_usage_reading)"
+}
+
 doctor_collect() {
   DOCTOR_FAILURES=0
   doctor_rows=()
@@ -422,6 +510,10 @@ doctor_collect() {
       doctor_row broken 't3 cli' 'missing from PATH, so run devaloy update'
     fi
     doctor_t3_push
+  fi
+  # Container only: no native or Upstash boot starts the proxy yet.
+  if ! on_native && ! on_upstash; then
+    doctor_claude_usage
   fi
 
   # Things that are always meant to be here, so absent is always a fault.
