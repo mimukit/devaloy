@@ -36,29 +36,7 @@ Never hard-wrap Markdown. Write each paragraph and each list item as one continu
 
 Never commit a mockup image to a code repository. This rule also covers `docs/plans/assets/` and an orphan branch.
 
-Each repository has one secret GitHub gist for its mockup images. The description of the gist is exactly `mockups: <owner>/<repo>`. Never store the gist id in a file or in memory.
-
-1. Get `<owner>/<repo>`: `gh repo view --json nameWithOwner -q .nameWithOwner`.
-2. Find the gist by its description: `gh api --paginate /gists --jq '.[] | select(.description=="mockups: <owner>/<repo>") | .id'`.
-3. If there is no match, write `0000-<repo>.md` in a temporary directory. Use the repository name for `<repo>`. Write the project name as the heading and add a short description of what the gist holds and how the project uses the mockups. Do not add a file list or image index. The file name sorts before the mockup images and gives the gist a project name in GitHub.
-4. Create the secret gist with `gh gist create 0000-<repo>.md -d "mockups: <owner>/<repo>"`. Run this command only when there is no match.
-5. If there is more than one match, stop and ask me.
-6. Clone the gist: `git clone --depth 1 https://gist.github.com/<id>.git`.
-7. Copy the files into the clone, commit, and `git push`.
-
-The `gh` token needs the `gist` scope. If a gist call says that the scope is missing, tell me. Do not run `gh auth refresh`.
-
-Add images with git only. The API and `gh gist create` refuse binary files.
-
-Follow these rules for each image:
-
-- A gist has no folders. Name each file `<plan serial>-r<round>-<screen>-<theme>-<width>.png`.
-- Never use a name again for a changed image. A new round gets a new prefix.
-- Embed an image by its raw URL: `https://gist.githubusercontent.com/<user>/<id>/raw/<file>`. This URL serves `image/png` with no sign-in, also for a secret gist.
-- Post each round to the tracking issue as one comment that embeds every image of the round. Show me the same images in chat.
-- In the plan, the "Mockup approved" row records the date, the round, the gist URL with the file prefix, and the URL of the issue comment. It never records repository paths.
-
-A secret gist is unlisted, not private. Anyone with the URL can see it. A deleted file stays available in the git history of the gist. Only a delete of the whole gist removes the images, and that delete breaks every embed.
+Use the installed `uikit` skill's mockup mode and its `mockup-gist.md` reference to publish mockup rounds. If the installed skill lacks the reference, refresh `uikit` before publishing.
 
 ## The box
 
