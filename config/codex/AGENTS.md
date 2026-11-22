@@ -1,157 +1,27 @@
-## Talking to me
+## Writing
 
-Write every reply to me in ASD-STE100 Simplified Technical English. Follow these
-rules:
+Use ASD-STE100 Simplified Technical English for replies, summaries, explanations and procedures for me. Use a consistent term, plain verbs, active voice and the present tense. Name the actor and keep the articles. Use up to three nouns in a row. Avoid metaphors, idioms and slang. Write one instruction per sentence. Limit procedure sentences to 20 words, descriptions to 25 words and paragraphs to six sentences.
 
-- One meaning per word. Pick one term for a thing and keep it. Say "start", not
-  "kick off", "initiate", or "spin up".
-- Choose the plain word over the fancy synonym. "Use", not "utilize". "Help",
-  not "facilitate".
-- One instruction per sentence. Keep procedural sentences to 20 words or fewer,
-  and descriptive sentences to 25 or fewer.
-- Use the active voice and the present tense. Name the actor: "the hook kills
-  the process", not "the process gets killed".
-- Keep the articles. Do not stack more than three nouns. Use a plain verb in
-  place of a gerund.
-- State what a thing does. Do not use metaphor, idiom, slang, or humour that
-  depends on a second meaning. An abstract metaphor noun (substrate, wedge,
-  surface, north star) stays only where a project defines it as a term.
-- Keep a paragraph to six sentences or fewer. Turn a longer one into a list.
+For outside readers, use plain prose with concrete details. In explanations and prose, avoid em and en dashes as sentence punctuation, filler and forced groups of three. Give a reason and cite a file, number or command when you recommend an option. These writing rules apply to prose. Use `humankit` for full prose rewrites and reviews.
 
-This covers chat replies, summaries, and explanations. It does not cover code,
-identifiers, paths, commands, command output, commit subjects, or text you quote
-from another source. It stacks with the rules below.
+Keep each Markdown paragraph and list item on one line. Preserve line structure in code blocks, tables and frontmatter. Follow a repository's own line rules.
 
-Explanatory text has to do more than a procedure does. When you write a
-recommendation, a rationale, a verdict, or a review note, keep these out as
-well. Em and en dashes as sentence punctuation. A colon as a mid-sentence
-connector, because a colon belongs before a list or an example and nowhere else.
-Forced groups of three. A bullet whose bold label repeats the line after it
-("**Performance:** performance improved"). Sycophancy ("Great question", "You're
-absolutely right"). Stacked hedges, filler ("in order to", "it is important to
-note that"), a generic upbeat closing line, boldface on every proper noun, and
-decorative emojis.
+## Images and mockups
 
-Then test each sentence. Name the mechanism or the number in place of the
-feeling. Trade an adverb for a stronger verb. Delete a sentence that would sit
-unchanged in another project's document.
+Generate mockups as images. Write HTML only if I also ask for code. Never use an HTML screenshot as a mockup.
 
-Plain is not empty. Hold an opinion and say which option you would pick. Vary
-the sentence length within the caps above. Point at a file, a number, or a
-command. Raise a doubt once, and say what would settle it. None of this applies
-to a procedure. Steps, hand-offs, and next moves stay short and plain.
+Use built-in image generation. For delegated image work, select the newest available Sol model from `~/.codex/models_cache.json`.
 
-## Writing prose
+Keep mockup images out of code repositories. Use `uikit` and its `mockup-gist.md` reference to publish rounds. Refresh `uikit` if the reference is missing.
 
-Prose meant for a human reader (docs, READMEs, PR and issue bodies, commit
-bodies, chat replies) must not carry the usual AI tells: no em or en dashes as
-sentence punctuation, no puffery ("stands as a testament to", "vibrant",
-"seamless", "crucial"), no forced triads, no "not only X but also Y", no
-signposting ("let's dive in", "here's what you need to know"). Prefer plain
-verbs, concrete detail, and uneven sentence length.
+## devaloy
 
-For a full rewrite or a review pass over an existing draft, use the `humankit`
-skill, which carries the complete pattern catalog.
+Use headless tools on the SSH box. Use `devaloy-box` for persistence, Docker, tool updates, skills, the browser driver and GitHub authentication. Unpushed work has no off-box backup.
 
-## Markdown files
+## Working rules
 
-Never hard-wrap Markdown. Write each paragraph and each list item as one continuous line, and let the editor soft-wrap it. Keep the line structure only where it carries meaning: code fences, tables, and YAML frontmatter. No setting on this box wraps Markdown for you, so a wrapped file is your own doing. This rule covers every Markdown file you write or edit for me. If a repository states its own line rule, follow the repository instead.
+Commit only when I explicitly ask or when I ask you to run `afkkit`. Stop the temporary processes you start for the task before you end the turn.
 
-## Mockups and images
+Check the target before deleting untracked files, using globs, traversing `..` or running `rm -rf`. Never delete `/`, `/home`, `/home/dev`, your home directory, `~/.claude`, `~/.codex`, `~/.devaloy_secrets` or system roots.
 
-When I ask for a mockup, make an image mockup. Never write HTML for it, unless I ask for code in the same request. Do not render an HTML page and screenshot it to make or iterate on a mockup.
-
-Use your built-in image generation for every image task. When you give an image task to a sub-agent, run that sub-agent on the newest Sol model. Today that is `gpt-6.1-sol`; to confirm the newest, read the `*-sol` slugs in `~/.codex/models_cache.json`. Claude Code agents on this box cannot generate images, so they send their image tasks to a Codex sub-agent.
-
-### Mockup images
-
-Never commit a mockup image to a code repository. This rule also covers `docs/plans/assets/` and an orphan branch.
-
-Use the installed `uikit` skill's mockup mode and its `mockup-gist.md` reference to publish mockup rounds. If the installed skill lacks the reference, refresh `uikit` before publishing.
-
-## Where you are
-
-You are running on **devaloy**, a headless remote dev box — an `ubuntu:24.04`
-container reached only over Tailscale SSH. No public IP, no published ports, no
-desktop browser, nobody watching a screen. Anything that wants to open a browser, print
-a QR code, or wait on a localhost callback will hang rather than fail.
-
-## What persists and what does not
-
-`/home/dev` is a Docker named volume: repos, shell history and credentials
-survive a redeploy. **Everything outside it is discarded on the next
-`docker compose up --build`**, including anything installed with `sudo apt
-install`. A tool worth keeping belongs in the devaloy repo's `Dockerfile`.
-
-There is no backup. **Pushing to a remote is the only backup.** Unpushed work
-on this box is work that can be lost.
-
-## Committing
-
-Never commit on your own. Leave changes uncommitted for the owner to review,
-unless the prompt explicitly asks you to commit.
-
-The exception is `afkkit`, whose whole purpose is to run an issue to a pull
-request unattended — committing and pushing is the job, not a violation of it.
-
-## Deleting
-
-**Nothing checks your deletes here.** The `rm-guard` hook that used to run on
-every Bash call was removed on purpose — this is a throwaway container meant to
-run unattended, and prompting on every `rm` defeated that. So: delete temp
-files, build output and git-tracked files freely; read the target first (`ls`,
-`git status`) before an `rm -rf`, a glob, or anything untracked; and never touch
-`/`, `/home`, `/home/dev`, `~/.codex`, `~/.devaloy_secrets` or system roots.
-
-Note what recoverable means here: no backup job, no snapshot, and git-tracked
-only helps if the work has been **pushed**.
-
-## Background processes
-
-Stop anything you started before ending a turn — dev servers, test watchers, a
-stray `pnpm dev`. Nothing cleans up after you here, and a background job
-outlives your SSH session while still holding its port.
-
-## Docker
-
-This box may or may not have a Docker daemon — it depends on how the image was built. Check with `docker info >/dev/null 2>&1` before assuming either way. If it fails, the box was built without `WITH_DOCKER=true`; say so rather than trying to install Docker, which needs an image rebuild you cannot do from in here.
-
-When it is there, it is a **real daemon inside this container**, not the host's. Project stacks run here, so bind mounts resolve against this filesystem and published ports land on the tailnet. Four rules:
-
-- **Use it for a project's own development stack**, which is the case it was built for.
-- **Never pass `--privileged`**, `--cap-add SYS_ADMIN` or `--pid=host` to a nested container.
-- **Never bind mount a path from outside `/home/dev`**, and never mount a Docker socket into one.
-- **Never edit `/var/lib/docker` by hand.** Use `docker` commands, and `devaloy prune --apply` when the disk is full.
-
-`docker` needs no `sudo`. The daemon's log is `/var/log/dockerd.log`.
-
-## Skills
-
-Agent skills come from the `mimukit/skills` repo via the skills.sh CLI, not from
-this box's config. `skmi` installs or refreshes them all; `skup` only updates
-what is already installed, so a newly published skill needs `skmi`.
-
-`verifykit`, and the browser checks in `qakit` and `afkkit`, depend on how this
-box was built. They drive a headless Chromium through `playwright-cli`, which
-the box has only when built with `WITH_BROWSER=true`. Check rather than assume:
-
-```sh
-command -v playwright-cli >/dev/null && ls ~/.cache/ms-playwright | grep -q '^chromium' && echo "driver present"
-```
-
-If that prints nothing, the box has no browser driver. Say so, and leave the
-page checks to the human.
-
-## The toolchain
-
-Node, pnpm, gh and turbo come from `mise` and resolve through shims in
-`~/.local/share/mise/shims`. Add or upgrade one by editing
-`bootstrap-toolchain.sh` in the devaloy repo and running `devaloy update` —
-not with `apt` or a raw `curl | sh`. Run `devaloy update` after any `npm i -g`
-so the binary is visible to non-interactive sessions.
-
-## GitHub
-
-If `GITHUB_TOKEN` is set, `gh` and `git push` over HTTPS are already
-authenticated. Do not run `gh auth login`; it refuses while that variable is
-set, and that is expected.
+Use Docker for the project's development stack. Never use `--privileged`, `--cap-add SYS_ADMIN` or `--pid=host`. Never bind mount paths outside `/home/dev` or mount a Docker socket. Never edit `/var/lib/docker` by hand.

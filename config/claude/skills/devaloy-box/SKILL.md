@@ -1,39 +1,34 @@
 ---
 name: devaloy-box
 description: >-
-  How this devaloy box works: the Docker daemon, the mise toolchain, global npm installs, skills install, the headless browser driver, Claude usage limits, GitHub auth, and the permission mode. Use before you run docker, install or upgrade a tool, run npm i -g, install a skill, run a browser check, read Claude usage limits, or touch gh auth.
+  Check devaloy persistence, Docker, tool updates, skill installation, headless Chromium, GitHub authentication, or Claude usage and permissions.
 ---
 
 # devaloy-box
 
 ## What persists
 
-`/home/dev` is a Docker named volume. Cloned repos, shell history, and tool credentials survive a redeploy. Everything outside `/home/dev` is thrown away on the next `docker compose up --build`, including anything you `sudo apt install`. A tool worth keeping belongs in the devaloy repo's `Dockerfile`, not in an ad hoc install on the box.
+Check `RUNTIME` in `/opt/devaloy/build-flags`. Older container builds omit that line. The runtime determines what survives:
 
-There is no backup job and no snapshot. A `docker compose down -v` erases the home volume. Git-tracked work is recoverable only if it has been pushed.
+- Container. The `/home/dev` volume survives a rebuild. A rebuild replaces the container filesystem. `docker compose down -v` deletes the home volume.
+- Native. The home directory is on the VM's filesystem. A devaloy update keeps it.
+- Upstash. Only data under `/workspace` survives a reset. This includes the persistent home at `/workspace/home`.
+
+Keep system dependencies in devaloy's shared installer or package lists so a fresh install includes them.
 
 ## Docker
 
-This box may or may not have a Docker daemon. It depends on how the image was built. Check before you assume either way:
+Run `docker info` to check whether the current user can reach the daemon. If it fails, report the error. Check the runtime and `WITH_DOCKER` in `/opt/devaloy/build-flags` to find the cause.
 
-```sh
-docker info >/dev/null 2>&1 && echo "daemon up"
-```
+- Container. If the build flag is false, Docker needs an image rebuild. If Docker is present, the daemon runs inside devaloy. Check `/var/log/dockerd.log` if it fails to start.
+- Native. Docker runs as a systemd service when the installer enables it. Check `systemctl status docker` and `journalctl -u docker`.
+- Upstash. The installer disables Docker. Report that the project stack needs a runtime with Docker.
 
-If that prints nothing, the box was built without `WITH_DOCKER=true`. Say so. Do not try to install Docker or start a daemon; both need an image rebuild you cannot do from inside the container.
-
-When it is there, it is a real daemon inside this container, not the host's. A bind mount resolves against this filesystem, and a published port lands on the tailnet. Rules:
-
-- Use it for a project's own development stack: `docker compose up -d` in a repo you cloned.
-- Never pass `--privileged`, and never grant `--cap-add SYS_ADMIN` or `--pid=host` to a nested container.
-- Never bind mount a path from outside `/home/dev`. Mounting `/`, `/etc`, `/var/run/docker.sock` or the parent's own paths defeats the boundary.
-- Never edit `/var/lib/docker` by hand. It is a named volume the daemon owns. Use `docker` commands, and `devaloy prune --apply` when the disk is full.
-
-`docker` needs no `sudo`. The daemon log is `/var/log/dockerd.log`. Read it when a stack will not start.
+With a working daemon, use `docker compose up -d` from the project repository. On a full Docker disk, use `devaloy prune` to inspect what it can remove.
 
 ## The toolchain
 
-Node, pnpm, gh and turbo come from `mise` and resolve through shims in `~/.local/share/mise/shims`. To add or upgrade one, edit `bootstrap-toolchain.sh` in the devaloy repo and run `devaloy update`. Do not install a second copy with `apt` or a raw `curl | sh`.
+Node, pnpm, gh and turbo come from `mise` and resolve through shims in `~/.local/share/mise/shims`. Change managed tool versions in `config/mise/` or `bootstrap-toolchain.sh`, then run `devaloy update`. Use the managed toolchain for changes that must persist.
 
 After any `npm i -g`, run `devaloy update` so the new binary is visible to non-interactive sessions (`ssh devaloy '<cmd>'`, `scp`, `rsync`, git-over-ssh).
 
@@ -41,17 +36,17 @@ After any `npm i -g`, run `devaloy update` so the new binary is visible to non-i
 
 Agent skills come from the `mimukit/skills` repo through the skills.sh CLI, not from this box's config. `skmi` installs or refreshes them all. `skup` only updates what is already installed, so a newly published skill needs `skmi`.
 
-The exceptions live in the devaloy repo under `config/claude/skills/`: `devaloy-clean`, `devaloy-fleet`, `devaloy-box` and `codex-images`. `devaloy update --config-only` copies them into `~/.claude/skills/`. Use `devaloy-fleet` for any work on more than one devaloy box.
+The devaloy repo provides local skills in `config/claude/skills/`. The boot and `devaloy update --config-only` copy them to `~/.claude/skills/`. They also copy this skill to `~/.codex/skills/`. Use `devaloy-fleet` for work on more than one devaloy box.
 
 ## Browser driver
 
-`verifykit`, and the browser checks in `qakit` and `afkkit`, drive a headless Chromium through `playwright-cli`. The box has it only when built with `WITH_BROWSER=true`. Check before you assume either way:
+`verifykit`, `qakit` and `afkkit` use `playwright-cli` and headless Chromium. Check for both before you start:
 
 ```sh
 command -v playwright-cli >/dev/null && ls ~/.cache/ms-playwright | grep -q '^chromium' && echo "driver present"
 ```
 
-If that prints nothing, the box has no browser driver. Say so, and leave the page checks to the human.
+If the check prints nothing, report which component is missing. Use the runtime's install guide to check how to enable `WITH_BROWSER`.
 
 ## Claude usage limits
 
@@ -67,6 +62,4 @@ If `GITHUB_TOKEN` is set in the environment, `gh` and `git push` over HTTPS are 
 
 ## Permission mode
 
-This box runs in `bypassPermissions` mode, set by `permissions.defaultMode` in `~/.claude/settings.json`. Every session on the box starts that way. The reason is `afkkit`: an unattended overnight run must not stop for a prompt, and an allowlist always leaves a gap. The container is disposable and has no other tenants.
-
-The `deny` list in the same file still applies. Bypass mode removes the prompt, not the deny rules, and it does not relax the rules under "Deleting" in `CLAUDE.md`.
+The managed Claude settings set `permissions.defaultMode` to `bypassPermissions` for unattended runs. Check the active session before you assume that mode. The deny list and the global delete rules still apply. Codex uses its own sandbox and approval settings.

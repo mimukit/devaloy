@@ -87,7 +87,8 @@ do_config_seed() {
   src="$(config_src)" || die "update: no config directory found to seed from."
 
   cp -f "${src}/zsh/zshrc" "${HOME}/.zshrc"
-  for sub in claude:.claude codex:.codex bin:.local/bin; do
+  for sub in claude:.claude codex:.codex bin:.local/bin \
+    claude/skills/devaloy-box:.codex/skills/devaloy-box; do
     dest="${HOME}/${sub#*:}"
     [ -d "${src}/${sub%%:*}" ] || continue
     mkdir -p "${dest}"
