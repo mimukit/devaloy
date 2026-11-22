@@ -71,10 +71,11 @@ Each repository has one secret GitHub gist for its mockup images. The descriptio
 
 1. Get `<owner>/<repo>`: `gh repo view --json nameWithOwner -q .nameWithOwner`.
 2. Find the gist by its description: `gh api --paginate /gists --jq '.[] | select(.description=="mockups: <owner>/<repo>") | .id'`.
-3. If there is no match, create the gist: `gh gist create README.md -d "mockups: <owner>/<repo>"`.
-4. If there is more than one match, stop and ask me.
-5. Clone the gist: `git clone --depth 1 https://gist.github.com/<id>.git`.
-6. Copy the files into the clone, commit, and `git push`.
+3. If there is no match, write `0000-<repo>.md` in a temporary directory. Use the repository name for `<repo>`. Write the project name as the heading and add a short description of what the gist holds and how the project uses the mockups. Do not add a file list or image index. The file name sorts before the mockup images and gives the gist a project name in GitHub.
+4. Create the secret gist with `gh gist create 0000-<repo>.md -d "mockups: <owner>/<repo>"`. Run this command only when there is no match.
+5. If there is more than one match, stop and ask me.
+6. Clone the gist: `git clone --depth 1 https://gist.github.com/<id>.git`.
+7. Copy the files into the clone, commit, and `git push`.
 
 The `gh` token needs the `gist` scope. If a gist call says that the scope is missing, tell me. Do not run `gh auth refresh`.
 
