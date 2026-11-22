@@ -75,6 +75,11 @@ shellcheck = "latest"
 # redeploy swapping them mid-session.
 claude = "latest"
 codex = "latest"
+# Google's Antigravity CLI, the `agy` binary. The registry entry is aqua's, which
+# fetches the GitHub release for this box's architecture and checks it. Its
+# installer is a `curl | sh` and is not used here. Tracks latest like the two
+# above; pin it by editing this line.
+agy = "latest"
 # The skills.sh CLI, which installs the agent skills. It is a tool like any
 # other here, so it lands in the home volume and survives a redeploy.
 "npm:skills" = "latest"

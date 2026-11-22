@@ -70,7 +70,9 @@ From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 the Cloudflare CLIs `wrangler` and `cf` (see [(Optional) Cloudflare API token](#optional-cloudflare-api-token)),
 plus
 [Claude Code](https://claude.com/claude-code)
-(`claude`) and [Codex](https://github.com/openai/codex) (`codex`) — and
+(`claude`), [Codex](https://github.com/openai/codex) (`codex`) and the
+[Antigravity CLI](https://github.com/google-antigravity/antigravity-cli)
+(`agy`) — and
 [`skills`](https://www.skills.sh), which then installs the agent skills both
 CLIs share. See [Agent skills](#agent-skills).
 
