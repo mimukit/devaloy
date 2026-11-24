@@ -45,6 +45,8 @@ DEVALOY_LIB="${DEVALOY_LIB:-/usr/local/lib/devaloy}"
 . "${DEVALOY_LIB}/steps/paseo.sh"
 # shellcheck source=lib/steps/t3code.sh
 . "${DEVALOY_LIB}/steps/t3code.sh"
+# shellcheck source=lib/steps/rex.sh
+. "${DEVALOY_LIB}/steps/rex.sh"
 
 # The ports the two services bind. native-serve.sh carries the same numbers;
 # both match entrypoint.sh.
@@ -136,6 +138,10 @@ native_boot() {
       log "WARNING: with: devaloy-update"
     fi
   fi
+
+  # --- Rex (WITH_REX=true) ---
+  # dev's user units, not a devaloy unit. See lib/steps/rex.sh.
+  step_rex_server
 
   # The container prints this line whatever the bootstrap did, because the
   # entrypoint must go on to supervise its processes. Here the unit's result

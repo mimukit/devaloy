@@ -186,6 +186,7 @@ nested `dockerd` needs. Set **one**, never both. See
 | Variable | Default | Effect |
 |---|---|---|
 | `WITH_BROWSER` | `false` | The runtime half of the build argument of the same name. Makes the bootstrap install `playwright-cli` (pinned, see below) and download a Chromium into `~/.cache/ms-playwright`, and makes the entrypoint export the three `PLAYWRIGHT_MCP_*` defaults into `~/.devaloy_env`. Warns at boot when the image was built without the libraries. |
+| `WITH_REX` | `false` | Starts a personal Rex server as `dev`. Connect over Tailscale SSH. |
 
 Flipping it re-runs the toolchain bootstrap, because the revision marker
 records the flag the way it records `WITH_PASEO`.
@@ -204,6 +205,7 @@ The three exports, only present when the key is on:
 |---|---|---|
 | `WITH_DOCKER` | `false` | Builds in Docker Engine, CLI, Compose and buildx, and adds `dev` to the `docker` group. About +460 MB on arm64 (918 MB to 1.38 GB, measured with Docker 29). Needs `DEVALOY_RUNTIME` or `DEVALOY_PRIVILEGED` set as well, or the daemon will not start. |
 | `WITH_BROWSER` | `false` | Builds in the shared libraries a headless Chromium needs, plus `ffmpeg`. About +430 MB on arm64 (660 MB to 1.09 GB, measured with Docker 29). The browser itself is not in the image: the same key, read at runtime, makes the bootstrap download it into the home volume (982 MB, measured). |
+| `WITH_REX` | `false` | Installs Rex from Superlogical's snapshot apt channel. The same key starts the server at runtime. |
 
 Both are read from `.env` like the variables above, but they are **build
 arguments** — `docker compose up -d` alone will not pick up a change to either
@@ -362,6 +364,7 @@ Flags go after `bash -s --` when the script is piped.
 | `WITH_BROWSER` | `false` | The packages in `config/apt/browser.txt`. |
 | `WITH_PASEO` | `false` | Enables `devaloy-paseo.service`. `false` disables and stops it. |
 | `WITH_T3CODE` | `false` | Enables `devaloy-t3code.service`. `false` disables and stops it. |
+| `WITH_REX` | `false` | Installs Rex and enables socket activation for `dev`. `false` stops the server and disables socket activation. |
 | `ALLOW_NON_TAILNET` | unset | `1` lets `--lockdown` run with no SSH session found, or from a non-tailnet address. Not stored. |
 | `DEVALOY_SRC` | unset | Test only: the clone URL or path, used for the first clone and on a re-run only when set. |
 

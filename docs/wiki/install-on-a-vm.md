@@ -67,6 +67,7 @@ Each feature is a variable on the same line. All four default to `false`, and ea
 | `WITH_BROWSER` | Installs the headless Chromium libraries from `config/apt/browser.txt`. The bootstrap then fetches `playwright-cli` and Chromium into the home directory. |
 | `WITH_PASEO` | Enables `devaloy-paseo.service`, the Paseo daemon on `<tailnet-ip>:6767`. See [Connect the Paseo apps](connect-the-paseo-apps.md). |
 | `WITH_T3CODE` | Enables `devaloy-t3code.service`, the T3 Code server on `<tailnet-ip>:3773`. The pairing link is in `journalctl -u devaloy-t3code`. See [Connect the T3 Code apps](connect-the-t3-code-apps.md). Do not also run `t3 up` on the VM; see [Fix a box where someone ran `t3 up`](connect-the-t3-code-apps.md#fix-a-box-where-someone-ran-t3-up). |
+| `WITH_REX` | Installs Rex and enables socket activation for `dev`. Rerun the installer with `WITH_REX=false` to stop the server and disable socket activation. |
 
 For example:
 
@@ -162,7 +163,7 @@ Each key means what [Reference](reference.md#environment-variables) says. The ex
 | GitHub and git | `GITHUB_TOKEN`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `DEVALOY_REPOS` | With no identity, `devaloy-boot` warns that commits will fail. `devaloy-boot` clones `DEVALOY_REPOS` into `/home/dev`. |
 | Agents and services | `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` | Written to `~/.devaloy_secrets` on every boot. A cleared value is gone after the next restart. |
 | Push notifications | `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN` | See [Push notifications](push-notifications.md). |
-| Features | `WITH_DOCKER`, `WITH_BROWSER`, `WITH_PASEO`, `WITH_T3CODE` | `true` or `false`. Re-run the installer after a change. See [Turn on optional features](#turn-on-optional-features). |
+| Features | `WITH_DOCKER`, `WITH_BROWSER`, `WITH_PASEO`, `WITH_T3CODE`, `WITH_REX` | `true` or `false`. Re-run the installer after a change. See [Turn on optional features](#turn-on-optional-features). |
 | Paseo | `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS` | `devaloy-boot` writes the Paseo config, so restart both: `sudo systemctl restart devaloy-boot devaloy-paseo`. |
 | Toolchain and source | `MISE_NODE_VERSION`, `DEVALOY_REF` | Re-run the installer after a `DEVALOY_REF` change. |
 | Set by the installer | `RUNTIME` | Always `native`. Do not edit it. |
@@ -173,7 +174,7 @@ A key that is not in this table stays in the file across re-runs, but no devaloy
 
 Copy the values from the Dokploy environment settings into `/etc/devaloy/env`, with these differences:
 
-- Copy as they are: the GitHub and git keys, the agent and service tokens, the ntfy keys, the Paseo keys, `WITH_PASEO`, `WITH_T3CODE` and `WITH_BROWSER`.
+- Copy as they are: the GitHub and git keys, the agent and service tokens, the ntfy keys, the Paseo keys, `WITH_PASEO`, `WITH_T3CODE`, `WITH_BROWSER` and `WITH_REX`.
 - Leave out the compose-only keys: `DEVALOY_NAME`, `DEVALOY_RUNTIME`, `DEVALOY_PRIVILEGED`, `DEVALOY_SHM_SIZE`, and the resource ceilings (`DEVALOY_MEM_LIMIT`, `DEVALOY_MEMSWAP_LIMIT`, `DEVALOY_MEM_RESERVATION`, `DEVALOY_CPUS`, `DEVALOY_CPU_SHARES`, `DEVALOY_PIDS_LIMIT`). A VM has no container to limit.
 - Do not copy `TS_HOSTNAME` or `DEVALOY_NAME` as the tailnet name while the Dokploy box is still on the tailnet. Two nodes with one name collide.
 - Check `WITH_DOCKER` first. See the warning in [On InstaBox](#on-instabox), which applies to any VM image that already ships Docker.

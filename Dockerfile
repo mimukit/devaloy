@@ -52,6 +52,16 @@ RUN --mount=type=bind,source=lib/system,target=/src/lib/system \
 RUN --mount=type=bind,source=lib/system,target=/src/lib/system \
     SYS_ROOT=/out-docker bash /src/lib/system/install.sh docker-repo
 
+FROM fetch AS rex-fetch
+
+# A default build does not need to contact the Rex package server.
+ARG WITH_REX=false
+RUN --mount=type=bind,source=lib/system,target=/src/lib/system \
+    mkdir -p /out-rex \
+    && if [ "${WITH_REX}" = "true" ]; then \
+        SYS_ROOT=/out-rex bash /src/lib/system/install.sh rex-repo; \
+    fi
+
 # ---------------------------------------------------------------------------
 # Stage 2: the image itself, ordered least-volatile first.
 # ---------------------------------------------------------------------------
@@ -159,6 +169,25 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=bind,source=config/apt/browser.txt,target=/src/config/apt/browser.txt \
     REPO=/src bash /src/lib/system/install.sh browser-packages
 # --- OPTIONAL: headless browser capture. END ---
+
+# ---------------------------------------------------------------------------
+# OPTIONAL: the Rex terminal-session server (WITH_REX). BEGIN
+#
+# The rex package from Rex's own apt repo. The server is not started here:
+# entrypoint.sh runs `rex server start` as dev on boot (lib/steps/rex.sh).
+# Clients reach it over Tailscale SSH, so it opens no port.
+#
+# OFF BY DEFAULT. It is a BUILD arg like WITH_BROWSER, so you need `--build`.
+# The same key is also read at runtime, by the entrypoint; see compose.
+# ---------------------------------------------------------------------------
+ARG WITH_REX=false
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=bind,source=lib/system,target=/src/lib/system \
+    --mount=type=bind,from=rex-fetch,source=/out-rex,target=/tmp/rex-apt \
+    if [ "${WITH_REX}" = "true" ]; then cp -a /tmp/rex-apt/. /; fi \
+    && bash /src/lib/system/install.sh rex
+# --- OPTIONAL: the Rex terminal-session server. END ---
 
 # No sshd, no authorized_keys, no host keys: Tailscale SSH is the only way in,
 # and it authenticates from tailnet identity plus the tailnet policy file.

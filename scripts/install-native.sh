@@ -85,6 +85,7 @@ empty or unset one keeps it):
   WITH_BROWSER          true: the headless Chromium libraries
   WITH_PASEO            true: the Paseo daemon (devaloy-paseo.service)
   WITH_T3CODE           true: the T3 Code server (devaloy-t3code.service)
+  WITH_REX              true: the Rex package and the dev user's Rex server
   ALLOW_NON_TAILNET     1: let --lockdown run from a non-tailnet session
 
   and every variable in .env.example that applies to a VM: GITHUB_TOKEN,
@@ -150,7 +151,7 @@ ENV_KEYS=(
   INFISICAL_CLIENT_ID INFISICAL_CLIENT_SECRET
   DEVALOY_REPOS GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_SIGNING_SSH_KEY
   NTFY_TOPIC NTFY_SERVER NTFY_TOKEN
-  WITH_DOCKER WITH_BROWSER WITH_PASEO WITH_PASEO_WEB_UI WITH_T3CODE
+  WITH_DOCKER WITH_BROWSER WITH_PASEO WITH_PASEO_WEB_UI WITH_T3CODE WITH_REX
   PASEO_PASSWORD PASEO_PLUGINS MISE_NODE_VERSION
   DEVALOY_REF RUNTIME
 )
@@ -164,7 +165,7 @@ env_default() { # env_default KEY — the value a key takes when no one set it
     TS_HOSTNAME) printf 'devaloy' ;;
     DEVALOY_REF) printf 'main' ;;
     RUNTIME) printf 'native' ;;
-    WITH_DOCKER|WITH_BROWSER|WITH_PASEO|WITH_T3CODE) printf 'false' ;;
+    WITH_DOCKER|WITH_BROWSER|WITH_PASEO|WITH_T3CODE|WITH_REX) printf 'false' ;;
     *) printf '' ;;
   esac
 }
@@ -184,7 +185,7 @@ env_fixed() {
 resolve_env() {
   local k
   env_merge "${ENV_FILE}"
-  for k in WITH_DOCKER WITH_BROWSER WITH_PASEO WITH_T3CODE; do
+  for k in WITH_DOCKER WITH_BROWSER WITH_PASEO WITH_T3CODE WITH_REX; do
     case "${VAL[${k}]}" in
       true|false) ;;
       *) die "${k}=${VAL[${k}]} — use true or false." ;;
@@ -469,7 +470,7 @@ inst_secrets() {
       cmd="${cmd} TS_AUTHKEY=tskey-auth-..."
       [ "${VAL[TS_HOSTNAME]}" = devaloy ] || cmd="${cmd} TS_HOSTNAME=${VAL[TS_HOSTNAME]}"
       local k
-      for k in WITH_DOCKER WITH_BROWSER WITH_PASEO WITH_T3CODE; do
+      for k in WITH_DOCKER WITH_BROWSER WITH_PASEO WITH_T3CODE WITH_REX; do
         [ "${VAL[${k}]}" = true ] && cmd="${cmd} ${k}=true"
       done
       cmd="${cmd} bash"
@@ -502,6 +503,11 @@ inst_apt() {
 
   if [ "${VAL[WITH_BROWSER]}" = true ]; then
     sys_browser_packages "${DEVALOY_DIR}"
+  fi
+
+  if [ "${VAL[WITH_REX]}" = true ]; then
+    sys_rex_repo
+    sys_rex_package
   fi
 
   if [ "${VAL[WITH_DOCKER]}" = true ]; then

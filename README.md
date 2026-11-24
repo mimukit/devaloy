@@ -61,6 +61,7 @@ From the image, available the moment you can log in:
 | Optional | the T3 Code server (`t3`), only when run with `WITH_T3CODE=true`. See [(Optional) the T3 Code apps](#optional-the-t3-code-apps). Installed from `mise`, not the image. |
 | Optional | Docker Engine and Compose (`docker`, `docker compose`, `docker buildx`), only when built with `WITH_DOCKER=true` — see [(Optional) Docker and Compose](#optional-docker-and-compose) |
 | Optional | headless browser capture (`playwright-cli` and a Chromium), only when built and run with `WITH_BROWSER=true` — see [(Optional) headless browser capture](#optional-headless-browser-capture). Libraries from the image, the CLI and the browser from `mise` into the home volume. |
+| Optional | The [Rex terminal server](#optional-rex-terminal-server), with `WITH_REX=true`. |
 
 From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 `gh`, `turbo`, `lazygit`, `neovim` (seeded with the LazyVim config in
@@ -410,6 +411,22 @@ CLOUDFLARE_API_TOKEN=
 Leave `CLOUDFLARE_ACCOUNT_ID` unset. Each project names its account in the `account_id` of its wrangler config, and the variable would override that and send every project to one account.
 
 Create a **user** token from the **Edit Cloudflare Workers** template, not an account API token, which covers one account only. This token can deploy production sites, and agents here run unattended in bypass permission mode, so give it only the accounts, zones and permissions the projects need. The steps, the permission tables, the check and the revocation are in [docs/wiki/set-up-the-cloudflare-token.md](docs/wiki/set-up-the-cloudflare-token.md).
+
+## (Optional) Rex terminal server
+
+Set `WITH_REX=true` in `.env`. Run `docker compose up -d --build`. The build installs Rex from Superlogical's snapshot channel. The container starts a personal Rex server as `dev`.
+
+On a native VM, pass `WITH_REX=true` to the [native installer](docs/wiki/install-on-a-vm.md#turn-on-optional-features). The installer sets up systemd socket activation for `dev`.
+
+From a laptop with Rex installed, connect over Tailscale SSH. Replace `devaloy` with your box's Tailscale hostname if you changed it.
+
+```sh
+rex -S ssh://dev@devaloy ls
+```
+
+See [Rex remote access](https://www.superlogical.com/rex/docs/linux/remote-access#ssh) for more SSH options.
+
+To turn off automatic startup, set `WITH_REX=false`. Rebuild the container to remove Rex from the image. On a VM, rerun the native installer to stop the server and disable socket activation. The package stays installed on the VM.
 
 ## (Optional) the Paseo apps
 

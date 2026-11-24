@@ -65,6 +65,30 @@ sys_docker_repo() {
   sys_ok "Docker apt repo (${OS_ID} ${OS_CODENAME})"
 }
 
+# Rex's snapshot channel, for WITH_REX. The repo stays on the box so
+# `apt-get upgrade` can update Rex.
+#
+# The pin is the one Rex's own install script writes. Ubuntu and Debian carry
+# an unrelated package also named rex, (R)?ex, a Perl framework. The first
+# record makes apt take rex from Rex's repo, even as a downgrade. The second
+# stops every other origin from offering a rex at all, so unattended-upgrades
+# cannot swap (R)?ex in.
+REX_HOST=pkgs.superlogical.com
+
+sys_rex_repo() {
+  fetch_to "https://${REX_HOST}/rex/keys/rex-archive-keyring.gpg" \
+    "${SYS_ROOT}/etc/apt/keyrings/rex-archive-keyring.gpg" 644
+  [ "${PUT_CHANGED}" -eq 0 ] || APT_FRESH=0
+  put_content "${SYS_ROOT}/etc/apt/sources.list.d/rex.sources" 644 < <(
+    printf 'Types: deb\nURIs: https://%s/rex/apt\nSuites: snapshot\nComponents: main\nSigned-By: /etc/apt/keyrings/rex-archive-keyring.gpg\n' \
+      "${REX_HOST}")
+  [ "${PUT_CHANGED}" -eq 0 ] || APT_FRESH=0
+  put_content "${SYS_ROOT}/etc/apt/preferences.d/rex" 644 < <(
+    printf 'Package: rex\nPin: origin %s\nPin-Priority: 1001\n\nPackage: rex\nPin: release *\nPin-Priority: -1\n' \
+      "${REX_HOST}")
+  sys_ok "Rex apt repo (snapshot channel)"
+}
+
 # --- packages ------------------------------------------------------------------
 
 # A stamp file records the version, so a re-run with the same pin downloads
@@ -151,6 +175,26 @@ sys_docker_engine() {
   docker compose version >/dev/null || sys_die "docker compose does not run."
   docker buildx version >/dev/null || sys_die "docker buildx does not run."
   sys_ok "Docker Engine, Compose and Buildx present"
+}
+
+# WITH_REX. Needs sys_rex_repo first. A VM already has systemd and a container
+# does not need it. Check the candidate before installation because Debian
+# and Ubuntu also carry a package named rex.
+sys_rex_package() {
+  local candidate versions version
+  if [ "${APT_FRESH}" -eq 0 ]; then
+    "${APT[@]}" update </dev/null
+    APT_FRESH=1
+  fi
+  candidate="$(LC_ALL=C apt-cache policy rex | awk '$1 == "Candidate:" {print $2}')"
+  versions="$(apt-cache madison rex | tr -s ' ')"
+  if ! grep -qF "rex | ${candidate} | https://${REX_HOST}/rex/apt " <<< "${versions}"; then
+    sys_die "apt did not select Rex from ${REX_HOST}. Check 'apt-cache policy rex'."
+  fi
+  "${APT[@]}" install -y --no-install-recommends --allow-downgrades \
+    -o DPkg::Options::=--force-confdef -o DPkg::Options::=--force-confold rex </dev/null
+  version="$(/usr/bin/rex version)" || sys_die "Rex installed, but 'rex version' does not run."
+  sys_ok "Rex present (${version%%$'\n'*})"
 }
 
 # --- the dev user --------------------------------------------------------------
