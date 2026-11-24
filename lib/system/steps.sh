@@ -190,8 +190,10 @@ sys_rex_from_repo() { # sys_rex_from_repo VERSION — true when Rex's repo offer
 
 sys_rex_package() {
   local installed candidate version
+  # dpkg-query exits 1 when rex is not installed. Under pipefail that would end
+  # the script with no message, so a missing package must read as "".
   installed="$(dpkg-query -W -f='${db:Status-Status} ${Version}' rex 2>/dev/null |
-    awk '$1 == "installed" {print $2}')"
+    awk '$1 == "installed" {print $2}' || true)"
   if sys_rex_from_repo "${installed}"; then
     sys_ok "Rex present (${installed})"
     return 0
