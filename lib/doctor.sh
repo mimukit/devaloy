@@ -457,6 +457,15 @@ doctor_collect() {
     doctor_gated WITH_DOCKER 'docker daemon' docker info
   fi
   doctor_gated WITH_BROWSER 'browser capture' browser_up
+  # Rex, from the runtime flags. Only the package is checked: a client that
+  # finds no server starts one, so a missing server is not a fault.
+  if [ "$(runtime_flag WITH_REX)" != "true" ]; then
+    doctor_row off 'rex' 'WITH_REX is off'
+  elif [ -x /usr/bin/rex ]; then
+    doctor_row ok 'rex' "$(/usr/bin/rex version 2>/dev/null | head -n 1)"
+  else
+    doctor_row broken 'rex' 'WITH_REX=true but rex is not installed, so rebuild or re-run the installer'
+  fi
   # A native VM and an Upstash Box run no forward; see lib/steps/db-forward.sh.
   if ! on_native && ! on_upstash; then
     doctor_db_forward
