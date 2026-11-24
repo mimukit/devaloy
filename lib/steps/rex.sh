@@ -25,13 +25,17 @@
 
 step_rex_server() {
   if [ "${WITH_REX:-false}" != "true" ]; then
-    # A container restart already ends the old server.
+    # A container restart already ends the old server. On a VM, read the enable
+    # links from disk, not from dev's user manager: at boot, logind may not
+    # have started that manager yet. Lingering stays on, because dev may use
+    # it for other user units.
+    local units="${DEV_HOME}/.config/systemd/user"
     if on_native && {
-      systemctl --user -M "${DEV_USER}@" is-enabled --quiet rex.socket 2>/dev/null ||
-      systemctl --user -M "${DEV_USER}@" is-active --quiet rex.socket rex.service 2>/dev/null
+      [ -e "${units}/sockets.target.wants/rex.socket" ] ||
+      [ -e "${units}/default.target.wants/rex.service" ]
     }; then
-      if systemctl --user -M "${DEV_USER}@" disable --now --quiet rex.socket &&
-         systemctl --user -M "${DEV_USER}@" stop rex.service; then
+      if systemctl start "user@$(id -u "${DEV_USER}").service" &&
+         systemctl --user -M "${DEV_USER}@" disable --now --quiet rex.socket rex.service; then
         log "Rex: stopped the server and disabled socket activation"
       else
         log "WARNING: could not stop the Rex server or disable rex.socket."
