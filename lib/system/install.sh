@@ -16,7 +16,7 @@
 #   docker-engine      Docker Engine and its plugins, when WITH_DOCKER=true
 #   rex-repo           Rex's apt keyring, list and pin
 #   rex                the rex package, when WITH_REX=true
-#   cli               devaloy, its two scripts, lib/ and the old verb names
+#   cli                devaloy, its two scripts, lib/ and the old verb names
 #   build-flags        FLAGS_DIR/build-flags from RUNTIME, WITH_DOCKER and
 #                      WITH_BROWSER
 #
@@ -29,7 +29,7 @@
 #   WITH_DOCKER     true or false, default false
 #   WITH_BROWSER    true or false, default false
 #   WITH_REX        true or false, default false
-#   RUNTIME        container, native or upstash, for build-flags
+#   RUNTIME         container, native or upstash, for build-flags
 #   FLAGS_DIR       where build-flags goes, default /opt/devaloy
 set -euo pipefail
 

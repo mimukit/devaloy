@@ -177,18 +177,31 @@ sys_docker_engine() {
   sys_ok "Docker Engine, Compose and Buildx present"
 }
 
-# WITH_REX. Needs sys_rex_repo first. A VM already has systemd and a container
-# does not need it. Check the candidate before installation because Debian
-# and Ubuntu also carry a package named rex.
+# WITH_REX. Needs sys_rex_repo first. apt_ensure cannot do this check, because
+# Debian and Ubuntu also carry a package named rex, so the step checks that the
+# installed and the candidate versions come from Rex's repo. A box that already
+# has Rex's rex makes no apt call, like apt_ensure. --no-install-recommends
+# drops the package's Recommends: systemd, which a VM already has and a
+# container does not need.
+sys_rex_from_repo() { # sys_rex_from_repo VERSION — true when Rex's repo offers it
+  [ -n "$1" ] && apt-cache madison rex 2>/dev/null | tr -s ' ' |
+    grep -qF "rex | $1 | https://${REX_HOST}/rex/apt "
+}
+
 sys_rex_package() {
-  local candidate versions version
+  local installed candidate version
+  installed="$(dpkg-query -W -f='${db:Status-Status} ${Version}' rex 2>/dev/null |
+    awk '$1 == "installed" {print $2}')"
+  if sys_rex_from_repo "${installed}"; then
+    sys_ok "Rex present (${installed})"
+    return 0
+  fi
   if [ "${APT_FRESH}" -eq 0 ]; then
     "${APT[@]}" update </dev/null
     APT_FRESH=1
   fi
   candidate="$(LC_ALL=C apt-cache policy rex | awk '$1 == "Candidate:" {print $2}')"
-  versions="$(apt-cache madison rex | tr -s ' ')"
-  if ! grep -qF "rex | ${candidate} | https://${REX_HOST}/rex/apt " <<< "${versions}"; then
+  if ! sys_rex_from_repo "${candidate}"; then
     sys_die "apt did not select Rex from ${REX_HOST}. Check 'apt-cache policy rex'."
   fi
   "${APT[@]}" install -y --no-install-recommends --allow-downgrades \
