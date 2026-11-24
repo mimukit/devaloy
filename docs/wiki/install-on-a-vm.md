@@ -59,7 +59,7 @@ Check the result as `dev` with `devaloy doctor`.
 
 ### Turn on optional features
 
-Each feature is a variable on the same line. All four default to `false`, and each takes only `true` or `false`.
+Each feature is a variable on the same line. All five default to `false`, and each takes only `true` or `false`.
 
 | Variable | On a VM |
 |---|---|

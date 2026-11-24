@@ -186,7 +186,6 @@ nested `dockerd` needs. Set **one**, never both. See
 | Variable | Default | Effect |
 |---|---|---|
 | `WITH_BROWSER` | `false` | The runtime half of the build argument of the same name. Makes the bootstrap install `playwright-cli` (pinned, see below) and download a Chromium into `~/.cache/ms-playwright`, and makes the entrypoint export the three `PLAYWRIGHT_MCP_*` defaults into `~/.devaloy_env`. Warns at boot when the image was built without the libraries. |
-| `WITH_REX` | `false` | Starts a personal Rex server as `dev`. Connect over Tailscale SSH. |
 
 Flipping it re-runs the toolchain bootstrap, because the revision marker
 records the flag the way it records `WITH_PASEO`.
@@ -199,6 +198,14 @@ The three exports, only present when the key is on:
 | `PLAYWRIGHT_MCP_SANDBOX` | probed: `true` under runc, `false` under sysbox-runc | Playwright launches the bundled Chromium with `--no-sandbox` on Linux unless told otherwise. The sandbox needs a user namespace, so the entrypoint sets `true` only when `unshare -Ur true` passes as `dev`. Under sysbox-runc it fails, and `true` there stops every launch. |
 | `PLAYWRIGHT_MCP_OUTPUT_DIR` | `/tmp/playwright-cli` | A bare `screenshot` would otherwise write into `.playwright-cli/` under the current directory. |
 
+### Rex terminal server
+
+| Variable | Default | Effect |
+|---|---|---|
+| `WITH_REX` | `false` | The runtime half of the build argument of the same name. Makes the entrypoint run `rex server start` as `dev` on every boot. Connect over Tailscale SSH. Warns at boot when the image was built without Rex. |
+
+Flipping it does not re-run the toolchain bootstrap, because Rex comes from the image, not from `mise`. A restart with the new value is enough when the image already has Rex.
+
 ## Build arguments
 
 | Argument | Default | Effect |
@@ -207,10 +214,10 @@ The three exports, only present when the key is on:
 | `WITH_BROWSER` | `false` | Builds in the shared libraries a headless Chromium needs, plus `ffmpeg`. About +430 MB on arm64 (660 MB to 1.09 GB, measured with Docker 29). The browser itself is not in the image: the same key, read at runtime, makes the bootstrap download it into the home volume (982 MB, measured). |
 | `WITH_REX` | `false` | Installs Rex from Superlogical's snapshot apt channel. The same key starts the server at runtime. |
 
-Both are read from `.env` like the variables above, but they are **build
-arguments** — `docker compose up -d` alone will not pick up a change to either
-of them. You need `docker compose up -d --build`. `WITH_BROWSER` is also read at
-runtime, and is listed above for that half.
+All three are read from `.env` like the variables above, but they are **build
+arguments** — `docker compose up -d` alone will not pick up a change to any
+of them. You need `docker compose up -d --build`. `WITH_BROWSER` and `WITH_REX`
+are also read at runtime, and are listed above for that half.
 
 `WITH_PASEO` is the one to keep separate in your head. It looks like a sibling
 and is not: it is an environment variable listed above, because Paseo installs
