@@ -35,6 +35,8 @@ DEVALOY_LIB="${DEVALOY_LIB:-/usr/local/lib/devaloy}"
 . "${DEVALOY_LIB}/steps/db-forward.sh"
 # shellcheck source=lib/steps/t3-claude-usage.sh
 . "${DEVALOY_LIB}/steps/t3-claude-usage.sh"
+# shellcheck source=lib/steps/rex.sh
+. "${DEVALOY_LIB}/steps/rex.sh"
 
 # --- the dev shell, secrets and dotfiles (before tailscaled) ---
 step_shell_env
@@ -450,6 +452,11 @@ if [ "${WITH_T3CODE:-false}" = "true" ]; then
     log "WARNING: with: devaloy-update"
   fi
 fi
+
+# --- Rex server (only when WITH_REX=true) ---
+# `rex server start` detaches, so there is no restart loop here. A client that
+# finds no server starts a new one. See lib/steps/rex.sh.
+step_rex_server
 
 log "devaloy is up. Connect with: ssh dev@${TS_HOSTNAME:-devaloy}"
 wait "${TAILSCALED_PID}"

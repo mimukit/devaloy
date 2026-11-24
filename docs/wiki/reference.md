@@ -198,17 +198,26 @@ The three exports, only present when the key is on:
 | `PLAYWRIGHT_MCP_SANDBOX` | probed: `true` under runc, `false` under sysbox-runc | Playwright launches the bundled Chromium with `--no-sandbox` on Linux unless told otherwise. The sandbox needs a user namespace, so the entrypoint sets `true` only when `unshare -Ur true` passes as `dev`. Under sysbox-runc it fails, and `true` there stops every launch. |
 | `PLAYWRIGHT_MCP_OUTPUT_DIR` | `/tmp/playwright-cli` | A bare `screenshot` would otherwise write into `.playwright-cli/` under the current directory. |
 
+### Rex terminal server
+
+| Variable | Default | Effect |
+|---|---|---|
+| `WITH_REX` | `false` | The runtime half of the build argument of the same name. Makes the entrypoint run `rex server start` as `dev` on every boot. Connect over Tailscale SSH. Warns at boot when the image was built without Rex. |
+
+Flipping it does not re-run the toolchain bootstrap, because Rex comes from the image, not from `mise`. A restart with the new value is enough when the image already has Rex.
+
 ## Build arguments
 
 | Argument | Default | Effect |
 |---|---|---|
 | `WITH_DOCKER` | `false` | Builds in Docker Engine, CLI, Compose and buildx, and adds `dev` to the `docker` group. About +460 MB on arm64 (918 MB to 1.38 GB, measured with Docker 29). Needs `DEVALOY_RUNTIME` or `DEVALOY_PRIVILEGED` set as well, or the daemon will not start. |
 | `WITH_BROWSER` | `false` | Builds in the shared libraries a headless Chromium needs, plus `ffmpeg`. About +430 MB on arm64 (660 MB to 1.09 GB, measured with Docker 29). The browser itself is not in the image: the same key, read at runtime, makes the bootstrap download it into the home volume (982 MB, measured). |
+| `WITH_REX` | `false` | Installs Rex from Superlogical's snapshot apt channel. The same key starts the server at runtime. |
 
-Both are read from `.env` like the variables above, but they are **build
-arguments** — `docker compose up -d` alone will not pick up a change to either
-of them. You need `docker compose up -d --build`. `WITH_BROWSER` is also read at
-runtime, and is listed above for that half.
+All three are read from `.env` like the variables above, but they are **build
+arguments** — `docker compose up -d` alone will not pick up a change to any
+of them. You need `docker compose up -d --build`. `WITH_BROWSER` and `WITH_REX`
+are also read at runtime, and are listed above for that half.
 
 `WITH_PASEO` is the one to keep separate in your head. It looks like a sibling
 and is not: it is an environment variable listed above, because Paseo installs
@@ -362,6 +371,7 @@ Flags go after `bash -s --` when the script is piped.
 | `WITH_BROWSER` | `false` | The packages in `config/apt/browser.txt`. |
 | `WITH_PASEO` | `false` | Enables `devaloy-paseo.service`. `false` disables and stops it. |
 | `WITH_T3CODE` | `false` | Enables `devaloy-t3code.service`. `false` disables and stops it. |
+| `WITH_REX` | `false` | Installs Rex and enables socket activation for `dev`. `false` stops the server and disables socket activation. |
 | `ALLOW_NON_TAILNET` | unset | `1` lets `--lockdown` run with no SSH session found, or from a non-tailnet address. Not stored. |
 | `DEVALOY_SRC` | unset | Test only: the clone URL or path, used for the first clone and on a re-run only when set. |
 

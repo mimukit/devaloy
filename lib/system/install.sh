@@ -14,6 +14,8 @@
 #   base-packages      config/apt/packages.txt, plus the bat and fd names
 #   browser-packages   config/apt/browser.txt, when WITH_BROWSER=true
 #   docker-engine      Docker Engine and its plugins, when WITH_DOCKER=true
+#   rex-repo           Rex's apt keyring, list and pin
+#   rex                the rex package, when WITH_REX=true
 #   cli                devaloy, its two scripts, lib/ and the old verb names
 #   build-flags        FLAGS_DIR/build-flags from RUNTIME, WITH_DOCKER and
 #                      WITH_BROWSER
@@ -26,6 +28,7 @@
 #   DEV_UID         a fixed UID for dev-user
 #   WITH_DOCKER     true or false, default false
 #   WITH_BROWSER    true or false, default false
+#   WITH_REX        true or false, default false
 #   RUNTIME         container, native or upstash, for build-flags
 #   FLAGS_DIR       where build-flags goes, default /opt/devaloy
 set -euo pipefail
@@ -34,6 +37,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${REPO:-$(cd "${here}/../.." && pwd)}"
 WITH_DOCKER="${WITH_DOCKER:-false}"
 WITH_BROWSER="${WITH_BROWSER:-false}"
+WITH_REX="${WITH_REX:-false}"
 FLAGS_DIR="${FLAGS_DIR:-/opt/devaloy}"
 
 # shellcheck source=lib/system/common.sh
@@ -41,7 +45,7 @@ FLAGS_DIR="${FLAGS_DIR:-/opt/devaloy}"
 # shellcheck source=lib/system/steps.sh
 . "${here}/steps.sh"
 
-[ $# -gt 0 ] || { sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+[ $# -gt 0 ] || { sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 for step in "$@"; do
   case "${step}" in
@@ -57,6 +61,11 @@ for step in "$@"; do
     docker-engine)
       if [ "${WITH_DOCKER}" = true ]; then sys_docker_engine
       else sys_ok "Docker Engine skipped (WITH_DOCKER=${WITH_DOCKER})"; fi
+      ;;
+    rex-repo)         sys_rex_repo ;;
+    rex)
+      if [ "${WITH_REX}" = true ]; then sys_rex_package
+      else sys_ok "Rex skipped (WITH_REX=${WITH_REX})"; fi
       ;;
     cli)              sys_install_cli "${REPO}" ;;
     build-flags)

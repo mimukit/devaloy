@@ -47,6 +47,12 @@ services:
         # makes the entrypoint export the browser defaults. One thing to set in
         # .env, two readers, like WITH_DOCKER.
         WITH_BROWSER: ${WITH_BROWSER:-false}
+        # Installs the rex package from Rex's apt repo, for the Rex
+        # terminal-session server. OFF by default. A BUILD arg like the two
+        # above, so you need `--build`. The same key is ALSO an environment
+        # variable further down: that half makes the entrypoint start dev's
+        # server.
+        WITH_REX: ${WITH_REX:-false}
     # A container name is global to the Docker daemon, and compose does NOT
     # prefix it with the project name the way it prefixes volumes. Two stacks
     # that both hardcode `devaloy` collide on it, and the second one fails to
@@ -329,6 +335,10 @@ services:
       # except the first time on an image built before socat was in it.
       - DEVALOY_DB_UPSTREAM=${DEVALOY_DB_UPSTREAM:-}
       - DEVALOY_DB_PORT=${DEVALOY_DB_PORT:-5435}
+      # The runtime half of the WITH_REX build arg. entrypoint.sh reads it and
+      # runs `rex server start` as dev. The server opens no port: clients
+      # reach it over Tailscale SSH. Only a rebuild moves the build arg.
+      - WITH_REX=${WITH_REX:-false}
     volumes:
       - home:/home/dev
       # Node identity lives here. Lose it and the box rejoins as a new machine.

@@ -61,9 +61,9 @@ step_browser_libs_check() {
 # boot with the same keys leaves the file and its mtime alone.
 step_runtime_flags() {
   {
-    printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\nWITH_T3CODE=%s\nWITH_DOCKER=%s\n' \
+    printf 'WITH_PASEO=%s\nWITH_BROWSER=%s\nWITH_T3CODE=%s\nWITH_DOCKER=%s\nWITH_REX=%s\n' \
       "${WITH_PASEO:-false}" "${WITH_BROWSER:-false}" "${WITH_T3CODE:-false}" \
-      "${WITH_DOCKER:-false}"
+      "${WITH_DOCKER:-false}" "${WITH_REX:-false}"
     printf 'WITH_T3CODE_PROXY_CLAUDE_USAGE=%s\n' \
       "${WITH_T3CODE_PROXY_CLAUDE_USAGE:-false}"
     [ -z "${DEVALOY_SLIM:-}" ] || printf 'DEVALOY_SLIM=%s\n' "${DEVALOY_SLIM}"
