@@ -230,6 +230,12 @@ services:
       # variable is unset, so a box-wide value would send every deploy to
       # one account. See docs/wiki/set-up-the-cloudflare-token.md.
       - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      # A Dokploy panel's URL and API key, for a project deploy script that
+      # reads them from the environment before its own credentials file. Both
+      # optional, with no default URL. The entrypoint copies them into the 0600
+      # file in the home volume; clearing them here plus a redeploy removes them.
+      - DOKPLOY_URL=${DOKPLOY_URL:-}
+      - DOKPLOY_API_KEY=${DOKPLOY_API_KEY:-}
       # Whitespace-separated repos to clone into ~/projects on each boot, as
       # owner/repo, an https:// URL, or git@host:path. The entrypoint skips a
       # repo already cloned there, so this is safe to re-run and cheap to grow.

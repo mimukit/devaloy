@@ -79,7 +79,7 @@ To change a feature later, re-run the one-liner with the new value. Setting `WIT
 
 ### Other variables
 
-The installer also reads `TS_HOSTNAME` (the tailnet name, default `devaloy`) and every `.env` variable that means something on a VM: `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS`, `TS_ACCEPT_DNS` and `MISE_NODE_VERSION`. Each one means what [Reference](reference.md#environment-variables) says, with one difference: `TS_ACCEPT_DNS` defaults to `true` on a VM, because there is no Docker resolver to protect. Set `TS_ACCEPT_DNS=false` to turn MagicDNS off on the box.
+The installer also reads `TS_HOSTNAME` (the tailnet name, default `devaloy`) and every `.env` variable that means something on a VM: `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DOKPLOY_URL`, `DOKPLOY_API_KEY`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS`, `TS_ACCEPT_DNS` and `MISE_NODE_VERSION`. Each one means what [Reference](reference.md#environment-variables) says, with one difference: `TS_ACCEPT_DNS` defaults to `true` on a VM, because there is no Docker resolver to protect. Set `TS_ACCEPT_DNS=false` to turn MagicDNS off on the box.
 
 A non-empty variable on the command line overwrites the value stored in `/etc/devaloy/env`. An empty or missing one keeps the stored value. So you pass a token once, and a re-run without it keeps it. For more than one or two values, skip the command line and edit the file instead; see [4. Set your environment](#4-set-your-environment). A token on the command line also lands in your shell history.
 
@@ -161,7 +161,7 @@ Each key means what [Reference](reference.md#environment-variables) says. The ex
 |---|---|---|
 | Tailnet | `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_ACCEPT_DNS` | `TS_AUTHKEY` matters only while the node is off the tailnet. `TS_HOSTNAME` defaults to `devaloy`; give a second box its own name. `TS_ACCEPT_DNS` defaults to `true`. |
 | GitHub and git | `GITHUB_TOKEN`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `DEVALOY_REPOS` | With no identity, `devaloy-boot` warns that commits will fail. `devaloy-boot` clones `DEVALOY_REPOS` into `/home/dev`. |
-| Agents and services | `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` | Written to `~/.devaloy_secrets` on every boot. A cleared value is gone after the next restart. |
+| Agents and services | `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DOKPLOY_URL`, `DOKPLOY_API_KEY` | Written to `~/.devaloy_secrets` on every boot. A cleared value is gone after the next restart. |
 | Push notifications | `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN` | See [Push notifications](push-notifications.md). |
 | Features | `WITH_DOCKER`, `WITH_BROWSER`, `WITH_PASEO`, `WITH_T3CODE`, `WITH_REX` | `true` or `false`. Re-run the installer after a change. See [Turn on optional features](#turn-on-optional-features). |
 | Paseo | `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS` | `devaloy-boot` writes the Paseo config, so restart both: `sudo systemctl restart devaloy-boot devaloy-paseo`. |

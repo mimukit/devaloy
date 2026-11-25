@@ -199,6 +199,13 @@ step_secrets() {
   # beside it, on purpose: each project names its account in its wrangler
   # config, and the variable would override that. See docker-compose.yml.
   write_secret CLOUDFLARE_API_TOKEN "${CLOUDFLARE_API_TOKEN:-}"
+  # A Dokploy panel's URL and API key, for a project's deploy script that reads
+  # them from the environment. No default URL: the owner names the panel. The
+  # URL is not secret, but it rides here so both values reach the same shells.
+  # Unset leaves the shell without them, so a script's own credentials file
+  # (for example ~/.config/dokploy/<project>.env) still applies.
+  write_secret DOKPLOY_URL "${DOKPLOY_URL:-}"
+  write_secret DOKPLOY_API_KEY "${DOKPLOY_API_KEY:-}"
 
   SECRETS_SNIPPET="${SECRETS_FINAL}"
   commit_staged "${SECRETS_SNIPPET}${STAGED}" "${SECRETS_SNIPPET}"

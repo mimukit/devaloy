@@ -36,6 +36,8 @@ On an Upstash Box they live in `/workspace/.devaloy/env`, with `WITH_T3CODE`, `W
 | `INFISICAL_CLIENT_ID` | empty | Client ID of the Infisical machine identity the `infisical` CLI authenticates with. Written to `~/.devaloy_secrets` only; nothing is stored at boot, because the caller runs the `infisical login --method=universal-auth --plain --silent` exchange itself. Give this box the **`dev`** identity, never `prod` — see below. |
 | `INFISICAL_CLIENT_SECRET` | empty | Client secret of that identity. Same handling as the ID above. |
 | `CLOUDFLARE_API_TOKEN` | empty | Cloudflare **user** API token that `wrangler` and `cf` use in place of a browser login. Written to `~/.devaloy_secrets` only. There is no `CLOUDFLARE_ACCOUNT_ID`: each project names its account in its wrangler config, and the variable would override that. Permissions and setup are in [Set up the Cloudflare API token](set-up-the-cloudflare-token.md). |
+| `DOKPLOY_URL` | empty | URL of a Dokploy panel, for example `http://<panel-host>:3000`, for a project deploy script that reads it from the environment. There is no default. Written to `~/.devaloy_secrets` only. When it is empty, the script uses its own credentials file. |
+| `DOKPLOY_API_KEY` | empty | API key for that panel. Written to `~/.devaloy_secrets` only, never to the image or a log. When it is empty, the script uses its own credentials file. |
 | `GIT_AUTHOR_NAME` | empty | `user.name`. Falls back to the `GITHUB_TOKEN` account's name. |
 | `GIT_AUTHOR_EMAIL` | empty | `user.email`. Falls back to that account's `ID+login@users.noreply.github.com` address. |
 | `GIT_SIGNING_SSH_KEY` | empty | Base64 of a **passphrase-less OpenSSH private key**. Enables SSH commit and tag signing. |
@@ -375,7 +377,7 @@ Flags go after `bash -s --` when the script is piped.
 | `ALLOW_NON_TAILNET` | unset | `1` lets `--lockdown` run with no SSH session found, or from a non-tailnet address. Not stored. |
 | `DEVALOY_SRC` | unset | Test only: the clone URL or path, used for the first clone and on a re-run only when set. |
 
-Each `WITH_*` takes only `true` or `false`. The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS` and `MISE_NODE_VERSION`, with the meanings in [Environment variables](#environment-variables).
+Each `WITH_*` takes only `true` or `false`. The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DOKPLOY_URL`, `DOKPLOY_API_KEY`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `WITH_PASEO_WEB_UI`, `PASEO_PASSWORD`, `PASEO_PLUGINS` and `MISE_NODE_VERSION`, with the meanings in [Environment variables](#environment-variables).
 
 `/etc/devaloy/env` holds every key above except `ALLOW_NON_TAILNET` and `DEVALOY_SRC`, plus `RUNTIME=native`. It is root-owned, mode 0600, and every value is double-quoted in systemd's `EnvironmentFile=` syntax. The precedence on each run: a non-empty environment variable overwrites the file value, an empty or unset one keeps it, and a key in neither takes the default. To clear a value, edit the file and run `sudo systemctl restart devaloy-boot`. A key you add by hand is kept.
 
@@ -420,7 +422,7 @@ The three flags do not combine.
 | `UPSTASH_HOME_MODE` | `move` | `move` sets the passwd home of `boxuser` to `/workspace/home`. `links` keeps `/home/boxuser` and links a fixed list of names into `/workspace/home`. |
 | `DEVALOY_SRC` | unset | Test only: the clone URL or path. `scripts/upstash-lookalike.sh` uses `/srv/devaloy`. |
 
-The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `TS_ACCEPT_DNS` and `MISE_NODE_VERSION`, with the meanings in [Environment variables](#environment-variables).
+The installer also stores `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DOKPLOY_URL`, `DOKPLOY_API_KEY`, `DEVALOY_REPOS`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN`, `TS_ACCEPT_DNS` and `MISE_NODE_VERSION`, with the meanings in [Environment variables](#environment-variables).
 
 `/workspace/.devaloy/env` holds every key above except `UPSTASH_BOX_API_KEY` and `DEVALOY_SRC`, plus `WITH_T3CODE="true"`, `WITH_DOCKER="false"`, `WITH_PASEO="false"` and `RUNTIME="upstash"`, which are fixed. It is owned by `boxuser`, mode 0600, in the same grammar as `/etc/devaloy/env`, and both installers read and write it through `lib/system/envfile.sh`. The precedence is the native one. To apply a change, run `bash /workspace/devaloy/lib/steps/upstash-boot.sh`.
 
@@ -457,7 +459,7 @@ on the box is pointless — the change is gone at the next redeploy, or the next
 | Path | Mode | Contents |
 |---|---|---|
 | `~/.devaloy_env` | default | `PATH`, the mise release-age exclusion, sources `~/.devaloy_secrets`, resets `oom_score_adj`; plus the three `PLAYWRIGHT_MCP_*` exports when `WITH_BROWSER=true` |
-| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `PASEO_PASSWORD`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `CLOUDFLARE_API_TOKEN` — each only written when set. Do not hand-edit it: the entrypoint deletes and rewrites it on every boot, which is what makes clearing a value in `.env` a real revocation. |
+| `~/.devaloy_secrets` | **600** | `GITHUB_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `PASEO_PASSWORD`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `CLOUDFLARE_API_TOKEN`, `DOKPLOY_URL`, `DOKPLOY_API_KEY` — each only written when set. Do not hand-edit it: the entrypoint deletes and rewrites it on every boot, which is what makes clearing a value in `.env` a real revocation. |
 | `~/.config/agent-push.env` | **600** | `PUSH_NTFY_*` — only written when `NTFY_TOPIC` is set |
 | `~/.zshrc` | default | Copied from `config/zsh/zshrc` |
 | `~/.ssh/devaloy_signing` | **600** | The private signing key. Its `.pub` is derived beside it at the default mode. |

@@ -412,6 +412,18 @@ Leave `CLOUDFLARE_ACCOUNT_ID` unset. Each project names its account in the `acco
 
 Create a **user** token from the **Edit Cloudflare Workers** template, not an account API token, which covers one account only. This token can deploy production sites, and agents here run unattended in bypass permission mode, so give it only the accounts, zones and permissions the projects need. The steps, the permission tables, the check and the revocation are in [docs/wiki/set-up-the-cloudflare-token.md](docs/wiki/set-up-the-cloudflare-token.md).
 
+## (Optional) Dokploy panel credentials
+
+A project deploy script that drives a Dokploy panel can read the panel URL and an API key from the environment:
+
+```sh
+# in .env
+DOKPLOY_URL=
+DOKPLOY_API_KEY=
+```
+
+The entrypoint writes each value that is set to `~/.devaloy_secrets` (0600), so every shell on the box exports it. There is no default URL. Create the key in the panel's profile settings. When a value is empty, the box exports nothing for it, and the script falls back to its own credentials file. Clearing a value and redeploying removes it from the box.
+
 ## (Optional) Rex terminal server
 
 Set `WITH_REX=true` in `.env`. Run `docker compose up -d --build`. The build installs Rex from Superlogical's snapshot channel. The container starts a personal Rex server as `dev`.

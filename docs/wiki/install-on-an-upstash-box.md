@@ -81,7 +81,7 @@ The env file holds these keys. Each one means what [Reference](reference.md#envi
 |---|---|---|
 | Tailnet | `WITH_TAILSCALE`, `TS_AUTHKEY`, `TS_HOSTNAME`, `TS_ACCEPT_DNS` | Tailscale is on by default; `WITH_TAILSCALE="false"` turns it off. With no `TS_AUTHKEY` and a node that never logged in, the installer asks for a key. `TS_HOSTNAME` defaults to the box's Upstash name (`UPSTASH_BOX_NAME`) and is also the T3 environment label. See [Tailscale](#tailscale). |
 | GitHub and git | `GITHUB_TOKEN`, `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_SIGNING_SSH_KEY`, `DEVALOY_REPOS` | The boot clones `DEVALOY_REPOS` into `/workspace/home`. |
-| Agents and services | `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET` | Written to `~/.devaloy_secrets` on every boot. A cleared value is gone after the next boot. |
+| Agents and services | `CLAUDE_CODE_OAUTH_TOKEN`, `CLOUDFLARE_API_TOKEN`, `INFISICAL_CLIENT_ID`, `INFISICAL_CLIENT_SECRET`, `DOKPLOY_URL`, `DOKPLOY_API_KEY` | Written to `~/.devaloy_secrets` on every boot. A cleared value is gone after the next boot. |
 | Push notifications | `NTFY_TOPIC`, `NTFY_SERVER`, `NTFY_TOKEN` | See [Push notifications](push-notifications.md). |
 | Features | `WITH_BROWSER`, `DEVALOY_SLIM` | `true` or `false`, default `false`. See [Disk](#disk). |
 | Toolchain and source | `MISE_NODE_VERSION`, `DEVALOY_REF` | `DEVALOY_REF` defaults to `main`. |
