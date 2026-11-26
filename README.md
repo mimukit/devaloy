@@ -69,6 +69,7 @@ From `mise` on first boot, into the home volume: `node` (LTS major pin), `pnpm`,
 [The editor config](docs/wiki/reference.md#the-editor-config)),
 `infisical` (see [(Optional) Infisical secrets](#optional-infisical-secrets)),
 the Cloudflare CLIs `wrangler` and `cf` (see [(Optional) Cloudflare API token](#optional-cloudflare-api-token)),
+the Cloudflare Tunnel client `cloudflared` (for a quick tunnel, `cloudflared tunnel --url http://localhost:<port>`),
 plus
 [Claude Code](https://claude.com/claude-code)
 (`claude`), [Codex](https://github.com/openai/codex) (`codex`) and the

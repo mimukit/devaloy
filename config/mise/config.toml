@@ -115,6 +115,17 @@ infisical = "latest"
 # docs/wiki/set-up-the-cloudflare-token.md.
 "npm:wrangler" = "latest"
 "npm:cf" = "latest"
+# cloudflared, the Cloudflare Tunnel client. A quick tunnel
+# (`cloudflared tunnel --url http://localhost:<port>`) gives a dev server a
+# public HTTPS origin with no account and no login, which a payment sandbox
+# needs for its IPN or webhook callback. One static binary from the GitHub
+# release, through the aqua backend (aqua:cloudflare/cloudflared). Tracks
+# latest, so `devaloy update` keeps it current; pin it by editing this line.
+#
+# Do not run `cloudflared service install` here: it adds a system service
+# outside devaloy's boot path, and a named tunnel needs a credential this
+# box does not store.
+cloudflared = "latest"
 
 # --- cloud storage -----------------------------------------------------------
 # rclone, for copies between cloud drives (OneDrive, Google Drive) that run for

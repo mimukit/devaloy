@@ -11,7 +11,7 @@ Every tool on the box — node, pnpm, gh, turbo, lazygit, claude, codex, the ski
 
 ## Upgrade what tracks `latest`
 
-Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, claude, codex, skills, Paseo when `WITH_PASEO=true`, and `playwright-cli` when `WITH_BROWSER=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy update` is what runs it:
+Most of the toolchain is pinned to `latest`: pnpm, gh, turbo, lazygit, claude, codex, skills, cloudflared, Paseo when `WITH_PASEO=true`, and `playwright-cli` when `WITH_BROWSER=true`. But `latest` does not move on its own. The boot path runs `mise install`, which resolves `latest` against what is already on disk and stops — that is deliberate, so a redeploy never swaps an agent CLI under a live session. The command that actually re-resolves is `mise upgrade`, and `devaloy update` is what runs it:
 
 ```sh
 devaloy update
